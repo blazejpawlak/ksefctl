@@ -122,4 +122,13 @@ describe("completion helpers", () => {
     const shouldRun = await shouldRunFirstRun(true);
     expect(shouldRun).toBe(false);
   });
+
+  it("runs first-run when data root is missing", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksefctl-first-"));
+    process.env.HOME = tmpDir;
+    setTty(true);
+
+    const shouldRun = await shouldRunFirstRun(true);
+    expect(shouldRun).toBe(true);
+  });
 });

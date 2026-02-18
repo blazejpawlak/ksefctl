@@ -539,7 +539,6 @@ const handleFirstRun = async (actionCommand: Command): Promise<void> => {
   ) {
     return;
   }
-  const skipInitPrompt = actionCommand.name() === "init";
   const opts = program.opts();
   const shouldRun = await shouldRunFirstRun(opts.firstRun);
   if (!shouldRun) return;
@@ -568,9 +567,7 @@ const handleFirstRun = async (actionCommand: Command): Promise<void> => {
     completionStatus = "unavailable";
   }
 
-  const initNow = skipInitPrompt
-    ? false
-    : await promptYesNo("Bootstrap and initialize now? (y/N): ");
+  const initNow = await promptYesNo("Bootstrap and initialize now? (y/N): ");
   if (initNow) {
     await bootstrapInteractive(opts.config);
   }
@@ -1123,6 +1120,14 @@ program.addHelpText("after", () => {
 const main = async () => {
   try {
     await ensureLocalstorageNodeOption();
+    const args = process.argv.slice(2);
+    const hasHelp = args.includes("--help") || args.includes("-h");
+    const hasCommand = args.some((arg) => !arg.startsWith("-") && arg !== "");
+    if (!hasHelp && !hasCommand) {
+      await handleFirstRun(program);
+      program.outputHelp();
+      return;
+    }
     await program.parseAsync(process.argv);
   } catch (error) {
     console.error((error as Error).message);
