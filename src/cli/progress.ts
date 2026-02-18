@@ -21,7 +21,7 @@ export const createProgressRenderer = (
 
   const resolveSpinner = () => {
     if (spinner) return spinner;
-    const baseSpinner = cliSpinners.dots8Bit;
+    const baseSpinner = cliSpinners.dots;
     const spinnerConfig = options?.spinnerIntervalMs
       ? { frames: baseSpinner.frames, interval: options.spinnerIntervalMs }
       : baseSpinner;

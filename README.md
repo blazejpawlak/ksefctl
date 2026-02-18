@@ -157,7 +157,7 @@ notifications:
 
 ## Shell completion
 
-On first run (when no config exists), ksefctl will offer to install completion for the detected shell and prompt to bootstrap initialization. You can disable the prompt with `--no-first-run` or `KSEFCTL_NO_FIRST_RUN=1`.
+On first run (when the ksefctl data directory does not exist), ksefctl will offer to install completion for the detected shell and prompt to bootstrap initialization. You can disable the prompt with `--no-first-run` or `KSEFCTL_NO_FIRST_RUN=1`.
 
 Bash (current session):
 

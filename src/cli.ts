@@ -21,7 +21,7 @@ import {
 } from "./cli/bootstrap";
 import { promptText } from "./cli/prompt";
 import { createProgressRenderer } from "./cli/progress";
-import { defaultConfigPath, defaultDataRoot, ensureDir } from "./utils/paths";
+import { defaultDataRoot, ensureDir } from "./utils/paths";
 import { formatDuration, sleep, sleepWithCountdown } from "./utils/time";
 import { buildNodeOptionsWithLocalstorage } from "./utils/nodeOptions";
 
@@ -516,11 +516,11 @@ const shouldRunFirstRun = async (flag?: boolean) => {
     .then(() => true)
     .catch(() => false);
   if (markerExists) return false;
-  const configExists = await fs
-    .access(defaultConfigPath())
+  const rootExists = await fs
+    .access(defaultDataRoot())
     .then(() => true)
     .catch(() => false);
-  return !configExists;
+  return !rootExists;
 };
 
 const writeFirstRunMarker = async (payload: Record<string, unknown>) => {

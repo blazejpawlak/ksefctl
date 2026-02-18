@@ -10,7 +10,7 @@ import {
   renderFishCompletion,
   shouldRunFirstRun,
 } from "../../src/cli";
-import { defaultConfigPath } from "../../src/utils/paths";
+import { defaultDataRoot } from "../../src/utils/paths";
 
 const setTty = (value: boolean) => {
   Object.defineProperty(process.stdin, "isTTY", {
@@ -94,7 +94,7 @@ describe("completion helpers", () => {
   it("respects first-run opt-out and config existence", async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksefctl-first-"));
     process.env.HOME = tmpDir;
-    const configPath = defaultConfigPath();
+    const rootDir = defaultDataRoot();
     setTty(true);
 
     let shouldRun = await shouldRunFirstRun(true);
@@ -109,8 +109,7 @@ describe("completion helpers", () => {
     expect(shouldRun).toBe(false);
 
     process.env.KSEFCTL_NO_FIRST_RUN = undefined;
-    await fs.mkdir(path.dirname(configPath), { recursive: true });
-    await fs.writeFile(configPath, "", "utf-8");
+    await fs.mkdir(rootDir, { recursive: true });
     shouldRun = await shouldRunFirstRun(true);
     expect(shouldRun).toBe(false);
   });

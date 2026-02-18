@@ -103,13 +103,25 @@ PY
   printf '%s' "$sanitized"
 }
 
-if [[ -n "${NODE_OPTIONS:-}" ]]; then
-  sanitized_options="$(sanitize_node_options "$NODE_OPTIONS")"
-  if [[ -n "$sanitized_options" ]]; then
-    export NODE_OPTIONS="$sanitized_options"
-  else
-    unset NODE_OPTIONS
+resolve_data_root() {
+  if [[ "${OSTYPE:-}" == darwin* ]]; then
+    printf '%s' "$HOME/.ksefctl"
+    return 0
   fi
+  if [[ -n "${XDG_DATA_HOME:-}" ]]; then
+    printf '%s' "$XDG_DATA_HOME/ksefctl"
+    return 0
+  fi
+  printf '%s' "$HOME/.local/share/ksefctl"
+}
+
+localstorage_path="$(resolve_data_root)/localstorage.json"
+
+sanitized_options="$(sanitize_node_options "${NODE_OPTIONS:-}")"
+if [[ -z "$sanitized_options" ]]; then
+  export NODE_OPTIONS="--localstorage-file=$localstorage_path"
+else
+  export NODE_OPTIONS="$sanitized_options"
 fi
 
 script_path="${BASH_SOURCE[0]}"

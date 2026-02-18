@@ -151,7 +151,7 @@ CLI behavior:
 - Other commands must require initialization (config + keychain tokens).
 - `sync --force-redownload-all` resets cursors to `sync.initialSyncFrom` (or `2026-02-01`) and re-downloads available invoices.
 - Missing invoice directories trigger a re-download even if DB marks them as downloaded.
-- Progress spinner uses `ora` with `cli-spinners` (`dots8Bit`).
+- Progress spinner uses `ora` with `cli-spinners` (`dots`).
 
 Storage:
 

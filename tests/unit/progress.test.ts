@@ -84,7 +84,7 @@ describe("progress renderer", () => {
     expect(ora).toHaveBeenCalledTimes(1);
     expect(ora).toHaveBeenCalledWith(
       expect.objectContaining({
-        spinner: cliSpinners.dots8Bit,
+        spinner: cliSpinners.dots,
         stream: stream as unknown as NodeJS.WriteStream,
         isEnabled: true,
       }),
@@ -106,7 +106,7 @@ describe("progress renderer", () => {
     expect(ora).toHaveBeenCalledWith(
       expect.objectContaining({
         spinner: expect.objectContaining({
-          frames: cliSpinners.dots8Bit.frames,
+          frames: cliSpinners.dots.frames,
           interval: 42,
         }),
       }),
