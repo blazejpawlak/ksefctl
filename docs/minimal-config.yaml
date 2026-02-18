@@ -1,0 +1,27 @@
+environment: prod
+auth:
+  method: ksefToken
+  keychainServiceName: ksefctl
+organizations:
+  - nip: "1234567890"
+    label: "Org A"
+pollingIntervalSeconds: 300
+storage:
+  root: /path/to/storage
+logging:
+  level: info
+  file: /path/to/storage/logs/ksefctl.log
+notifications:
+  macosNotification: true
+  email:
+    enabled: false
+operational:
+  timeoutSeconds: 60
+  pollIntervalSeconds: 10
+security:
+  tls:
+    enablePinning: false
+  allowedHosts: []
+sync:
+  subjectTypes: [Subject1, Subject2, Subject3]
+  generatePdf: true

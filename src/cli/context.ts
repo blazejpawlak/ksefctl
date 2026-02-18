@@ -1,0 +1,98 @@
+import path from "node:path";
+import { loadConfig, resolveConfigPath } from "../config/loadConfig";
+import { createLogger } from "../utils/logger";
+import { HttpClient } from "../utils/http";
+import { KsefClient } from "../api/ksefClient";
+import { AuthService } from "../auth/authService";
+import { SqliteStore } from "../db/sqlite";
+import { ConfigError } from "../utils/errors";
+import { resolveBaseUrl } from "../config/environment";
+import { KeychainStore } from "../auth/keychainStore";
+
+type ContextOptions = {
+  verbose?: boolean;
+  progress?: (message: string) => void;
+  countdownIntervalSeconds?: number;
+};
+
+export const createContext = async (
+  configPathOverride?: string,
+  options?: ContextOptions,
+) => {
+  const configPath = resolveConfigPath(configPathOverride);
+  const config = await loadConfig(configPath);
+  const verbose = Boolean(options?.verbose);
+  const level = verbose
+    ? config.logging.level === "trace"
+      ? "trace"
+      : "debug"
+    : config.logging.level;
+  const hasProgress = Boolean(options?.progress);
+  const logger = await createLogger({
+    level,
+    file: config.logging.file,
+    pretty: verbose ? true : config.logging.pretty,
+    suppressConsole: hasProgress && !verbose,
+  });
+  const countdownIntervalSeconds =
+    options?.countdownIntervalSeconds ?? (verbose ? 10 : 60);
+
+  const normalizeBaseUrl = (input: string): string => {
+    const trimmed = input.replace(/\/$/, "");
+    if (trimmed.includes("/docs")) {
+      throw new ConfigError("apiBaseUrl must point to the API base, not /docs");
+    }
+    if (trimmed.endsWith("/v2")) return trimmed;
+    return `${trimmed}/v2`;
+  };
+
+  const baseUrl = normalizeBaseUrl(
+    config.apiBaseUrl ?? resolveBaseUrl(config.environment),
+  );
+  if (baseUrl.startsWith("http://") && !config.operational.allowInsecureHttp) {
+    throw new ConfigError(
+      "Insecure apiBaseUrl requires operational.allowInsecureHttp=true",
+    );
+  }
+
+  const http = new HttpClient({
+    baseUrl,
+    timeoutMs: config.operational.timeoutSeconds * 1000,
+    retry: config.operational.retry,
+    security: {
+      enablePinning: config.security.tls.enablePinning,
+      pins: config.security.tls.pins,
+      pinningHosts: config.security.tls.pinningHosts,
+      caPath: config.security.tls.caPath,
+    },
+    logger,
+    progress: options?.progress,
+    countdownIntervalSeconds,
+  });
+
+  const client = new KsefClient(http);
+  const store = new SqliteStore(
+    path.join(config.storage.root, "db", "state.sqlite"),
+  );
+  const keychain = KeychainStore.fromConfig(config, logger);
+  const auth = new AuthService(
+    client,
+    config,
+    logger,
+    keychain,
+    options?.progress,
+    countdownIntervalSeconds,
+  );
+
+  return {
+    configPath,
+    config,
+    logger,
+    http,
+    client,
+    auth,
+    store,
+    keychain,
+    countdownIntervalSeconds,
+  };
+};

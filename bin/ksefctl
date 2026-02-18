@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+sanitize_node_options() {
+  local input="$1"
+  local sanitized=""
+
+  if [[ -z "$input" ]]; then
+    printf '%s' ""
+    return 0
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    sanitized="$(python3 - "$input" <<'PY'
+import shlex
+import sys
+
+value = sys.argv[1] if len(sys.argv) > 1 else ""
+tokens = shlex.split(value)
+sanitized = []
+i = 0
+while i < len(tokens):
+    token = tokens[i]
+    if token == "--localstorage-file":
+        next_value = tokens[i + 1] if i + 1 < len(tokens) else ""
+        if next_value and not next_value.startswith("-"):
+            sanitized.extend([token, next_value])
+            i += 2
+            continue
+        i += 1
+        continue
+    if token.startswith("--localstorage-file="):
+        path_value = token.split("=", 1)[1]
+        if path_value:
+            sanitized.append(token)
+        i += 1
+        continue
+    sanitized.append(token)
+    i += 1
+
+print(" ".join(shlex.quote(t) for t in sanitized))
+PY
+    )"
+  elif command -v python >/dev/null 2>&1; then
+    sanitized="$(python - "$input" <<'PY'
+import shlex
+import sys
+
+value = sys.argv[1] if len(sys.argv) > 1 else ""
+tokens = shlex.split(value)
+sanitized = []
+i = 0
+while i < len(tokens):
+    token = tokens[i]
+    if token == "--localstorage-file":
+        next_value = tokens[i + 1] if i + 1 < len(tokens) else ""
+        if next_value and not next_value.startswith("-"):
+            sanitized.extend([token, next_value])
+            i += 2
+            continue
+        i += 1
+        continue
+    if token.startswith("--localstorage-file="):
+        path_value = token.split("=", 1)[1]
+        if path_value:
+            sanitized.append(token)
+        i += 1
+        continue
+    sanitized.append(token)
+    i += 1
+
+print(" ".join(shlex.quote(t) for t in sanitized))
+PY
+    )"
+  else
+    local -a tokens
+    local -a filtered
+    for token in $input; do
+      tokens+=("$token")
+    done
+    for ((i = 0; i < ${#tokens[@]}; i++)); do
+      local token="${tokens[i]}"
+      if [[ "$token" == "--localstorage-file" ]]; then
+        local next="${tokens[i+1]:-}"
+        if [[ -n "$next" && "$next" != -* ]]; then
+          filtered+=("$token" "$next")
+          ((i++))
+        fi
+        continue
+      fi
+      if [[ "$token" == --localstorage-file=* ]]; then
+        local path_value="${token#--localstorage-file=}"
+        if [[ -n "$path_value" ]]; then
+          filtered+=("$token")
+        fi
+        continue
+      fi
+      filtered+=("$token")
+    done
+    sanitized="${filtered[*]-}"
+  fi
+
+  printf '%s' "$sanitized"
+}
+
+if [[ -n "${NODE_OPTIONS:-}" ]]; then
+  sanitized_options="$(sanitize_node_options "$NODE_OPTIONS")"
+  if [[ -n "$sanitized_options" ]]; then
+    export NODE_OPTIONS="$sanitized_options"
+  else
+    unset NODE_OPTIONS
+  fi
+fi
+
+script_path="${BASH_SOURCE[0]}"
+while [[ -L "$script_path" ]]; do
+  script_dir="$(cd -P "$(dirname "$script_path")" && pwd)"
+  script_path="$(readlink "$script_path")"
+  if [[ "$script_path" != /* ]]; then
+    script_path="$script_dir/$script_path"
+  fi
+done
+script_dir="$(cd -P "$(dirname "$script_path")" && pwd)"
+exec node "$script_dir/../dist/cli.js" "$@"
