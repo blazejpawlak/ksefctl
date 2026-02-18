@@ -82,6 +82,7 @@ The environment prompt shows full names with the API URLs for clarity.
 - `ksefctl secret set [--nip <nip>] [--token-stdin]` – store KSeF token in keychain.
 - `ksefctl secret show` – show which NIPs have keychain secrets.
 - `ksefctl secret clear --nip <nip>` – remove keychain secret for a NIP.
+- `ksefctl completion <bash|zsh|fish>` – print shell completion script.
 
 All commands except `init` require a config file and keychain tokens for each configured NIP.
 
@@ -150,9 +151,48 @@ notifications:
       user: user@example.com
       pass: ${SMTP_PASS}
       from: ksefctl@example.com
-      to:
-        - you@example.com
+    to:
+      - you@example.com
 ```
+
+## Shell completion
+
+On first run (when no config exists), ksefctl will offer to install completion for the detected shell and prompt to bootstrap initialization. You can disable the prompt with `--no-first-run` or `KSEFCTL_NO_FIRST_RUN=1`.
+
+Bash (current session):
+
+```bash
+source <(ksefctl completion bash)
+```
+
+Zsh:
+
+```bash
+mkdir -p ~/.zfunc
+ksefctl completion zsh > ~/.zfunc/_ksefctl
+fpath=(~/.zfunc $fpath)
+autoload -Uz compinit && compinit
+```
+
+Fish:
+
+```bash
+mkdir -p ~/.config/fish/completions
+ksefctl completion fish > ~/.config/fish/completions/ksefctl.fish
+```
+
+Auto-install details (first run):
+
+- Bash:
+  - macOS: writes `~/.ksefctl/completions/ksefctl.bash` and adds a block to `~/.bashrc` (or existing `~/.bash_profile`/`~/.profile`)
+  - Linux: writes `${XDG_DATA_HOME:-~/.local/share}/ksefctl/completions/ksefctl.bash` and adds a block to `~/.bashrc` (or existing `~/.bash_profile`/`~/.profile`)
+- Zsh:
+  - macOS: writes `~/.ksefctl/completions/_ksefctl` and adds a block to `~/.zshrc`
+  - Linux: writes `${XDG_DATA_HOME:-~/.local/share}/ksefctl/completions/_ksefctl` and adds a block to `~/.zshrc`
+- Fish:
+  - writes `${XDG_CONFIG_HOME:-~/.config}/fish/completions/ksefctl.fish`
+
+Auto-install is skipped when running as root or when rc files are symlinked (you'll get a message with manual steps).
 
 ## Configuration
 
@@ -223,6 +263,7 @@ Token generation is described in `tokeny-ksef.md` and requires a one-time XAdES 
 - `KSEFCTL_SMTP_USER`
 - `KSEFCTL_SMTP_PASS`
 - `KSEFCTL_CONFIG` (override config path)
+- `KSEFCTL_NO_FIRST_RUN=1` (disable first-run prompts)
 
 ## Incremental sync behavior
 
