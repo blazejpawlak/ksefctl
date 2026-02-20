@@ -1,8 +1,8 @@
 import type { Logger } from "pino";
 import { Agent } from "undici";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import tls from "node:tls";
-import crypto from "node:crypto";
 import { calculateBackoff } from "./backoff";
 import { AuthError, NetworkError } from "./errors";
 import { formatDuration, sleep, sleepWithCountdown } from "./time";
@@ -64,7 +64,7 @@ const formatErrorBody = (raw: string | null): string | null => {
 };
 
 const extractHttpStatus = (message: string): number | null => {
-  const match = message.match(/^HTTP (\d{3})\b/);
+  const match = /^HTTP (\d{3})\b/.exec(message);
   if (!match) return null;
   const status = Number(match[1]);
   return Number.isFinite(status) ? status : null;

@@ -1,4 +1,4 @@
-import { Database } from "sql.js";
+import type { Database } from "sql.js";
 
 export type InvoiceRecord = {
   nip: string;

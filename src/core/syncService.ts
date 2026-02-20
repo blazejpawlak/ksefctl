@@ -1,12 +1,13 @@
-import type { Logger } from "pino";
 import type { InvoiceExportStatusResponse } from "../api/ksefClient";
+import type { KsefClient } from "../api/ksefClient";
+import type { AuthService } from "../auth/authService";
 import type { AppConfig, SubjectType } from "../config/schema";
+import type { SqliteStore } from "../db/sqlite";
+import type { Logger } from "pino";
 import AdmZip from "adm-zip";
 import { xml2js } from "xml-js";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { KsefClient } from "../api/ksefClient";
-import { AuthService } from "../auth/authService";
 import { resolveBaseUrl } from "../config/environment";
 import {
   getContinuationPoint,
@@ -16,28 +17,25 @@ import {
   setSyncState,
   upsertInvoice,
 } from "../db/repository";
-import { SqliteStore } from "../db/sqlite";
-import { atomicWriteFile, ensureStorageDirs, getInvoiceDir } from "./storage";
-import { createEncryptionData, selectCertificateByUsage } from "./encryption";
+import { PdfService } from "../services/pdfService";
 import { decryptAes256Cbc, sha256Base64 } from "../utils/crypto";
 import { ConfigError } from "../utils/errors";
 import { formatDuration, sleep, sleepWithCountdown } from "../utils/time";
-import { PdfService } from "../services/pdfService";
+import { createEncryptionData, selectCertificateByUsage } from "./encryption";
+import { atomicWriteFile, ensureStorageDirs, getInvoiceDir } from "./storage";
 
 type SyncResult = {
   downloaded: number;
   skipped: number;
   failed: number;
-  items: Array<{ nip: string; ksefNumber: string; path: string }>;
+  items: { nip: string; ksefNumber: string; path: string }[];
 };
 
 type MetadataFile = {
-  invoices?: Array<
-    Record<string, unknown> & {
+  invoices?: (Record<string, unknown> & {
       ksefNumber?: string;
       permanentStorageDate?: string;
-    }
-  >;
+    })[];
 };
 
 const maxDateRangeMonths = 3;
@@ -411,7 +409,7 @@ export class SyncService {
 
   async runDaemon(): Promise<void> {
     this.logger.info("Starting daemon mode");
-    // eslint-disable-next-line no-constant-condition
+     
     while (true) {
       try {
         const result = await this.runOnce();
@@ -666,7 +664,7 @@ export class SyncService {
       let downloaded = 0;
       let skipped = 0;
       let failed = 0;
-      const items: Array<{ nip: string; ksefNumber: string; path: string }> =
+      const items: { nip: string; ksefNumber: string; path: string }[] =
         [];
 
       for (const entry of entries) {
@@ -685,8 +683,7 @@ export class SyncService {
             : false;
 
         if (
-          existing &&
-          existing.status === "downloaded" &&
+          existing?.status === "downloaded" &&
           !isForce &&
           !forceRedownloadAll &&
           hasFiles

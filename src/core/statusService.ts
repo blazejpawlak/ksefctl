@@ -1,4 +1,4 @@
-import { SqliteStore } from "../db/sqlite";
+import type { SqliteStore } from "../db/sqlite";
 import { getSyncState } from "../db/repository";
 
 export type StatusInfo = {

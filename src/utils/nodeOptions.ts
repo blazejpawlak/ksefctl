@@ -6,7 +6,7 @@ export const parseNodeOptions = (value: string): string[] => {
     const first = token[0];
     const last = token[token.length - 1];
     if (first === undefined || last === undefined) return token;
-    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+    if ((first === "\"" && last === "\"") || (first === "'" && last === "'")) {
       return token.slice(1, -1);
     }
     return token;
@@ -15,7 +15,7 @@ export const parseNodeOptions = (value: string): string[] => {
 
 export const quoteNodeOptionToken = (token: string): string => {
   if (!/[\s"]/g.test(token)) return token;
-  const escaped = token.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const escaped = token.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
   return `"${escaped}"`;
 };
 
@@ -39,7 +39,7 @@ export const sanitizeNodeOptions = (value?: string): string[] => {
         const first = pathValue[0];
         const last = pathValue[pathValue.length - 1];
         if (
-          (first === '"' && last === '"') ||
+          (first === "\"" && last === "\"") ||
           (first === "'" && last === "'")
         ) {
           pathValue = pathValue.slice(1, -1);
@@ -66,7 +66,7 @@ export const buildNodeOptionsWithLocalstorage = (
         const pathValue = token.slice("--localstorage-file=".length);
         if (!pathValue) return token;
         if (!/[\s"]/g.test(pathValue)) return token;
-        const escaped = pathValue.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        const escaped = pathValue.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
         return `--localstorage-file="${escaped}"`;
       }
       return quoteNodeOptionToken(token);

@@ -1,11 +1,11 @@
-import type { Logger } from "pino";
 import type { AppConfig } from "../config/schema";
+import type { Logger } from "pino";
 import notifier from "node-notifier";
 import nodemailer from "nodemailer";
 
 export type NotificationSummary = {
   downloaded: number;
-  items: Array<{ nip: string; ksefNumber: string; path: string }>;
+  items: { nip: string; ksefNumber: string; path: string }[];
 };
 
 export class Notifier {
@@ -19,11 +19,11 @@ export class Notifier {
 
   async notify(summary: NotificationSummary): Promise<void> {
     if (summary.downloaded <= 0) return;
-    await this.notifyMac(summary);
+    this.notifyMac(summary);
     await this.notifyEmail(summary);
   }
 
-  private async notifyMac(summary: NotificationSummary): Promise<void> {
+  private notifyMac(summary: NotificationSummary): void {
     if (!this.config.notifications.macosNotification) return;
     if (process.platform !== "darwin") return;
 

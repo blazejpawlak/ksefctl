@@ -1,14 +1,15 @@
+import type { KeychainStore} from "./keychainStore";
+import type { AuthenticationTokensResponse } from "../api/ksefClient";
+import type { KsefClient } from "../api/ksefClient";
 import type { AppConfig } from "../config/schema";
 import type { Logger } from "pino";
-import type { AuthenticationTokensResponse } from "../api/ksefClient";
-import { KsefClient } from "../api/ksefClient";
 import {
   createPublicKeyFromCertificate,
   rsaOaepSha256Encrypt,
 } from "../utils/crypto";
 import { AuthError } from "../utils/errors";
-import { KeychainStore, type KeychainEntry } from "./keychainStore";
 import { formatDuration, sleep, sleepWithCountdown } from "../utils/time";
+import { type KeychainEntry } from "./keychainStore";
 
 type AuthTokens = Required<
   Pick<
@@ -28,7 +29,7 @@ const isExpired = (validUntil: string | null, skewSeconds = 60): boolean => {
 };
 
 const selectCertificateByUsage = (
-  certs: Array<{ certificate: string; usage: string[] }>,
+  certs: { certificate: string; usage: string[] }[],
   usage: string,
 ) => {
   const match = certs.find((cert) => cert.usage.includes(usage));

@@ -1,5 +1,5 @@
-import type { Logger } from "pino";
 import type { AppConfig } from "../config/schema";
+import type { Logger } from "pino";
 import keytar from "keytar";
 
 export type KeychainEntry = {

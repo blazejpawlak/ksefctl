@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
+import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import fs from "node:fs/promises";
-import { SqliteStore } from "../../src/db/sqlite";
 import { getInvoice, upsertInvoice } from "../../src/db/repository";
+import { SqliteStore } from "../../src/db/sqlite";
 
 describe("idempotency", () => {
   it("upserts invoice records", async () => {

@@ -96,6 +96,11 @@ describe("progress renderer", () => {
 
   it("uses configured spinner interval when provided", () => {
     const stream = createStream(true);
+    const dots = (
+      cliSpinners as unknown as {
+        dots: { frames: string[]; interval: number };
+      }
+    ).dots;
     const renderer = createProgressRenderer({
       stream: stream as unknown as NodeJS.WriteStream,
       spinnerIntervalMs: 42,
@@ -103,12 +108,14 @@ describe("progress renderer", () => {
 
     renderer.update("first");
 
+    const spinnerExpectation = expect.objectContaining({
+      frames: dots.frames,
+      interval: 42,
+    }) as unknown as { frames: string[]; interval: number };
+
     expect(ora).toHaveBeenCalledWith(
       expect.objectContaining({
-        spinner: expect.objectContaining({
-          frames: cliSpinners.dots.frames,
-          interval: 42,
-        }),
+        spinner: spinnerExpectation,
       }),
     );
   });

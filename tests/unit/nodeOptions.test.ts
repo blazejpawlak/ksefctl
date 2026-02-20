@@ -24,11 +24,11 @@ describe("node options", () => {
 
   it("preserves quoted localstorage path with spaces", () => {
     const value = buildNodeOptionsWithLocalstorage(
-      '--localstorage-file="/tmp/my dir/store.json"',
+      "--localstorage-file=\"/tmp/my dir/store.json\"",
       "/tmp/localstorage.json",
     );
 
-    expect(value).toBe('--localstorage-file="/tmp/my dir/store.json"');
+    expect(value).toBe("--localstorage-file=\"/tmp/my dir/store.json\"");
   });
 
   it("drops empty localstorage flags", () => {

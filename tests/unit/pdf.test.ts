@@ -1,9 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
 import {
   generateFA1,
   generateFA2,
   generateFA3,
 } from "@akmf/ksef-fe-invoice-converter";
+import { describe, expect, it, vi } from "vitest";
 import { PdfService } from "../../src/services/pdfService";
 
 vi.mock("@akmf/ksef-fe-invoice-converter", () => ({
@@ -21,7 +21,7 @@ vi.mock("@akmf/ksef-fe-invoice-converter", () => ({
 describe("PdfService", () => {
   it("generates a PDF buffer for FA (1)", async () => {
     const xml =
-      '<Faktura><Naglowek><KodFormularza kodSystemowy="FA(1)" /></Naglowek></Faktura>';
+      "<Faktura><Naglowek><KodFormularza kodSystemowy=\"FA(1)\" /></Naglowek></Faktura>";
     const service = new PdfService();
     const result = await service.generateInvoicePdf(xml, "KSEF-1");
 
@@ -37,7 +37,7 @@ describe("PdfService", () => {
 
   it("normalizes FA (2) and generates PDF", async () => {
     const xml =
-      '<Faktura><Naglowek><KodFormularza kodSystemowy="FA (2)" /></Naglowek></Faktura>';
+      "<Faktura><Naglowek><KodFormularza kodSystemowy=\"FA (2)\" /></Naglowek></Faktura>";
     const service = new PdfService();
     const result = await service.generateInvoicePdf(xml, "KSEF-4");
 
@@ -47,7 +47,7 @@ describe("PdfService", () => {
 
   it("returns failure for unsupported schemas", async () => {
     const xml =
-      '<Faktura><Naglowek><KodFormularza kodSystemowy="FA (9)" /></Naglowek></Faktura>';
+      "<Faktura><Naglowek><KodFormularza kodSystemowy=\"FA (9)\" /></Naglowek></Faktura>";
     const service = new PdfService();
     const result = await service.generateInvoicePdf(xml, "KSEF-2");
 

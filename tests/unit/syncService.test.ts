@@ -1,29 +1,31 @@
-import type { Logger } from "pino";
-import type { AuthService } from "../../src/auth/authService";
 import type { KsefClient } from "../../src/api/ksefClient";
+import type { AuthService } from "../../src/auth/authService";
 import type { AppConfig, SubjectType } from "../../src/config/schema";
+import type { Logger } from "pino";
 import AdmZip from "adm-zip";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { SyncService } from "../../src/core/syncService";
-import { SqliteStore } from "../../src/db/sqlite";
 import { getContinuationPoint, upsertInvoice } from "../../src/db/repository";
+import { SqliteStore } from "../../src/db/sqlite";
 import { encryptAes256Cbc, sha256Base64 } from "../../src/utils/crypto";
 
-const testKey = Buffer.alloc(32, 1);
-const testIv = Buffer.alloc(16, 2);
+const { testKey, testIv } = vi.hoisted(() => ({
+  testKey: Buffer.alloc(32, 1),
+  testIv: Buffer.alloc(16, 2),
+}));
 
 vi.mock("../../src/core/encryption", () => ({
-  createEncryptionData: vi.fn(async () => ({
+  createEncryptionData: vi.fn().mockResolvedValue({
     key: testKey,
     iv: testIv,
     encryptionInfo: {
       encryptedSymmetricKey: "enc",
       initializationVector: "iv",
     },
-  })),
+  }),
   selectCertificateByUsage: vi.fn(() => "cert"),
 }));
 
@@ -255,7 +257,7 @@ describe("SyncService", () => {
 
     expect(result.downloaded).toBe(1);
     expect(result.skipped).toBe(0);
-    expect(client.exportInvoices).toHaveBeenCalledTimes(1);
+    expect(exportInvoices).toHaveBeenCalledTimes(1);
     expect(request?.filters?.dateRange?.from).toBe(initialSyncFrom);
     expect(request?.filters?.dateRange?.to).toBe(now.toISOString());
   });
@@ -355,10 +357,11 @@ describe("SyncService", () => {
       "<Faktura><P_2>MISSING</P_2></Faktura>",
     );
 
+    const exportInvoices = vi
+      .fn()
+      .mockResolvedValue({ referenceNumber: "EXPORT-1" });
     const client = {
-      exportInvoices: vi
-        .fn()
-        .mockResolvedValue({ referenceNumber: "EXPORT-1" }),
+      exportInvoices,
       getPublicKeyCertificates: vi.fn().mockResolvedValue([]),
       getExportStatus: vi.fn().mockResolvedValue({
         status: { code: 200, description: "OK" },
@@ -402,6 +405,6 @@ describe("SyncService", () => {
 
     expect(result.downloaded).toBe(1);
     expect(result.skipped).toBe(0);
-    expect(client.exportInvoices).toHaveBeenCalledTimes(1);
+    expect(exportInvoices).toHaveBeenCalledTimes(1);
   });
 });

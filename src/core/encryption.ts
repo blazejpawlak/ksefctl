@@ -1,4 +1,4 @@
-import { KsefClient } from "../api/ksefClient";
+import type { KsefClient } from "../api/ksefClient";
 import {
   createPublicKeyFromCertificate,
   generateAes256Key,
@@ -16,7 +16,7 @@ export type EncryptionData = {
 };
 
 export const selectCertificateByUsage = (
-  certs: Array<{ certificate: string; usage: string[] }>,
+  certs: { certificate: string; usage: string[] }[],
   usage: string,
 ) => {
   const match = certs.find((cert) => cert.usage.includes(usage));
@@ -29,12 +29,12 @@ export const createEncryptionData = async (
   client: KsefClient,
   certificate?: string,
 ): Promise<EncryptionData> => {
-  const cert = certificate
-    ? certificate
-    : selectCertificateByUsage(
-        await client.getPublicKeyCertificates(),
-        "SymmetricKeyEncryption",
-      );
+  const cert =
+    certificate ??
+    selectCertificateByUsage(
+      await client.getPublicKeyCertificates(),
+      "SymmetricKeyEncryption",
+    );
   const publicKey = createPublicKeyFromCertificate(cert);
 
   const key = generateAes256Key();

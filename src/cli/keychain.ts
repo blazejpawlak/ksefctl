@@ -1,9 +1,9 @@
 import fs from "node:fs/promises";
+import { resolveConfigPath } from "../config/loadConfig";
+import { updateConfigFile } from "../config/saveConfig";
+import { ConfigError } from "../utils/errors";
 import { createContext } from "./context";
 import { promptHidden, promptText } from "./prompt";
-import { updateConfigFile } from "../config/saveConfig";
-import { resolveConfigPath } from "../config/loadConfig";
-import { ConfigError } from "../utils/errors";
 
 export const isValidNip = (value: string): boolean => /^\d{10}$/.test(value);
 
@@ -27,7 +27,7 @@ const addOrganization = async (
 ): Promise<void> => {
   await updateConfigFile(configPath, (current) => {
     const organizations =
-      (current.organizations as Array<{ nip: string; label?: string }>) ?? [];
+      (current.organizations as { nip: string; label?: string }[]) ?? [];
     if (!organizations.find((org) => org.nip === nip)) {
       organizations.push({ nip });
     }
@@ -71,7 +71,7 @@ export const setSecret = async (
 
 export const showSecrets = async (
   configPathOverride?: string,
-): Promise<Array<{ nip: string; present: boolean }>> => {
+): Promise<{ nip: string; present: boolean }[]> => {
   const configPath = await ensureConfigExists(configPathOverride);
   const ctx = await createContext(configPath);
   const entries = await Promise.all(
@@ -110,7 +110,7 @@ export const ensureSecretsForNips = async (
     }
     if (missing.length > 0) {
       throw new ConfigError(
-        `Missing keychain token for NIP(s): ${missing.join(", ")}. Run 'ksefctl secret set' interactively.`,
+        `Missing keychain token for NIP(s): ${missing.join(", ")}. Run 'ksefctl system secret set' interactively.`,
       );
     }
     return;
@@ -127,7 +127,20 @@ export const ensureSecretsForNips = async (
 const readStdin = async (): Promise<string> => {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const value: unknown = chunk;
+    if (Buffer.isBuffer(value)) {
+      chunks.push(value);
+      continue;
+    }
+    if (typeof value === "string") {
+      chunks.push(Buffer.from(value, "utf-8"));
+      continue;
+    }
+    if (value instanceof Uint8Array) {
+      chunks.push(Buffer.from(value));
+      continue;
+    }
+    throw new ConfigError("Unsupported stdin chunk type");
   }
   return Buffer.concat(chunks).toString("utf-8");
 };

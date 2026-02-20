@@ -3,8 +3,8 @@ import YAML from "yaml";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { AppConfigSchema } from "../../src/config/schema";
 import { loadConfig, sanitizeConfig } from "../../src/config/loadConfig";
+import { AppConfigSchema } from "../../src/config/schema";
 
 describe("config schema", () => {
   it("validates a minimal config", () => {

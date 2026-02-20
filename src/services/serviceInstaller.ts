@@ -1,10 +1,10 @@
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { APP_NAME, defaultDataRoot, ensureDir } from "../utils/paths";
 import { buildNodeOptionsWithLocalstorage } from "../utils/nodeOptions";
+import { APP_NAME, defaultDataRoot, ensureDir } from "../utils/paths";
 
 const execFileAsync = promisify(execFile);
 
@@ -48,7 +48,7 @@ const escapeSystemdEnvValue = (value: string): string =>
     .replace(/[\r\n\0]/g, " ")
     .replace(/%/g, "%%")
     .replace(/\\/g, "\\\\")
-    .replace(/"/g, '\\"');
+    .replace(/"/g, "\\\"");
 
 const escapeSystemdUnitValue = (value: string): string =>
   escapeSystemdEnvValue(value);
@@ -77,7 +77,7 @@ export class ServiceInstaller {
   private async installLaunchd(
     options: ServiceInstallOptions,
   ): Promise<string> {
-    const homeDir = process.env.HOME || os.homedir();
+    const homeDir = process.env.HOME ?? os.homedir();
     if (!path.isAbsolute(homeDir)) {
       throw new Error("HOME is not an absolute path");
     }
@@ -154,7 +154,7 @@ export class ServiceInstaller {
   }
 
   private async uninstallLaunchd(): Promise<string> {
-    const homeDir = process.env.HOME || os.homedir();
+    const homeDir = process.env.HOME ?? os.homedir();
     if (!path.isAbsolute(homeDir)) {
       throw new Error("HOME is not an absolute path");
     }
@@ -170,7 +170,7 @@ export class ServiceInstaller {
     options: ServiceInstallOptions,
   ): Promise<string> {
     const isRoot = process.getuid?.() === 0;
-    const homeDir = process.env.HOME || os.homedir();
+    const homeDir = process.env.HOME ?? os.homedir();
     if (!path.isAbsolute(homeDir)) {
       throw new Error("HOME is not an absolute path");
     }
@@ -245,7 +245,7 @@ WantedBy=${target}
 
   private async uninstallSystemd(): Promise<string> {
     const isRoot = process.getuid?.() === 0;
-    const homeDir = process.env.HOME || os.homedir();
+    const homeDir = process.env.HOME ?? os.homedir();
     if (!path.isAbsolute(homeDir)) {
       throw new Error("HOME is not an absolute path");
     }

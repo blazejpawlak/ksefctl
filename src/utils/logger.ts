@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 import pino from "pino";
-import path from "node:path";
 import fs from "node:fs/promises";
+import path from "node:path";
 import { ensureDir } from "./paths";
 
 export type LoggerOptions = {
@@ -50,7 +50,7 @@ export const createLogger = async (options: LoggerOptions): Promise<Logger> => {
           translateTime: "SYS:standard",
           ignore: "pid,hostname",
         },
-      });
+      }) as pino.DestinationStream;
       streams.push({ level: options.level, stream: transport });
     } else {
       streams.push({ level: options.level, stream: process.stdout });

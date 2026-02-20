@@ -1,8 +1,8 @@
 import { Command } from "commander";
+import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
 import {
   buildCompletionSpec,
   installCompletion,
@@ -30,7 +30,7 @@ describe("completion helpers", () => {
   const originalTtyIn = process.stdin.isTTY;
   const originalTtyOut = process.stdout.isTTY;
 
-  afterEach(async () => {
+  afterEach(() => {
     process.env.HOME = originalHome;
     process.env.XDG_CONFIG_HOME = originalXdgConfig;
     process.env.KSEFCTL_NO_FIRST_RUN = originalNoFirstRun;

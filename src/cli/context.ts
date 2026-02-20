@@ -1,13 +1,13 @@
 import path from "node:path";
-import { loadConfig, resolveConfigPath } from "../config/loadConfig";
-import { createLogger } from "../utils/logger";
-import { HttpClient } from "../utils/http";
 import { KsefClient } from "../api/ksefClient";
 import { AuthService } from "../auth/authService";
+import { KeychainStore } from "../auth/keychainStore";
+import { resolveBaseUrl } from "../config/environment";
+import { loadConfig, resolveConfigPath } from "../config/loadConfig";
 import { SqliteStore } from "../db/sqlite";
 import { ConfigError } from "../utils/errors";
-import { resolveBaseUrl } from "../config/environment";
-import { KeychainStore } from "../auth/keychainStore";
+import { HttpClient } from "../utils/http";
+import { createLogger } from "../utils/logger";
 
 type ContextOptions = {
   verbose?: boolean;

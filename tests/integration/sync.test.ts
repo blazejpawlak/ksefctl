@@ -1,9 +1,9 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { setupServer } from "msw/node";
-import { http, HttpResponse } from "msw";
 import AdmZip from "adm-zip";
-import YAML from "yaml";
 import keytar from "keytar";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import YAML from "yaml";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";

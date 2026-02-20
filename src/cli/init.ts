@@ -1,6 +1,7 @@
 import YAML from "yaml";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { ensureStorageDirs } from "../core/storage";
 import {
   defaultConfigPath,
   defaultDataRoot,
@@ -8,7 +9,6 @@ import {
   ensureDir,
   expandHome,
 } from "../utils/paths";
-import { ensureStorageDirs } from "../core/storage";
 
 export const initConfig = async (
   configPathOverride?: string,
@@ -30,13 +30,18 @@ export const initConfig = async (
       : path.join(configDir, expanded);
   };
 
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null;
+
   let storageRoot = defaultDataRoot();
   if (exists) {
     try {
       const raw = await fs.readFile(configPath, "utf-8");
-      const parsed = YAML.parse(raw) ?? {};
-      if (parsed.storage?.root) {
-        storageRoot = resolveMaybeRelative(parsed.storage.root);
+      const parsed = (YAML.parse(raw) ?? {}) as Record<string, unknown>;
+      const storage = isRecord(parsed.storage) ? parsed.storage : null;
+      const root = storage?.root;
+      if (typeof root === "string" && root.length > 0) {
+        storageRoot = resolveMaybeRelative(root);
       }
     } catch {
       storageRoot = defaultDataRoot();

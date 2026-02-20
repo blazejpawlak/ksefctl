@@ -4,11 +4,17 @@ import os from "node:os";
 import path from "node:path";
 import { ServiceInstaller } from "../../src/services/serviceInstaller";
 
+type ExecCallback = (
+  error: Error | null,
+  stdout: string,
+  stderr: string,
+) => void;
+
 vi.mock("node:child_process", () => ({
   execFile: vi.fn((...args: unknown[]) => {
     const callback = args[args.length - 1];
     if (typeof callback === "function") {
-      callback(null, "", "");
+      (callback as ExecCallback)(null, "", "");
     }
   }),
 }));
@@ -33,7 +39,7 @@ describe("ServiceInstaller", () => {
     const storageRoot = path.join(tmpDir, "storage");
     process.env.HOME = homeDir;
     process.env.NODE_OPTIONS =
-      '--localstorage-file "/tmp/local storage.json" --trace-warnings';
+      "--localstorage-file \"/tmp/local storage.json\" --trace-warnings";
     if (process.getuid) {
       vi.spyOn(process, "getuid").mockReturnValue(501);
     }

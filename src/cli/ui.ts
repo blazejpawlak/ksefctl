@@ -3,7 +3,7 @@ export const printHeader = (title: string): void => {
 };
 
 export const printKeyValues = (
-  entries: Array<[string, string | number | null]>,
+  entries: [string, string | number | null][],
 ): void => {
   const maxKey = entries.reduce((max, [key]) => Math.max(max, key.length), 0);
   for (const [key, value] of entries) {

@@ -1,6 +1,6 @@
+import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import fs from "node:fs/promises";
 
 export const APP_NAME = "ksefctl";
 
@@ -21,7 +21,7 @@ export const defaultConfigPath = (): string => {
   if (platform === "darwin") {
     return path.join(os.homedir(), `.${APP_NAME}`, "config.yaml");
   }
-  const xdg = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
+  const xdg = process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config");
   return path.join(xdg, APP_NAME, "config.yaml");
 };
 
@@ -31,7 +31,7 @@ export const defaultDataRoot = (): string => {
     return path.join(os.homedir(), `.${APP_NAME}`);
   }
   const xdg =
-    process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share");
+    process.env.XDG_DATA_HOME ?? path.join(os.homedir(), ".local", "share");
   return path.join(xdg, APP_NAME);
 };
 

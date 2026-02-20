@@ -371,6 +371,13 @@ npm test
 npm run test:integration
 ```
 
+## Lint
+
+```bash
+npm run lint
+npm run lint:fix
+```
+
 ## Verification checklist
 
 1. `ksefctl system init` → config + storage directories created
@@ -399,8 +406,15 @@ KSeF API contract: https://github.com/CIRFMF/ksef-docs/blob/main/open-api.json
 
 ```bash
 npm ci
+npm run lint:fix
 npm run build
 npm test
+```
+
+All-in-one:
+
+```bash
+npm run solution
 ```
 
 ## License

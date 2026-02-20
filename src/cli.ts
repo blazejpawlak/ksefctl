@@ -5,26 +5,31 @@ import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createContext } from "./cli/context";
-import { sanitizeConfig } from "./config/loadConfig";
-import { exitCodeFromError, ConfigError } from "./utils/errors";
-import { SyncService } from "./core/syncService";
-import { StatusService } from "./core/statusService";
-import { Notifier } from "./notifications/notifier";
-import { ServiceInstaller } from "./services/serviceInstaller";
-import { printHeader, printKeyValues, printList } from "./cli/ui";
-import { clearSecret, isValidNip, setSecret, showSecrets } from "./cli/secrets";
 import {
   bootstrapInteractive,
   ensureInitialized,
   getInitializationStatus,
   resetAndBootstrap,
 } from "./cli/bootstrap";
-import { promptText } from "./cli/prompt";
+import { createContext } from "./cli/context";
+import {
+  clearSecret,
+  isValidNip,
+  setSecret,
+  showSecrets,
+} from "./cli/keychain";
 import { createProgressRenderer } from "./cli/progress";
+import { promptText } from "./cli/prompt";
+import { printHeader, printKeyValues, printList } from "./cli/ui";
+import { sanitizeConfig } from "./config/loadConfig";
+import { StatusService } from "./core/statusService";
+import { SyncService } from "./core/syncService";
+import { Notifier } from "./notifications/notifier";
+import { ServiceInstaller } from "./services/serviceInstaller";
+import { exitCodeFromError, ConfigError } from "./utils/errors";
+import { buildNodeOptionsWithLocalstorage } from "./utils/nodeOptions";
 import { defaultDataRoot, ensureDir } from "./utils/paths";
 import { formatDuration, sleep, sleepWithCountdown } from "./utils/time";
-import { buildNodeOptionsWithLocalstorage } from "./utils/nodeOptions";
 
 const resolveLocalstoragePath = (): string =>
   path.join(defaultDataRoot(), "localstorage.json");
@@ -43,7 +48,7 @@ const program = new Command();
 const getCommandPath = (command: Command): string => {
   const names: string[] = [];
   let current: Command | null = command;
-  while (current && current.parent) {
+  while (current?.parent) {
     names.unshift(current.name());
     current = current.parent;
   }
@@ -54,7 +59,7 @@ const sanitizeForTerminal = (value: string): string =>
   value.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
 
 const printLabelValues = (
-  entries: Array<[string, string | number | null]>,
+  entries: [string, string | number | null][],
 ): void => {
   for (const [key, value] of entries) {
     console.log(`${key}: ${value ?? "-"}`);
@@ -79,12 +84,64 @@ type OptionMeta = {
 
 type ShellType = "bash" | "zsh" | "fish";
 
+type RootOptions = {
+  config?: string;
+  verbose?: boolean;
+  firstRun?: boolean;
+};
+
+type InitOptions = {
+  force?: boolean;
+  yes?: boolean;
+};
+
+type VerifyOptions = {
+  nip?: string;
+  verbose?: boolean;
+};
+
+type SyncOptions = {
+  once?: boolean;
+  nip?: string;
+  forceRedownload?: string;
+  forceRedownloadAll?: boolean;
+  verbose?: boolean;
+};
+
+type DaemonOptions = {
+  verbose?: boolean;
+};
+
+type ServiceInstallOptions = {
+  verbose?: boolean;
+};
+
+type StatusOptions = {
+  json?: boolean;
+  verbose?: boolean;
+};
+
+type ConfigShowOptions = {
+  verbose?: boolean;
+};
+
+type SecretSetOptions = {
+  nip?: string;
+  tokenStdin?: boolean;
+};
+
+type SecretClearOptions = {
+  nip: string;
+};
+
+const getRootOptions = (): RootOptions => program.opts<RootOptions>();
+
 const parseOptionMeta = (option: {
   flags: string;
   description?: string;
 }): OptionMeta => {
   const takesValue = /<[^>]+>|\[[^\]]+\]/.test(option.flags);
-  const valueMatch = option.flags.match(/<(\w+)>|\[(\w+)\]/);
+  const valueMatch = /<(\w+)>|\[(\w+)\]/.exec(option.flags);
   const valueName = valueMatch ? (valueMatch[1] ?? valueMatch[2]) : undefined;
   const parts = option.flags
     .split(/[ ,|]+/)
@@ -157,33 +214,33 @@ const renderBashCompletion = (spec: {
   const lines = [
     "_ksefctl_complete() {",
     "  local cur",
-    '  cur="${COMP_WORDS[COMP_CWORD]}"',
+    "  cur=\"${COMP_WORDS[COMP_CWORD]}\"",
     "  local prev",
-    '  prev="${COMP_WORDS[COMP_CWORD-1]}"',
-    '  if [[ "$prev" == "--config" || "$prev" == "-c" ]]; then',
-    '    COMPREPLY=( $(compgen -f -- "$cur") )',
+    "  prev=\"${COMP_WORDS[COMP_CWORD-1]}\"",
+    "  if [[ \"$prev\" == \"--config\" || \"$prev\" == \"-c\" ]]; then",
+    "    COMPREPLY=( $(compgen -f -- \"$cur\") )",
     "    return 0",
     "  fi",
-    '  if [[ "$cur" == --config=* ]]; then',
-    '    local pathpart="${cur#--config=}"',
-    '    local matches=( $(compgen -f -- "$pathpart") )',
+    "  if [[ \"$cur\" == --config=* ]]; then",
+    "    local pathpart=\"${cur#--config=}\"",
+    "    local matches=( $(compgen -f -- \"$pathpart\") )",
     "    COMPREPLY=()",
-    '    for m in "${matches[@]}"; do COMPREPLY+=("--config=$m"); done',
+    "    for m in \"${matches[@]}\"; do COMPREPLY+=(\"--config=$m\"); done",
     "    return 0",
     "  fi",
-    '  local cmdpath=""',
+    "  local cmdpath=\"\"",
     "  local word",
     "  for ((i=1; i<COMP_CWORD; i++)); do",
-    '    word="${COMP_WORDS[i]}"',
-    '    if [[ "$word" == -- ]]; then break; fi',
-    '    if [[ "$word" == -* ]]; then',
-    '      if [[ $i -lt $((COMP_CWORD-1)) && "${COMP_WORDS[i+1]}" != -* ]]; then',
+    "    word=\"${COMP_WORDS[i]}\"",
+    "    if [[ \"$word\" == -- ]]; then break; fi",
+    "    if [[ \"$word\" == -* ]]; then",
+    "      if [[ $i -lt $((COMP_CWORD-1)) && \"${COMP_WORDS[i+1]}\" != -* ]]; then",
     "        ((i++))",
     "      fi",
     "      continue",
     "    fi",
-    '    case "$cmdpath" in',
-    '      "")',
+    "    case \"$cmdpath\" in",
+    "      \"\")",
     `        case \"$word\" in ${topLevel.replace(/ /g, "|")}) cmdpath=\"$word\";; *) break;; esac`,
     "        ;;",
   ];
@@ -201,8 +258,8 @@ const renderBashCompletion = (spec: {
   }
   lines.push("    esac");
   lines.push("  done");
-  lines.push('  if [[ "$cur" == -* ]]; then');
-  lines.push('    case "$cmdpath" in');
+  lines.push("  if [[ \"$cur\" == -* ]]; then");
+  lines.push("    case \"$cmdpath\" in");
   for (const [path, options] of Object.entries(spec.optionsByPath)) {
     const names = optionNames(options).join(" ");
     lines.push(`      \"${path}\")`);
@@ -218,7 +275,7 @@ const renderBashCompletion = (spec: {
   lines.push(`    COMPREPLY=( $(compgen -W \"${topLevel}\" -- \"$cur\") )`);
   lines.push("    return 0");
   lines.push("  fi");
-  lines.push('  case "$cmdpath" in');
+  lines.push("  case \"$cmdpath\" in");
   for (const [path, subs] of Object.entries(spec.subcommandsByPath)) {
     if (path === "" || subs.length === 0) continue;
     const depth = path.split(" ").length + 1;
@@ -252,27 +309,27 @@ const renderZshCompletion = (spec: {
     "      return",
     "      ;;",
     "  esac",
-    '  local cur="${words[CURRENT]}"',
-    '  local prev="${words[CURRENT-1]}"',
-    '  if [[ "$prev" == "--config" || "$prev" == "-c" ]]; then',
+    "  local cur=\"${words[CURRENT]}\"",
+    "  local prev=\"${words[CURRENT-1]}\"",
+    "  if [[ \"$prev\" == \"--config\" || \"$prev\" == \"-c\" ]]; then",
     "    _files",
     "    return",
     "  fi",
-    '  local cmdpath=""',
+    "  local cmdpath=\"\"",
     "  local word",
     "  local i=2",
     "  while (( i < CURRENT )); do",
-    '    word="${words[i]}"',
-    '    if [[ "$word" == -- ]]; then break; fi',
-    '    if [[ "$word" == -* ]]; then',
-    '      if (( i < CURRENT - 1 )) && [[ "${words[i+1]}" != -* ]]; then',
+    "    word=\"${words[i]}\"",
+    "    if [[ \"$word\" == -- ]]; then break; fi",
+    "    if [[ \"$word\" == -* ]]; then",
+    "      if (( i < CURRENT - 1 )) && [[ \"${words[i+1]}\" != -* ]]; then",
     "        (( i++ ))",
     "      fi",
     "      (( i++ ))",
     "      continue",
     "    fi",
-    '    case "$cmdpath" in',
-    '      "")',
+    "    case \"$cmdpath\" in",
+    "      \"\")",
     `        case \"$word\" in ${(spec.subcommandsByPath[""] ?? []).join("|")}) cmdpath=\"$word\";; *) break;; esac`,
     "        ;;",
   ];
@@ -291,8 +348,8 @@ const renderZshCompletion = (spec: {
   lines.push("    esac");
   lines.push("    (( i++ ))");
   lines.push("  done");
-  lines.push('  if [[ "$cur" == -* ]]; then');
-  lines.push('    case "$cmdpath" in');
+  lines.push("  if [[ \"$cur\" == -* ]]; then");
+  lines.push("    case \"$cmdpath\" in");
   for (const [path, options] of Object.entries(spec.optionsByPath)) {
     const names = optionNames(options).join(" ");
     lines.push(`      \"${path}\")`);
@@ -303,7 +360,7 @@ const renderZshCompletion = (spec: {
   lines.push("    esac");
   lines.push("    return");
   lines.push("  fi");
-  lines.push('  case "$cmdpath" in');
+  lines.push("  case \"$cmdpath\" in");
   for (const [path, subs] of Object.entries(spec.subcommandsByPath)) {
     if (path === "" || subs.length === 0) continue;
     const depth = path.split(" ").length + 2;
@@ -315,7 +372,7 @@ const renderZshCompletion = (spec: {
   }
   lines.push("  esac");
   lines.push("}");
-  lines.push('_ksefctl "$@"');
+  lines.push("_ksefctl \"$@\"");
   return lines.join("\n");
 };
 
@@ -347,10 +404,10 @@ const renderFishCompletion = (spec: {
       const shortFlag = option.short ? `-s ${option.short.slice(1)}` : "";
       const longFlag = option.long ? `-l ${option.long.slice(2)}` : "";
       const description = option.description
-        ? `-d \"${option.description.replace(/\"/g, '\\\\"')}\"`
+        ? `-d \"${option.description.replace(/\"/g, "\\\\\"")}\"`
         : "";
       const valueArgs = isConfigOption(option)
-        ? '-r -a "(__fish_complete_path)"'
+        ? "-r -a \"(__fish_complete_path)\""
         : option.takesValue
           ? "-r"
           : "";
@@ -438,7 +495,7 @@ const appendRcBlock = async (
 };
 
 const shQuote = (value: string): string => {
-  const escaped = value.replace(/'/g, `'\\''`);
+  const escaped = value.replace(/'/g, "'\\''");
   return `'${escaped}'`;
 };
 
@@ -675,7 +732,7 @@ const handleFirstRun = async (options: {
   });
 
   printHeader("First Run");
-  const entries: Array<[string, string | number | null]> = [
+  const entries: [string, string | number | null][] = [
     ["completion", completionStatus],
     ["init", initNow ? "started" : "declined"],
   ];
@@ -718,7 +775,7 @@ system
   .description("Create config template and storage directories")
   .option("-f, --force", "reset config and re-run bootstrap")
   .option("--yes", "skip confirmation prompt")
-  .action(async (options) => {
+  .action(async (options: InitOptions) => {
     try {
       if (!process.stdin.isTTY) {
         throw new ConfigError("Init requires an interactive terminal");
@@ -734,15 +791,17 @@ system
             return;
           }
         }
-        await resetAndBootstrap(program.opts().config);
+        const { config } = getRootOptions();
+        await resetAndBootstrap(config);
       } else {
-        const status = await getInitializationStatus(program.opts().config);
+        const { config } = getRootOptions();
+        const status = await getInitializationStatus(config);
         if (status.initialized) {
           printHeader("Init");
           printKeyValues([["status", "already initialized"]]);
           return;
         }
-        await bootstrapInteractive(program.opts().config);
+        await bootstrapInteractive(config);
       }
       printHeader("Init");
       printKeyValues([["status", "initialized"]]);
@@ -757,12 +816,12 @@ system
   .description("Validate authentication for configured environment")
   .option("--nip <nip>", "validate a single NIP")
   .option("-v, --verbose", "enable verbose logging")
-  .action(async (options) => {
+  .action(async (options: VerifyOptions) => {
     const renderer = process.stderr.isTTY
       ? createProgressRenderer({ stream: process.stderr })
       : null;
     try {
-      const rootOpts = program.opts();
+      const rootOpts = getRootOptions();
       const verbose = options.verbose ?? rootOpts.verbose;
       const { config } = rootOpts;
       await ensureInitialized(config);
@@ -809,14 +868,14 @@ program
     "force re-download of all invoices in sync window",
   )
   .option("-v, --verbose", "enable verbose logging")
-  .action(async (options) => {
+  .action(async (options: SyncOptions) => {
     let started = false;
     let logFile: string | null = null;
     const renderer = process.stderr.isTTY
       ? createProgressRenderer({ stream: process.stderr })
       : null;
     try {
-      const rootOpts = program.opts();
+      const rootOpts = getRootOptions();
       const verbose = options.verbose ?? rootOpts.verbose;
       const { config } = rootOpts;
       await ensureInitialized(config);
@@ -924,8 +983,8 @@ program
   .command("daemon")
   .description("Run continuous foreground sync")
   .option("-v, --verbose", "enable verbose logging")
-  .action(async (options) => {
-    const rootOpts = program.opts();
+  .action(async (options: DaemonOptions) => {
+    const rootOpts = getRootOptions();
     const verbose = options.verbose ?? rootOpts.verbose;
     const { config } = rootOpts;
     const renderer =
@@ -967,7 +1026,7 @@ program
       );
       const statusService = new StatusService(ctx.store);
       let iteration = 0;
-      // eslint-disable-next-line no-constant-condition
+
       while (true) {
         iteration += 1;
         const startedAt = Date.now();
@@ -983,7 +1042,7 @@ program
         const durationMs = Date.now() - startedAt;
         const status = await statusService.getStatus();
         printHeader("Daemon Iteration");
-        const summaryEntries: Array<[string, string | number | null]> = [
+        const summaryEntries: [string, string | number | null][] = [
           ["Status", errorMessage ? "Failed" : "Completed"],
           ["Downloaded", result?.downloaded ?? 0],
           ["Skipped", result?.skipped ?? 0],
@@ -1025,9 +1084,9 @@ systemService
   .command("install")
   .description("Install and enable launchd/systemd service")
   .option("-v, --verbose", "enable verbose logging")
-  .action(async (options) => {
+  .action(async (options: ServiceInstallOptions) => {
     try {
-      const rootOpts = program.opts();
+      const rootOpts = getRootOptions();
       const verbose = options.verbose ?? rootOpts.verbose;
       const { config } = rootOpts;
       await ensureInitialized(config);
@@ -1055,7 +1114,7 @@ systemService
   .description("Remove launchd/systemd service")
   .action(async () => {
     try {
-      const { config } = program.opts();
+      const { config } = getRootOptions();
       await ensureInitialized(config);
       const installer = new ServiceInstaller();
       const pathRemoved = await installer.uninstall();
@@ -1072,9 +1131,9 @@ program
   .description("Show last sync status")
   .option("--json", "output JSON")
   .option("-v, --verbose", "enable verbose logging")
-  .action(async (options) => {
+  .action(async (options: StatusOptions) => {
     try {
-      const rootOpts = program.opts();
+      const rootOpts = getRootOptions();
       const verbose = options.verbose ?? rootOpts.verbose;
       const { config } = rootOpts;
       await ensureInitialized(config);
@@ -1128,9 +1187,9 @@ systemConfig
   .command("show")
   .description("Show sanitized effective config")
   .option("-v, --verbose", "enable verbose logging")
-  .action(async (options) => {
+  .action(async (options: ConfigShowOptions) => {
     try {
-      const rootOpts = program.opts();
+      const rootOpts = getRootOptions();
       const verbose = options.verbose ?? rootOpts.verbose;
       const { config } = rootOpts;
       await ensureInitialized(config);
@@ -1152,10 +1211,11 @@ secret
   .description("Store KSeF token in keychain")
   .option("--nip <nip>", "NIP (10 digits)")
   .option("--token-stdin", "Read KSeF token from stdin")
-  .action(async (options) => {
+  .action(async (options: SecretSetOptions) => {
     try {
+      const { config } = getRootOptions();
       const result = await setSecret(
-        program.opts().config,
+        config,
         options.nip,
         undefined,
         Boolean(options.tokenStdin),
@@ -1173,7 +1233,8 @@ secret
   .description("Show keychain secret presence")
   .action(async () => {
     try {
-      const entries = await showSecrets(program.opts().config);
+      const { config } = getRootOptions();
+      const entries = await showSecrets(config);
       printHeader("Secrets");
       printKeyValues(
         entries.map((entry) => [
@@ -1191,9 +1252,10 @@ secret
   .command("clear")
   .description("Remove keychain secret for a NIP")
   .requiredOption("--nip <nip>", "NIP (10 digits)")
-  .action(async (options) => {
+  .action(async (options: SecretClearOptions) => {
     try {
-      await clearSecret(program.opts().config, options.nip);
+      const { config } = getRootOptions();
+      await clearSecret(config, options.nip);
       printHeader("Secret Clear");
       printKeyValues([["nip", options.nip]]);
     } catch (error) {

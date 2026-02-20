@@ -1,5 +1,6 @@
-import initSqlJs, { Database } from "sql.js";
+import type { Database } from "sql.js";
 import lockfile from "proper-lockfile";
+import initSqlJs from "sql.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { ensureDir } from "../utils/paths";
@@ -54,7 +55,7 @@ const hasColumn = (db: Database, table: string, column: string): boolean => {
 
 const migrateLegacyTables = (db: Database): void => {
   if (!hasColumn(db, "invoices", "nip")) {
-    db.exec(`ALTER TABLE invoices RENAME TO invoices_legacy;`);
+    db.exec("ALTER TABLE invoices RENAME TO invoices_legacy;");
     db.exec(
       `CREATE TABLE invoices (
         nip TEXT NOT NULL,
@@ -73,12 +74,12 @@ const migrateLegacyTables = (db: Database): void => {
        SELECT 'legacy', ksef_number, file_path, hash, status, downloaded_at, received_at, error
        FROM invoices_legacy;`,
     );
-    db.exec(`DROP TABLE invoices_legacy;`);
+    db.exec("DROP TABLE invoices_legacy;");
   }
 
   if (!hasColumn(db, "continuation_points", "nip")) {
     db.exec(
-      `ALTER TABLE continuation_points RENAME TO continuation_points_legacy;`,
+      "ALTER TABLE continuation_points RENAME TO continuation_points_legacy;",
     );
     db.exec(
       `CREATE TABLE continuation_points (
@@ -92,7 +93,7 @@ const migrateLegacyTables = (db: Database): void => {
       `INSERT INTO continuation_points (nip, subject_type, cursor)
        SELECT 'legacy', subject_type, cursor FROM continuation_points_legacy;`,
     );
-    db.exec(`DROP TABLE continuation_points_legacy;`);
+    db.exec("DROP TABLE continuation_points_legacy;");
   }
 };
 

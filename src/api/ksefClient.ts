@@ -1,4 +1,4 @@
-import { HttpClient } from "../utils/http";
+import type { HttpClient } from "../utils/http";
 
 export type AuthenticationChallengeResponse = {
   challenge: string;
@@ -40,7 +40,7 @@ export type InvoiceExportStatusResponse = {
     isTruncated?: boolean;
     lastPermanentStorageDate?: string;
     permanentStorageHwmDate?: string;
-    parts?: Array<{
+    parts?: {
       ordinalNumber: number;
       partName: string;
       method: string;
@@ -50,7 +50,7 @@ export type InvoiceExportStatusResponse = {
       encryptedPartSize?: number;
       encryptedPartHash?: string;
       expirationDate?: string;
-    }>;
+    }[];
   };
 };
 

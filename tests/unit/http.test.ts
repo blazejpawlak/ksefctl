@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HttpClient } from "../../src/utils/http";
 import { NetworkError } from "../../src/utils/errors";
+import { HttpClient } from "../../src/utils/http";
 
 const createClient = () =>
   new HttpClient({
