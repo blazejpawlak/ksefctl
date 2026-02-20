@@ -70,6 +70,7 @@ npm run generate:openapi
 Lint/format:
 
 - No ESLint/Prettier/Biome configured. Do not introduce new tooling without discussion.
+- Do run the @linter agent to lint
 
 ## Key paths
 

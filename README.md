@@ -54,45 +54,52 @@ Node requirement: `>= 22`.
 ## Quick start
 
 ```bash
-ksefctl init
-ksefctl auth verify
+ksefctl system init
+ksefctl system verify
 ksefctl sync --once
 ```
 
-`init` is interactive and stores tokens in keychain.
+`system init` is interactive and stores tokens in keychain.
 
 ### Bootstrap (interactive)
 
-1. Run `ksefctl init` and select the environment.
+1. Run `ksefctl system init` and select the environment.
 2. Enter NIP(s) and tokens as prompted.
-3. Use `ksefctl auth verify` to validate credentials.
+3. Use `ksefctl system verify` to validate credentials.
 
 The environment prompt shows full names with the API URLs for clarity.
 
 ## Commands
 
-- `ksefctl init [--force] [--yes]` – create config template and storage directories.
-- `ksefctl auth verify [--nip <nip>] [--verbose]` – validate authentication against the configured environment.
-- `ksefctl sync [--once] [--nip <nip>] [--force-redownload <ksefNumber>] [--force-redownload-all] [--verbose]` – run sync.
-- `ksefctl daemon [--verbose]` – run continuously in foreground.
-- `ksefctl install-service [--verbose]` – install + enable launchd/systemd.
-- `ksefctl uninstall-service` – remove launchd/systemd.
-- `ksefctl status [--json] [--verbose]` – show last sync status.
-- `ksefctl config show [--verbose]` – show sanitized config.
-- `ksefctl secret set [--nip <nip>] [--token-stdin]` – store KSeF token in keychain.
-- `ksefctl secret show` – show which NIPs have keychain secrets.
-- `ksefctl secret clear --nip <nip>` – remove keychain secret for a NIP.
-- `ksefctl completion <bash|zsh|fish>` – print shell completion script.
+- `ksefctl sync [--once] [--nip <nip>] [--force-redownload <ksefNumber>] [--force-redownload-all]` – run sync.
+- `ksefctl daemon` – run continuously in foreground.
+- `ksefctl status [--json]` – show last sync status.
+- `ksefctl version` – show current version.
+- `ksefctl system init [--force] [--yes]` – create config template and storage directories.
+- `ksefctl system verify [--nip <nip>]` – validate authentication against the configured environment.
+- `ksefctl system service install` – install + enable launchd/systemd.
+- `ksefctl system service uninstall` – remove launchd/systemd.
+- `ksefctl system config show` – show sanitized config.
+- `ksefctl system secret set [--nip <nip>] [--token-stdin]` – store KSeF token in keychain.
+- `ksefctl system secret show` – show which NIPs have keychain secrets.
+- `ksefctl system secret clear --nip <nip>` – remove keychain secret for a NIP.
+- `ksefctl system completion <bash|zsh|fish>` – print shell completion script.
 
-All commands except `init` require a config file and keychain tokens for each configured NIP.
+Global options:
 
-`init --force` will remove the config file and keychain tokens for all configured NIPs.
+- `-c, --config <path>` – override config path.
+- `-v, --verbose` – enable detailed logs for supported commands.
+- `--no-first-run` – disable first-run prompts for the no-args path.
 
-`init` requires an interactive terminal. Use `--yes` with `--force` to skip confirmation.
+All commands except `system init` require a config file and keychain tokens for each configured NIP.
 
-`auth verify` performs the authentication flow only; it does not download invoices.
+`system init --force` will remove the config file and keychain tokens for all configured NIPs.
 
-Sync prints short progress messages on stderr; use `--verbose` for detailed logs.
+`system init` requires an interactive terminal. Use `--yes` with `--force` to skip confirmation.
+
+`system verify` performs the authentication flow only; it does not download invoices.
+
+Sync prints short progress messages on stderr; use `-v/--verbose` for detailed logs.
 
 If an invoice directory is missing on disk, sync will re-download it even if the DB marks it as downloaded.
 `--force-redownload-all` resets cursors to `sync.initialSyncFrom` (or `2026-02-01`) and re-downloads all available invoices for the selected NIP.
@@ -118,13 +125,13 @@ ksefctl sync --once
 Set a KSeF token for a NIP:
 
 ```bash
-ksefctl secret set
+ksefctl system secret set
 ```
 
 Non-interactive (read token from stdin):
 
 ```bash
-cat token.txt | ksefctl secret set --nip 1234567890 --token-stdin
+cat token.txt | ksefctl system secret set --nip 1234567890 --token-stdin
 ```
 
 Sync a single NIP:
@@ -157,19 +164,19 @@ notifications:
 
 ## Shell completion
 
-On first run (when the ksefctl data directory does not exist), ksefctl will offer to install completion for the detected shell and prompt to bootstrap initialization. You can disable the prompt with `--no-first-run` or `KSEFCTL_NO_FIRST_RUN=1`.
+On first run (when the ksefctl data directory does not exist), and only when running `ksefctl` with no subcommand in an interactive TTY, ksefctl will offer to install completion for the detected shell and prompt to bootstrap initialization. Running `ksefctl --help` or any subcommand skips the prompt. You can disable the no-args prompt with `--no-first-run` or `KSEFCTL_NO_FIRST_RUN=1`.
 
 Bash (current session):
 
 ```bash
-source <(ksefctl completion bash)
+source <(ksefctl system completion bash)
 ```
 
 Zsh:
 
 ```bash
 mkdir -p ~/.zfunc
-ksefctl completion zsh > ~/.zfunc/_ksefctl
+ksefctl system completion zsh > ~/.zfunc/_ksefctl
 fpath=(~/.zfunc $fpath)
 autoload -Uz compinit && compinit
 ```
@@ -178,7 +185,7 @@ Fish:
 
 ```bash
 mkdir -p ~/.config/fish/completions
-ksefctl completion fish > ~/.config/fish/completions/ksefctl.fish
+ksefctl system completion fish > ~/.config/fish/completions/ksefctl.fish
 ```
 
 Auto-install details (first run):
@@ -192,7 +199,9 @@ Auto-install details (first run):
 - Fish:
   - writes `${XDG_CONFIG_HOME:-~/.config}/fish/completions/ksefctl.fish`
 
-Auto-install is skipped when running as root or when rc files are symlinked (you'll get a message with manual steps).
+Auto-install is skipped when running as root or when rc files are symlinked (you'll get a message explaining why; use `ksefctl system completion <shell>` for manual setup).
+
+If completion is installed, ksefctl prints a short "activate now" command (for example, `source ~/.zshrc`).
 
 ## Configuration
 
@@ -229,7 +238,7 @@ Key config fields:
 
 Minimal config example: `docs/minimal-config.yaml`
 
-Use `ksefctl secret set` to store a token in keychain; add the NIP to `organizations` in config.
+Use `ksefctl system secret set` to store a token in keychain; add the NIP to `organizations` in config.
 
 Each NIP in `organizations` is synced every cycle (use `--nip` for ad-hoc runs).
 
@@ -313,13 +322,13 @@ storageRoot/
 
 ### macOS launchd (user agent)
 
-`ksefctl install-service` creates:
+`ksefctl system service install` creates:
 
 - `~/Library/LaunchAgents/com.ksefctl.plist`
 
 ### Linux systemd
 
-`ksefctl install-service` creates:
+`ksefctl system service install` creates:
 
 - User service: `~/.config/systemd/user/ksefctl.service`
 - System service (if run as root): `/etc/systemd/system/ksefctl.service`
@@ -351,8 +360,8 @@ If invoice package parts are served from a different host, add it to `pinningHos
 - Keychain service name: `ksefctl`
 - Account name defaults to `<environment>:nip:<nip>` (one entry per NIP)
 - Override via `auth.keychainServiceName`
-- Daemon mode is non-interactive; make sure tokens exist via `ksefctl secret set`
-- `ksefctl secret show` only reports presence, never the token value
+- Daemon mode is non-interactive; make sure tokens exist via `ksefctl system secret set`
+- `ksefctl system secret show` only reports presence, never the token value
 - Interactive commands will prompt for missing tokens and store them in keychain
 
 ## Tests
@@ -364,8 +373,8 @@ npm run test:integration
 
 ## Verification checklist
 
-1. `ksefctl init` → config + storage directories created
-2. `ksefctl auth verify` → auth succeeds or returns exit code 2
+1. `ksefctl system init` → config + storage directories created
+2. `ksefctl system verify` → auth succeeds or returns exit code 2
 3. `ksefctl sync --once` → invoices written, DB updated
 4. `ksefctl status` → last sync time + counts
 5. `npm test` and `npm run test:integration` → pass

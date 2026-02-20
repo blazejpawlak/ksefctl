@@ -43,8 +43,8 @@ describe("completion helpers", () => {
 
   it("includes options in bash completion output", () => {
     const program = new Command();
-    program.option("--config <path>");
-    program.command("sync").option("--once").option("--verbose");
+    program.option("--config <path>").option("-v, --verbose");
+    program.command("sync").option("--once");
 
     const spec = buildCompletionSpec(program);
     const output = renderBashCompletion(spec);

@@ -16,7 +16,7 @@ const ensureConfigExists = async (
     .then(() => true)
     .catch(() => false);
   if (!exists) {
-    throw new ConfigError("System not initialized. Run 'ksefctl init'.");
+    throw new ConfigError("System not initialized. Run 'ksefctl system init'.");
   }
   return configPath;
 };

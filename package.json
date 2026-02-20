@@ -24,7 +24,7 @@
     "build": "tsc -p tsconfig.build.json",
     "clean": "rimraf dist",
     "generate:openapi": "node scripts/generate-openapi.mjs",
-    "postinstall": "npm --prefix node_modules/@akmf/ksef-fe-invoice-converter install && npm --prefix node_modules/@akmf/ksef-fe-invoice-converter run build && node scripts/prepare-ksef-pdf-generator.cjs",
+    "postinstall": "npm --prefix node_modules/@akmf/ksef-fe-invoice-converter install && node scripts/patch-api-extractor.cjs && npm --prefix node_modules/@akmf/ksef-fe-invoice-converter run build && node scripts/prepare-ksef-pdf-generator.cjs",
     "test": "NODE_OPTIONS= vitest run",
     "test:integration": "NODE_OPTIONS= NODE_NO_WARNINGS=1 vitest run --config vitest.integration.config.ts"
   },

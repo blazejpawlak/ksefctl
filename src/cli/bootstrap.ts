@@ -66,7 +66,7 @@ export const ensureInitialized = async (configPathOverride?: string) => {
         ? ` Missing token for NIP(s): ${status.missingNips.join(", ")}.`
         : "";
     throw new ConfigError(
-      `System not initialized.${missingInfo} Run "ksefctl init".`,
+      `System not initialized.${missingInfo} Run "ksefctl system init".`,
     );
   }
   return status;

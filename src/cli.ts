@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import YAML from "yaml";
+import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -144,7 +145,7 @@ const buildCompletionSpec = (root: Command) => {
   };
 
   visit(root, "", []);
-  subcommandsByPath["completion"] = ["bash", "zsh", "fish"];
+  subcommandsByPath["system completion"] = ["bash", "zsh", "fish"];
   return { subcommandsByPath, optionsByPath };
 };
 
@@ -380,6 +381,17 @@ const ensureRegularFile = async (filePath: string): Promise<boolean> => {
   }
 };
 
+const ensureSafeCompletionDir = async (dirPath: string): Promise<void> => {
+  const stat = await fs.stat(dirPath);
+  const uid = process.getuid?.();
+  if (uid !== undefined && stat.uid !== uid) {
+    throw new Error("Completion directory is not owned by current user");
+  }
+  if ((stat.mode & 0o022) !== 0) {
+    throw new Error("Completion directory is group/world-writable");
+  }
+};
+
 const appendRcBlock = async (
   rcPath: string,
   lines: string[],
@@ -389,16 +401,40 @@ const appendRcBlock = async (
   const block = [markerStart, ...lines, markerEnd].join("\n");
   const exists = await ensureRegularFile(rcPath);
   if (!exists) {
-    await fs.writeFile(rcPath, `${block}\n`, "utf-8");
+    const handle = await fs.open(
+      rcPath,
+      fsConstants.O_WRONLY |
+        fsConstants.O_CREAT |
+        fsConstants.O_EXCL |
+        fsConstants.O_NOFOLLOW,
+    );
+    try {
+      await handle.writeFile(`${block}\n`, "utf-8");
+    } finally {
+      await handle.close();
+    }
     return;
   }
-  const content = await fs.readFile(rcPath, "utf-8");
-  if (content.includes(markerStart)) {
-    return;
+  const handle = await fs.open(
+    rcPath,
+    fsConstants.O_RDWR | fsConstants.O_NOFOLLOW,
+  );
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile()) {
+      throw new Error("Refusing to modify non-file rc path");
+    }
+    const content = await handle.readFile("utf-8");
+    if (content.includes(markerStart)) {
+      return;
+    }
+    const trimmed = content.trimEnd();
+    const prefix = trimmed.length === 0 ? "" : "\n\n";
+    await handle.truncate(0);
+    await handle.writeFile(`${trimmed}${prefix}${block}\n`, "utf-8");
+  } finally {
+    await handle.close();
   }
-  const trimmed = content.trimEnd();
-  const prefix = trimmed.length === 0 ? "" : "\n\n";
-  await fs.writeFile(rcPath, `${trimmed}${prefix}${block}\n`, "utf-8");
 };
 
 const shQuote = (value: string): string => {
@@ -425,7 +461,11 @@ const selectBashRcPath = async (homeDir: string): Promise<string> => {
 const installCompletion = async (
   shell: ShellType,
   spec: ReturnType<typeof buildCompletionSpec>,
-): Promise<{ installed: boolean; message: string }> => {
+): Promise<{
+  installed: boolean;
+  message: string;
+  activateCommand?: string;
+}> => {
   if (process.getuid?.() === 0) {
     return { installed: false, message: "Skipping completion install as root" };
   }
@@ -435,6 +475,7 @@ const installCompletion = async (
   }
   const completionDir = path.join(defaultDataRoot(), "completions");
   await ensureDir(completionDir);
+  await ensureSafeCompletionDir(completionDir);
 
   if (shell === "fish") {
     const fishDir = path.join(
@@ -445,7 +486,11 @@ const installCompletion = async (
     await ensureDir(fishDir);
     const fishPath = path.join(fishDir, "ksefctl.fish");
     await fs.writeFile(fishPath, `${renderFishCompletion(spec)}\n`, "utf-8");
-    return { installed: true, message: `Installed completion to ${fishPath}` };
+    return {
+      installed: true,
+      message: `Installed completion to ${fishPath}`,
+      activateCommand: `source ${shQuote(fishPath)}`,
+    };
   }
 
   if (shell === "bash") {
@@ -458,7 +503,11 @@ const installCompletion = async (
     const rcPath = await selectBashRcPath(homeDir);
     try {
       await appendRcBlock(rcPath, [`source ${shQuote(completionPath)}`]);
-      return { installed: true, message: `Installed completion to ${rcPath}` };
+      return {
+        installed: true,
+        message: `Installed completion to ${rcPath}`,
+        activateCommand: `source ${shQuote(rcPath)}`,
+      };
     } catch (error) {
       return {
         installed: false,
@@ -475,7 +524,11 @@ const installCompletion = async (
       `fpath=(${shQuote(completionDir)} $fpath)`,
       "autoload -Uz compinit && compinit",
     ]);
-    return { installed: true, message: `Installed completion to ${rcPath}` };
+    return {
+      installed: true,
+      message: `Installed completion to ${rcPath}`,
+      activateCommand: `source ${shQuote(rcPath)}`,
+    };
   } catch (error) {
     return {
       installed: false,
@@ -490,6 +543,51 @@ const detectShell = (): ShellType | null => {
     return shell;
   }
   return null;
+};
+
+const parseConfigOverride = (args: string[]): string | undefined => {
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i] ?? "";
+    if (arg === "--config" || arg === "-c") {
+      const next = args[i + 1];
+      if (next && !next.startsWith("-")) {
+        return next;
+      }
+      return undefined;
+    }
+    if (arg.startsWith("--config=")) {
+      const value = arg.slice("--config=".length);
+      return value.length > 0 ? value : undefined;
+    }
+  }
+  return undefined;
+};
+
+const parseFirstRunFlag = (args: string[]): boolean | undefined =>
+  args.includes("--no-first-run") ? false : undefined;
+
+const hasCommandArgs = (args: string[]): boolean => {
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i] ?? "";
+    if (arg === "--") {
+      return args.slice(i + 1).some((value) => value.length > 0);
+    }
+    if (arg === "--config" || arg === "-c") {
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith("--config=")) {
+      continue;
+    }
+    if (arg.startsWith("-")) {
+      continue;
+    }
+    if (arg.trim().length === 0) {
+      continue;
+    }
+    return true;
+  }
+  return false;
 };
 
 const firstRunMarkerPath = (): string =>
@@ -529,18 +627,11 @@ const writeFirstRunMarker = async (payload: Record<string, unknown>) => {
   await fs.writeFile(markerPath, JSON.stringify(payload, null, 2), "utf-8");
 };
 
-const handleFirstRun = async (actionCommand: Command): Promise<void> => {
-  if (actionCommand.name() === "completion") return;
-  if (
-    actionCommand.name() === "help" ||
-    process.argv.includes("--help") ||
-    process.argv.includes("-h") ||
-    process.argv.includes("help")
-  ) {
-    return;
-  }
-  const opts = program.opts();
-  const shouldRun = await shouldRunFirstRun(opts.firstRun);
+const handleFirstRun = async (options: {
+  configPath?: string;
+  firstRunFlag?: boolean;
+}): Promise<void> => {
+  const shouldRun = await shouldRunFirstRun(options.firstRunFlag);
   if (!shouldRun) return;
 
   const shell = detectShell();
@@ -556,6 +647,9 @@ const handleFirstRun = async (actionCommand: Command): Promise<void> => {
         const result = await installCompletion(shell, spec);
         completionStatus = result.installed ? "installed" : "skipped";
         completionMessage = result.message;
+        if (result.activateCommand) {
+          completionMessage = `${completionMessage} (activate now: ${result.activateCommand})`;
+        }
       } catch (error) {
         completionStatus = "failed";
         completionMessage = (error as Error).message;
@@ -569,7 +663,7 @@ const handleFirstRun = async (actionCommand: Command): Promise<void> => {
 
   const initNow = await promptYesNo("Bootstrap and initialize now? (y/N): ");
   if (initNow) {
-    await bootstrapInteractive(opts.config);
+    await bootstrapInteractive(options.configPath);
   }
 
   await writeFirstRunMarker({
@@ -614,9 +708,12 @@ program
   .name("ksefctl")
   .description("KSeF inbox sync CLI")
   .option("-c, --config <path>", "path to config file")
+  .option("-v, --verbose", "enable verbose logging")
   .option("--no-first-run", "disable first-run prompts");
 
-program
+const system = program.command("system").description("System commands");
+
+system
   .command("init")
   .description("Create config template and storage directories")
   .option("-f, --force", "reset config and re-run bootstrap")
@@ -655,24 +752,25 @@ program
     }
   });
 
-program
-  .command("auth")
-  .description("Authentication commands")
+system
   .command("verify")
   .description("Validate authentication for configured environment")
   .option("--nip <nip>", "validate a single NIP")
-  .option("--verbose", "enable verbose logging")
+  .option("-v, --verbose", "enable verbose logging")
   .action(async (options) => {
     const renderer = process.stderr.isTTY
       ? createProgressRenderer({ stream: process.stderr })
       : null;
     try {
-      await ensureInitialized(program.opts().config);
+      const rootOpts = program.opts();
+      const verbose = options.verbose ?? rootOpts.verbose;
+      const { config } = rootOpts;
+      await ensureInitialized(config);
       const progress = renderer
         ? (message: string) => renderer.update(message)
         : undefined;
-      const ctx = await createContext(program.opts().config, {
-        verbose: options.verbose,
+      const ctx = await createContext(config, {
+        verbose,
         progress,
       });
       if (options.nip && !isValidNip(options.nip)) {
@@ -685,7 +783,7 @@ program
         await ctx.auth.getAccessToken(nip);
       }
       renderer?.done();
-      printHeader("Auth Verify");
+      printHeader("System Verify");
       printKeyValues([
         ["status", "ok"],
         ["environment", ctx.config.environment],
@@ -710,7 +808,7 @@ program
     "--force-redownload-all",
     "force re-download of all invoices in sync window",
   )
-  .option("--verbose", "enable verbose logging")
+  .option("-v, --verbose", "enable verbose logging")
   .action(async (options) => {
     let started = false;
     let logFile: string | null = null;
@@ -718,14 +816,17 @@ program
       ? createProgressRenderer({ stream: process.stderr })
       : null;
     try {
-      await ensureInitialized(program.opts().config);
+      const rootOpts = program.opts();
+      const verbose = options.verbose ?? rootOpts.verbose;
+      const { config } = rootOpts;
+      await ensureInitialized(config);
       const progress = renderer
         ? (message: string) => renderer.update(message)
         : undefined;
-      const ctx = await createContext(program.opts().config, {
-        verbose: options.verbose,
+      const ctx = await createContext(config, {
+        verbose,
         progress,
-        countdownIntervalSeconds: options.verbose ? 10 : 60,
+        countdownIntervalSeconds: verbose ? 10 : 60,
       });
       const runOnce = options.once ?? true;
       if (!runOnce) {
@@ -760,7 +861,7 @@ program
         ["nips", nips.join(", ")],
         ["logFile", ctx.config.logging.file],
       ]);
-      if (!options.verbose) {
+      if (!verbose) {
         console.log("Progress: run with --verbose for detailed logs.");
       }
       started = true;
@@ -822,21 +923,24 @@ program
 program
   .command("daemon")
   .description("Run continuous foreground sync")
-  .option("--verbose", "enable verbose logging")
+  .option("-v, --verbose", "enable verbose logging")
   .action(async (options) => {
+    const rootOpts = program.opts();
+    const verbose = options.verbose ?? rootOpts.verbose;
+    const { config } = rootOpts;
     const renderer =
-      !options.verbose && process.stderr.isTTY
+      !verbose && process.stderr.isTTY
         ? createProgressRenderer({ stream: process.stderr })
         : null;
     try {
-      await ensureInitialized(program.opts().config);
+      await ensureInitialized(config);
       const progress = renderer
         ? (message: string) => renderer.update(message)
         : undefined;
-      const ctx = await createContext(program.opts().config, {
-        verbose: options.verbose,
+      const ctx = await createContext(config, {
+        verbose,
         progress,
-        countdownIntervalSeconds: options.verbose ? 10 : 60,
+        countdownIntervalSeconds: verbose ? 10 : 60,
       });
       const nips = ctx.config.organizations.map((org) => org.nip);
       if (nips.length === 0) {
@@ -913,15 +1017,22 @@ program
     }
   });
 
-program
-  .command("install-service")
+const systemService = system
+  .command("service")
+  .description("Service management commands");
+
+systemService
+  .command("install")
   .description("Install and enable launchd/systemd service")
-  .option("--verbose", "enable verbose logging")
+  .option("-v, --verbose", "enable verbose logging")
   .action(async (options) => {
     try {
-      await ensureInitialized(program.opts().config);
-      const ctx = await createContext(program.opts().config, {
-        verbose: options.verbose,
+      const rootOpts = program.opts();
+      const verbose = options.verbose ?? rootOpts.verbose;
+      const { config } = rootOpts;
+      await ensureInitialized(config);
+      const ctx = await createContext(config, {
+        verbose,
       });
       const installer = new ServiceInstaller();
       const cliArg = process.argv[1];
@@ -931,7 +1042,7 @@ program
         nodePath: process.execPath,
         cliPath: cliArg ? path.resolve(cliArg) : process.execPath,
       });
-      printHeader("Service Install");
+      printHeader("System Service Install");
       printKeyValues([["servicePath", pathInstalled]]);
     } catch (error) {
       console.error((error as Error).message);
@@ -939,15 +1050,16 @@ program
     }
   });
 
-program
-  .command("uninstall-service")
+systemService
+  .command("uninstall")
   .description("Remove launchd/systemd service")
   .action(async () => {
     try {
-      await ensureInitialized(program.opts().config);
+      const { config } = program.opts();
+      await ensureInitialized(config);
       const installer = new ServiceInstaller();
       const pathRemoved = await installer.uninstall();
-      printHeader("Service Uninstall");
+      printHeader("System Service Uninstall");
       printKeyValues([["servicePath", pathRemoved]]);
     } catch (error) {
       console.error((error as Error).message);
@@ -959,12 +1071,15 @@ program
   .command("status")
   .description("Show last sync status")
   .option("--json", "output JSON")
-  .option("--verbose", "enable verbose logging")
+  .option("-v, --verbose", "enable verbose logging")
   .action(async (options) => {
     try {
-      await ensureInitialized(program.opts().config);
-      const ctx = await createContext(program.opts().config, {
-        verbose: options.verbose,
+      const rootOpts = program.opts();
+      const verbose = options.verbose ?? rootOpts.verbose;
+      const { config } = rootOpts;
+      await ensureInitialized(config);
+      const ctx = await createContext(config, {
+        verbose,
       });
       const statusService = new StatusService(ctx.store);
       const status = await statusService.getStatus();
@@ -993,16 +1108,34 @@ program
   });
 
 program
-  .command("config")
-  .description("Config commands")
+  .command("version")
+  .description("Show current version")
+  .action(async () => {
+    try {
+      const pkgPath = path.join(__dirname, "..", "package.json");
+      const raw = await fs.readFile(pkgPath, "utf-8");
+      const parsed = JSON.parse(raw) as { version?: string };
+      console.log(parsed.version ?? "unknown");
+    } catch (error) {
+      console.error((error as Error).message);
+      process.exitCode = exitCodeFromError(error);
+    }
+  });
+
+const systemConfig = system.command("config").description("Config commands");
+
+systemConfig
   .command("show")
   .description("Show sanitized effective config")
-  .option("--verbose", "enable verbose logging")
+  .option("-v, --verbose", "enable verbose logging")
   .action(async (options) => {
     try {
-      await ensureInitialized(program.opts().config);
-      const ctx = await createContext(program.opts().config, {
-        verbose: options.verbose,
+      const rootOpts = program.opts();
+      const verbose = options.verbose ?? rootOpts.verbose;
+      const { config } = rootOpts;
+      await ensureInitialized(config);
+      const ctx = await createContext(config, {
+        verbose,
       });
       const sanitized = sanitizeConfig(ctx.config);
       console.log(YAML.stringify(sanitized));
@@ -1012,9 +1145,7 @@ program
     }
   });
 
-const secret = program
-  .command("secret")
-  .description("Keychain secret commands");
+const secret = system.command("secret").description("Keychain secret commands");
 
 secret
   .command("set")
@@ -1071,7 +1202,7 @@ secret
     }
   });
 
-program
+system
   .command("completion")
   .description("Print shell completion script (used for auto-install)")
   .argument("<shell>", "shell type (bash|zsh|fish)")
@@ -1095,10 +1226,6 @@ program
     );
   });
 
-program.hook("preAction", async (_thisCommand, actionCommand) => {
-  await handleFirstRun(actionCommand);
-});
-
 program.addHelpText("after", () => {
   const leafCommands = collectLeafCommands(program).filter(
     (command) => command !== program,
@@ -1111,23 +1238,30 @@ program.addHelpText("after", () => {
       ? ""
       : `\nCommand-specific options:\n  (Global options apply to all commands.)\n${entries.join("\n")}`;
   const completionNote =
-    "\nShell completion:\n  ksefctl completion <bash|zsh|fish>";
+    "\nShell completion:\n  ksefctl system completion <bash|zsh|fish>";
   const firstRunNote =
-    "\nFirst run:\n  Prompts to install completion and initialize when no config exists (disable with --no-first-run or KSEFCTL_NO_FIRST_RUN=1).";
+    "\nFirst run:\n  Prompts to install completion and initialize when the data root is missing (disable with --no-first-run or KSEFCTL_NO_FIRST_RUN=1).";
   return `${commandOptions}${completionNote}${firstRunNote}`;
 });
 
 const main = async () => {
   try {
-    await ensureLocalstorageNodeOption();
     const args = process.argv.slice(2);
     const hasHelp = args.includes("--help") || args.includes("-h");
-    const hasCommand = args.some((arg) => !arg.startsWith("-") && arg !== "");
-    if (!hasHelp && !hasCommand) {
-      await handleFirstRun(program);
+    const hasCommand = hasCommandArgs(args);
+    if (hasHelp && !hasCommand) {
       program.outputHelp();
       return;
     }
+    if (!hasHelp && !hasCommand) {
+      const configPath = parseConfigOverride(args);
+      const firstRunFlag = parseFirstRunFlag(args);
+      await handleFirstRun({ configPath, firstRunFlag });
+      await ensureLocalstorageNodeOption();
+      program.outputHelp();
+      return;
+    }
+    await ensureLocalstorageNodeOption();
     await program.parseAsync(process.argv);
   } catch (error) {
     console.error((error as Error).message);
