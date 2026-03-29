@@ -18,6 +18,15 @@ export type SyncState = {
   last_downloaded_count: number | null;
 };
 
+export type InvoiceNotificationKind = "unpaid_due";
+
+export type InvoiceNotificationRecord = {
+  nip: string;
+  ksef_number: string;
+  notification_kind: InvoiceNotificationKind;
+  notified_at: string;
+};
+
 export const getInvoice = (
   db: Database,
   nip: string,
@@ -128,5 +137,38 @@ export const setContinuationPoint = (
      ON CONFLICT(nip, subject_type) DO UPDATE SET cursor=excluded.cursor`,
   );
   stmt.run([nip, subjectType, cursor]);
+  stmt.free();
+};
+
+export const hasInvoiceNotification = (
+  db: Database,
+  nip: string,
+  ksefNumber: string,
+  notificationKind: InvoiceNotificationKind,
+): boolean => {
+  const stmt = db.prepare(
+    "SELECT 1 FROM invoice_notifications WHERE nip = ? AND ksef_number = ? AND notification_kind = ?",
+  );
+  stmt.bind([nip, ksefNumber, notificationKind]);
+  const exists = stmt.step();
+  stmt.free();
+  return exists;
+};
+
+export const markInvoiceNotification = (
+  db: Database,
+  record: InvoiceNotificationRecord,
+): void => {
+  const stmt = db.prepare(
+    `INSERT INTO invoice_notifications (nip, ksef_number, notification_kind, notified_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(nip, ksef_number, notification_kind) DO NOTHING`,
+  );
+  stmt.run([
+    record.nip,
+    record.ksef_number,
+    record.notification_kind,
+    record.notified_at,
+  ]);
   stmt.free();
 };

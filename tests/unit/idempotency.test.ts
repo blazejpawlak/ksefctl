@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { getInvoice, upsertInvoice } from "../../src/db/repository";
+import {
+  getInvoice,
+  hasInvoiceNotification,
+  markInvoiceNotification,
+  upsertInvoice,
+} from "../../src/db/repository";
 import { SqliteStore } from "../../src/db/sqlite";
 
 describe("idempotency", () => {
@@ -40,5 +45,32 @@ describe("idempotency", () => {
       getInvoice(db, "1234567890", "KSEF-1"),
     );
     expect(record?.file_path).toBe("/tmp/b");
+  });
+
+  it("stores invoice notifications idempotently", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-db-"));
+    const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
+    const notifiedAt = "2026-03-29T18:00:00.000Z";
+
+    await store.withDb((db) => {
+      markInvoiceNotification(db, {
+        nip: "1234567890",
+        ksef_number: "KSEF-1",
+        notification_kind: "unpaid_due",
+        notified_at: notifiedAt,
+      });
+      markInvoiceNotification(db, {
+        nip: "1234567890",
+        ksef_number: "KSEF-1",
+        notification_kind: "unpaid_due",
+        notified_at: notifiedAt,
+      });
+    });
+
+    const notificationExists = await store.withDb((db) =>
+      hasInvoiceNotification(db, "1234567890", "KSEF-1", "unpaid_due"),
+    );
+
+    expect(notificationExists).toBe(true);
   });
 });

@@ -18,6 +18,7 @@ import {
   setSecret,
   showSecrets,
 } from "./cli/keychain";
+import { formatInvoicesToPay, getInvoicesToPay } from "./cli/paymentSummary";
 import { createProgressRenderer } from "./cli/progress";
 import { promptText } from "./cli/prompt";
 import { printHeader, printKeyValues, printList } from "./cli/ui";
@@ -937,12 +938,14 @@ program
         Boolean(options.forceRedownloadAll),
       );
       const notifier = new Notifier(ctx.config, ctx.logger);
+      const invoicesToPay = getInvoicesToPay(result.items);
       renderer?.done();
       printKeyValues([
         ["status", "completed"],
         ["downloaded", result.downloaded],
         ["skipped", result.skipped],
         ["failed", result.failed],
+        ["toPay", invoicesToPay.length],
       ]);
       if (result.items.length === 0) {
         console.log("Downloaded invoices: (none)");
@@ -955,10 +958,12 @@ program
           ),
         );
       }
-      await notifier.notify({
-        downloaded: result.downloaded,
-        items: result.items,
-      });
+      if (invoicesToPay.length === 0) {
+        console.log("Invoices to pay: (none)");
+      } else {
+        printList("Invoices to pay:", formatInvoicesToPay(result.items));
+      }
+      await notifier.notifyUnpaidInvoices(result, ctx.store);
     } catch (error) {
       const message = (error as Error).message;
       renderer?.done();
@@ -1019,6 +1024,7 @@ program
         progress,
         ctx.countdownIntervalSeconds,
       );
+      const notifier = new Notifier(ctx.config, ctx.logger);
       const statusService = new StatusService(ctx.store);
       let iteration = 0;
 
@@ -1030,18 +1036,21 @@ program
         try {
           progress?.(`Progress: sync cycle ${iteration} started`);
           result = await sync.runOnce();
+          await notifier.notifyUnpaidInvoices(result, ctx.store);
         } catch (error) {
           errorMessage = (error as Error).message;
         }
         renderer?.done();
         const durationMs = Date.now() - startedAt;
         const status = await statusService.getStatus();
+        const invoicesToPay = result ? getInvoicesToPay(result.items) : [];
         printHeader("Daemon Iteration");
         const summaryEntries: [string, string | number | null][] = [
           ["Status", errorMessage ? "Failed" : "Completed"],
           ["Downloaded", result?.downloaded ?? 0],
           ["Skipped", result?.skipped ?? 0],
           ["Failed", result?.failed ?? (errorMessage ? 1 : 0)],
+          ["ToPay", invoicesToPay.length],
           ["Duration", formatDuration(durationMs)],
           ["LastSyncAt", status.lastSyncAt ?? "-"],
           ["NextRunIn", formatDuration(intervalMs)],
@@ -1050,6 +1059,12 @@ program
           summaryEntries.push(["Error", sanitizeForTerminal(errorMessage)]);
         }
         printLabelValues(summaryEntries);
+        if (invoicesToPay.length > 0) {
+          printList(
+            "Invoices to pay:",
+            formatInvoicesToPay(result?.items ?? []),
+          );
+        }
 
         if (progress) {
           progress(`Progress: next run in ${formatDuration(intervalMs)}`);

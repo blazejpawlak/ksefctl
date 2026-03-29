@@ -22,13 +22,25 @@ import { decryptAes256Cbc, sha256Base64 } from "../utils/crypto";
 import { ConfigError } from "../utils/errors";
 import { formatDuration, sleep, sleepWithCountdown } from "../utils/time";
 import { createEncryptionData, selectCertificateByUsage } from "./encryption";
+import {
+  analyzeInvoicePayment,
+  isEligibleForNotification,
+} from "./invoicePaymentAnalyzer";
 import { atomicWriteFile, ensureStorageDirs, getInvoiceDir } from "./storage";
 
-type SyncResult = {
+export type SyncItem = {
+  nip: string;
+  ksefNumber: string;
+  path: string;
+  dueDate: string | null;
+  needsPaymentNotification: boolean;
+};
+
+export type SyncResult = {
   downloaded: number;
   skipped: number;
   failed: number;
-  items: { nip: string; ksefNumber: string; path: string }[];
+  items: SyncItem[];
 };
 
 type MetadataFile = {
@@ -242,6 +254,22 @@ const resolveInvoiceFileBase = (xml: string, ksefNumber: string): string => {
   if (!safeInvoiceNumber) return ksefNumber;
   const baseName = sanitizeFileName(`Faktura nr ${safeInvoiceNumber}`);
   return baseName || ksefNumber;
+};
+
+const createSyncItem = (
+  nip: string,
+  ksefNumber: string,
+  path: string,
+  xmlText: string,
+): SyncItem => {
+  const paymentInfo = analyzeInvoicePayment(xmlText, nip);
+  return {
+    nip,
+    ksefNumber,
+    path,
+    dueDate: paymentInfo.dueDate,
+    needsPaymentNotification: isEligibleForNotification(paymentInfo),
+  };
 };
 
 const parseIsoDate = (value: string, label: string): Date => {
@@ -752,7 +780,7 @@ export class SyncService {
       let downloaded = 0;
       let skipped = 0;
       let failed = 0;
-      const items: { nip: string; ksefNumber: string; path: string }[] = [];
+      const items: SyncItem[] = [];
 
       for (const entry of entries) {
         if (!entry.entryName.endsWith(".xml")) continue;
@@ -853,7 +881,7 @@ export class SyncService {
             }),
           );
           downloaded += 1;
-          items.push({ nip, ksefNumber, path: invoiceDir });
+          items.push(createSyncItem(nip, ksefNumber, invoiceDir, xmlText));
         } catch (error) {
           await this.store.withDb((db) =>
             upsertInvoice(db, {
@@ -1006,7 +1034,7 @@ export class SyncService {
     accessToken: string,
     nip: string,
     ksefNumber: string,
-  ): Promise<{ nip: string; ksefNumber: string; path: string } | null> {
+  ): Promise<SyncItem | null> {
     const xml = await this.client.downloadInvoiceXml(accessToken, ksefNumber);
     if (Buffer.byteLength(xml, "utf-8") > maxInvoiceNumberXmlBytes) {
       throw new Error("Invoice XML too large for direct download");
@@ -1057,6 +1085,6 @@ export class SyncService {
       }),
     );
 
-    return { nip, ksefNumber, path: invoiceDir };
+    return createSyncItem(nip, ksefNumber, invoiceDir, xml);
   }
 }

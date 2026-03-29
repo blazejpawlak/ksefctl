@@ -1,11 +1,19 @@
 import type { AppConfig } from "../config/schema";
+import type { SyncItem, SyncResult } from "../core/syncService";
+import type { SqliteStore } from "../db/sqlite";
 import type { Logger } from "pino";
+import type { Database } from "sql.js";
 import notifier from "node-notifier";
 import nodemailer from "nodemailer";
+import {
+  hasInvoiceNotification,
+  markInvoiceNotification,
+} from "../db/repository";
 
-export type NotificationSummary = {
-  downloaded: number;
-  items: { nip: string; ksefNumber: string; path: string }[];
+const unpaidDueNotificationKind = "unpaid_due";
+
+type UnpaidNotificationSummary = {
+  items: SyncItem[];
 };
 
 export class Notifier {
@@ -17,30 +25,78 @@ export class Notifier {
     this.logger = logger;
   }
 
-  async notify(summary: NotificationSummary): Promise<void> {
-    if (summary.downloaded <= 0) return;
-    this.notifyMac(summary);
-    await this.notifyEmail(summary);
-  }
+  async notifyUnpaidInvoices(
+    result: SyncResult,
+    store: SqliteStore,
+  ): Promise<void> {
+    await store.withDb(async (db) => {
+      const pendingItems = this.getPendingUnpaidItems(result.items, db);
+      if (pendingItems.length === 0) return;
 
-  private notifyMac(summary: NotificationSummary): void {
-    if (!this.config.notifications.macosNotification) return;
-    if (process.platform !== "darwin") return;
+      const summary: UnpaidNotificationSummary = { items: pendingItems };
+      const macSent = this.notifyMac(summary);
+      const emailSent = await this.notifyEmail(summary);
+      if (!macSent && !emailSent) return;
 
-    const message = `New KSeF invoice(s): ${summary.downloaded}`;
-    notifier.notify({
-      title: "KSeFctl",
-      message,
-      subtitle: summary.items[0]?.path ?? "",
+      const notifiedAt = new Date().toISOString();
+      for (const item of pendingItems) {
+        markInvoiceNotification(db, {
+          nip: item.nip,
+          ksef_number: item.ksefNumber,
+          notification_kind: unpaidDueNotificationKind,
+          notified_at: notifiedAt,
+        });
+      }
     });
   }
 
-  private async notifyEmail(summary: NotificationSummary): Promise<void> {
-    if (!this.config.notifications.email.enabled) return;
+  private getPendingUnpaidItems(items: SyncItem[], db: Database): SyncItem[] {
+    const unpaidItems = items.filter((item) => item.needsPaymentNotification);
+    if (unpaidItems.length === 0) return [];
+
+    return unpaidItems.filter(
+      (item) =>
+        !hasInvoiceNotification(
+          db,
+          item.nip,
+          item.ksefNumber,
+          unpaidDueNotificationKind,
+        ),
+    );
+  }
+
+  private notifyMac(summary: UnpaidNotificationSummary): boolean {
+    if (!this.config.notifications.macosNotification) return false;
+    if (process.platform !== "darwin") return false;
+
+    const firstItem = summary.items[0];
+    const subtitle = firstItem
+      ? `${firstItem.nip} | ${firstItem.ksefNumber} | due ${firstItem.dueDate ?? "-"}`
+      : "";
+    try {
+      notifier.notify({
+        title: "KSeFctl",
+        message: `Invoices to pay: ${summary.items.length}`,
+        subtitle,
+      });
+      return true;
+    } catch (error) {
+      this.logger.warn(
+        { err: (error as Error).message },
+        "Failed to send macOS unpaid invoice notification",
+      );
+      return false;
+    }
+  }
+
+  private async notifyEmail(
+    summary: UnpaidNotificationSummary,
+  ): Promise<boolean> {
+    if (!this.config.notifications.email.enabled) return false;
     const smtp = this.config.notifications.email.smtp;
     if (!smtp) {
       this.logger.warn("Email notification enabled but SMTP config missing");
-      return;
+      return false;
     }
 
     const transporter = nodemailer.createTransport({
@@ -56,23 +112,33 @@ export class Notifier {
       },
     });
 
-    const lines = summary.items.flatMap((item) => [
-      `- ${item.nip} | ${item.ksefNumber}: ${item.path}`,
-    ]);
+    const lines = summary.items.map(
+      (item) =>
+        `- ${item.nip} | ${item.ksefNumber} | due ${item.dueDate ?? "-"}: ${item.path}`,
+    );
     const body = [
-      `New invoices downloaded: ${summary.downloaded}`,
+      `Invoices to pay: ${summary.items.length}`,
       "",
-      "Invoice list:",
+      "Unpaid payable invoices:",
       ...lines,
       "",
       `Generated at: ${new Date().toISOString()}`,
     ].join("\n");
 
-    await transporter.sendMail({
-      from: smtp.from,
-      to: smtp.to.join(","),
-      subject: `KSeFctl: ${summary.downloaded} new invoice(s)`,
-      text: body,
-    });
+    try {
+      await transporter.sendMail({
+        from: smtp.from,
+        to: smtp.to.join(","),
+        subject: `KSeFctl: ${summary.items.length} invoice(s) to pay`,
+        text: body,
+      });
+      return true;
+    } catch (error) {
+      this.logger.warn(
+        { err: (error as Error).message },
+        "Failed to send unpaid invoice email notification",
+      );
+      return false;
+    }
   }
 }

@@ -32,6 +32,14 @@ CREATE TABLE IF NOT EXISTS continuation_points (
   cursor TEXT,
   PRIMARY KEY (nip, subject_type)
 );
+
+CREATE TABLE IF NOT EXISTS invoice_notifications (
+  nip TEXT NOT NULL,
+  ksef_number TEXT NOT NULL,
+  notification_kind TEXT NOT NULL,
+  notified_at TEXT NOT NULL,
+  PRIMARY KEY (nip, ksef_number, notification_kind)
+);
 `;
 
 const resolveSqlWasmPath = () => {

@@ -319,6 +319,140 @@ describe("SyncService", () => {
     expect(xml).toContain("FV/1:2026?");
   });
 
+  it("returns payment-notification metadata for direct downloads", async () => {
+    const now = new Date("2026-03-24T12:00:00Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
+    const xml = `
+      <Faktura>
+        <Podmiot1>
+          <DaneIdentyfikacyjne><NIP>5261040337</NIP></DaneIdentyfikacyjne>
+        </Podmiot1>
+        <Podmiot2>
+          <DaneIdentyfikacyjne><NIP>1234567890</NIP></DaneIdentyfikacyjne>
+        </Podmiot2>
+        <Fa>
+          <P_2>FV/1</P_2>
+          <Platnosc>
+            <TerminPlatnosci><Termin>2026-03-24</Termin></TerminPlatnosci>
+          </Platnosc>
+        </Fa>
+      </Faktura>
+    `;
+    const client = {
+      downloadInvoiceXml: vi.fn().mockResolvedValue(xml),
+    } as unknown as KsefClient;
+    const config = createConfig({
+      storage: { root: path.join(tmpDir, "storage") },
+      sync: {
+        subjectTypes: [],
+        includeMetadataHeader: true,
+        generatePdf: false,
+        maxConcurrentNips: 1,
+      },
+    });
+    const logger = createLogger();
+    const auth = createAuth();
+
+    const service = new SyncService(client, auth, config, logger, store);
+    const result = await service.runOnce("KSEF-INV-1");
+
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        nip: "1234567890",
+        ksefNumber: "KSEF-INV-1",
+        dueDate: "2026-03-24",
+        needsPaymentNotification: true,
+      }),
+    ]);
+  });
+
+  it("returns payment-notification metadata for exported invoices", async () => {
+    const now = new Date("2026-05-10T12:00:00Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
+    const ksefNumber = "KSEF-PAYABLE-1";
+    const xml = `
+      <Faktura>
+        <Podmiot1>
+          <DaneIdentyfikacyjne><NIP>5261040337</NIP></DaneIdentyfikacyjne>
+        </Podmiot1>
+        <Podmiot2>
+          <DaneIdentyfikacyjne><NIP>1234567890</NIP></DaneIdentyfikacyjne>
+        </Podmiot2>
+        <Fa>
+          <P_2>FV/EXPORT/1</P_2>
+          <Platnosc>
+            <TerminPlatnosci><Termin>2026-03-24</Termin></TerminPlatnosci>
+          </Platnosc>
+        </Fa>
+      </Faktura>
+    `;
+    const { encrypted, partHash, encryptedPartHash } = buildEncryptedPackage(
+      ksefNumber,
+      xml,
+    );
+
+    const client = {
+      exportInvoices: vi
+        .fn()
+        .mockResolvedValue({ referenceNumber: "EXPORT-1" }),
+      getPublicKeyCertificates: vi.fn().mockResolvedValue([]),
+      getExportStatus: vi.fn().mockResolvedValue({
+        status: { code: 200, description: "OK" },
+        package: {
+          invoiceCount: 1,
+          size: encrypted.length,
+          isTruncated: false,
+          permanentStorageHwmDate: now.toISOString(),
+          parts: [
+            {
+              ordinalNumber: 1,
+              partName: "part1.zip.aes",
+              method: "GET",
+              url: "https://example.test/part1",
+              partHash,
+              encryptedPartHash,
+            },
+          ],
+        },
+      }),
+      downloadPackagePart: vi.fn().mockResolvedValue(encrypted),
+    } as unknown as KsefClient;
+    const config = createConfig({
+      storage: { root: path.join(tmpDir, "storage") },
+      security: {
+        tls: { enablePinning: false, pins: [], pinningHosts: [] },
+        allowedHosts: ["example.test"],
+      },
+      sync: {
+        subjectTypes: ["Subject1"],
+        includeMetadataHeader: true,
+        generatePdf: false,
+        initialSyncFrom: new Date(now.getTime() - 86400000).toISOString(),
+        maxConcurrentNips: 1,
+      },
+    });
+    const logger = createLogger();
+    const auth = createAuth();
+
+    const service = new SyncService(client, auth, config, logger, store);
+    const result = await service.runOnce();
+
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        nip: "1234567890",
+        ksefNumber,
+        dueDate: "2026-03-24",
+        needsPaymentNotification: true,
+      }),
+    ]);
+  });
+
   it("re-downloads already downloaded invoices when forceRedownloadAll is set", async () => {
     const now = new Date("2026-05-10T12:00:00Z");
     vi.useFakeTimers();
