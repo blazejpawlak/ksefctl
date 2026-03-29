@@ -127,12 +127,13 @@ describe("SyncService", () => {
       refreshToken: string;
       refreshTokenValidUntil: string;
     }>();
+    const getAccessToken = vi.fn((nip: string) => {
+      if (nip === "1234567890") return deferredA.promise;
+      if (nip === "9876543210") return deferredB.promise;
+      throw new Error(`Unexpected NIP ${nip}`);
+    });
     const auth = {
-      getAccessToken: vi.fn((nip: string) => {
-        if (nip === "1234567890") return deferredA.promise;
-        if (nip === "9876543210") return deferredB.promise;
-        throw new Error(`Unexpected NIP ${nip}`);
-      }),
+      getAccessToken,
     } as unknown as AuthService;
     const client = {} as KsefClient;
     const config = createConfig({
@@ -149,7 +150,7 @@ describe("SyncService", () => {
     const runPromise = service.runOnce();
 
     await vi.waitFor(() => {
-      expect(auth.getAccessToken).toHaveBeenCalledTimes(2);
+      expect(getAccessToken).toHaveBeenCalledTimes(2);
     });
 
     deferredA.resolve({
@@ -194,13 +195,14 @@ describe("SyncService", () => {
         },
       }),
     } as unknown as KsefClient;
+    const getAccessToken = vi.fn().mockResolvedValue({
+      accessToken: "ACCESS",
+      accessTokenValidUntil: "",
+      refreshToken: "",
+      refreshTokenValidUntil: "",
+    });
     const auth = {
-      getAccessToken: vi.fn().mockResolvedValue({
-        accessToken: "ACCESS",
-        accessTokenValidUntil: "",
-        refreshToken: "",
-        refreshTokenValidUntil: "",
-      }),
+      getAccessToken,
     } as unknown as AuthService;
     const config = createConfig({
       organizations: [{ nip: "1234567890" }, { nip: "9876543210" }],
@@ -218,9 +220,9 @@ describe("SyncService", () => {
     const service = new SyncService(client, auth, config, logger, store);
     await service.runOnce(undefined, undefined, true);
 
-    expect(auth.getAccessToken).toHaveBeenCalledTimes(2);
-    expect(auth.getAccessToken).toHaveBeenCalledWith("1234567890");
-    expect(auth.getAccessToken).toHaveBeenCalledWith("9876543210");
+    expect(getAccessToken).toHaveBeenCalledTimes(2);
+    expect(getAccessToken).toHaveBeenCalledWith("1234567890");
+    expect(getAccessToken).toHaveBeenCalledWith("9876543210");
     expect(exportInvoices).toHaveBeenCalledTimes(2);
 
     const requests = exportInvoices.mock.calls.map(

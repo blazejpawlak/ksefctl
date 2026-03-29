@@ -55,7 +55,7 @@ const pLimit = <T, R>(concurrency: number) => {
           return;
         }
 
-        const results: R[] = new Array(items.length);
+        const results = new Array<R>(items.length);
         let currentIndex = 0;
         let activeCount = 0;
         let completedCount = 0;
@@ -70,7 +70,7 @@ const pLimit = <T, R>(concurrency: number) => {
         const rejectOnce = (error: unknown) => {
           if (isSettled) return;
           isSettled = true;
-          reject(error);
+          reject(error instanceof Error ? error : new Error(String(error)));
         };
 
         const processNext = () => {
