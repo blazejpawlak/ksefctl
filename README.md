@@ -102,7 +102,7 @@ All commands except `system init` require a config file and keychain tokens for 
 Sync prints short progress messages on stderr; use `-v/--verbose` for detailed logs.
 
 If an invoice directory is missing on disk, sync will re-download it even if the DB marks it as downloaded.
-`--force-redownload-all` resets cursors to `sync.initialSyncFrom` (or `2026-02-01`) and re-downloads all available invoices for the selected NIP.
+`--force-redownload-all` resets cursors to `sync.initialSyncFrom` (or `2026-02-01`) and re-downloads all available invoices for all configured NIPs (or only the chosen one when `--nip` is provided).
 
 If you see a Node warning about `--localstorage-file`, make sure you run the `ksefctl` binary (not `node dist/cli.js`) so the wrapper can sanitize `NODE_OPTIONS`.
 

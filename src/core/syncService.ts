@@ -1,6 +1,6 @@
 import type { InvoiceExportStatusResponse } from "../api/ksefClient";
 import type { KsefClient } from "../api/ksefClient";
-import type { AuthService } from "../auth/authService";
+import type { AuthService, AuthTokens } from "../auth/authService";
 import type { AppConfig, SubjectType } from "../config/schema";
 import type { SqliteStore } from "../db/sqlite";
 import type { Logger } from "pino";
@@ -33,13 +33,71 @@ type SyncResult = {
 
 type MetadataFile = {
   invoices?: (Record<string, unknown> & {
-      ksefNumber?: string;
-      permanentStorageDate?: string;
-    })[];
+    ksefNumber?: string;
+    permanentStorageDate?: string;
+  })[];
 };
 
 const maxDateRangeMonths = 3;
 const ksefStartDateIso = "2026-02-01T00:00:00Z";
+
+const pLimit = <T, R>(concurrency: number) => {
+  if (concurrency === 1) {
+    return (_fn: (item: T) => Promise<R>) =>
+      (items: T[]): Promise<R[]> =>
+        Promise.all(items.map(_fn));
+  }
+  return (fn: (item: T) => Promise<R>) =>
+    (items: T[]): Promise<R[]> =>
+      new Promise((resolve, reject) => {
+        if (items.length === 0) {
+          resolve([]);
+          return;
+        }
+
+        const results: R[] = new Array(items.length);
+        let currentIndex = 0;
+        let activeCount = 0;
+        let completedCount = 0;
+        let isSettled = false;
+
+        const resolveIfComplete = () => {
+          if (completedCount !== items.length || isSettled) return;
+          isSettled = true;
+          resolve(results);
+        };
+
+        const rejectOnce = (error: unknown) => {
+          if (isSettled) return;
+          isSettled = true;
+          reject(error);
+        };
+
+        const processNext = () => {
+          if (isSettled) return;
+
+          while (activeCount < concurrency && currentIndex < items.length) {
+            const index = currentIndex++;
+            const item = items[index] as T;
+            activeCount++;
+            fn(item)
+              .then((result) => {
+                results[index] = result;
+                activeCount--;
+                completedCount++;
+                resolveIfComplete();
+                processNext();
+              })
+              .catch((error: unknown) => {
+                activeCount--;
+                rejectOnce(error);
+              });
+          }
+        };
+
+        processNext();
+      });
+};
 
 const addUtcMonths = (date: Date, months: number): Date => {
   const next = new Date(date.getTime());
@@ -330,7 +388,11 @@ export class SyncService {
     if (nips.length === 0) {
       throw new Error("No organizations configured");
     }
-    this.logger.debug({ nipCount: nips.length }, "Starting sync run");
+    const maxConcurrent = this.config.sync.maxConcurrentNips ?? 1;
+    this.logger.debug(
+      { nipCount: nips.length, maxConcurrent },
+      "Starting sync run",
+    );
 
     const summary: SyncResult = {
       downloaded: 0,
@@ -338,38 +400,64 @@ export class SyncService {
       failed: 0,
       items: [],
     };
-    try {
-      for (const nip of nips) {
-        this.logger.debug({ nip }, "Syncing NIP");
-        this.reportProgress(`Progress: syncing NIP ${nip}`);
-        const tokens = await this.auth.getAccessToken(nip);
-        const accessToken = tokens.accessToken;
-        const forced = forceRedownloadId
+
+    const syncSingleNip = async (
+      nip: string,
+      tokens: AuthTokens,
+    ): Promise<SyncResult> => {
+      const nipResult: SyncResult = {
+        downloaded: 0,
+        skipped: 0,
+        failed: 0,
+        items: [],
+      };
+      const accessToken = tokens.accessToken;
+      const forced =
+        forceRedownloadId && !nipFilter
           ? await this.downloadByKsefNumber(accessToken, nip, forceRedownloadId)
           : null;
-        if (forced) {
-          summary.downloaded += 1;
-          summary.items.push(forced);
-        }
+      if (forced) {
+        nipResult.downloaded += 1;
+        nipResult.items.push(forced);
+      }
 
-        for (const subjectType of this.config.sync.subjectTypes) {
-          this.logger.debug(
-            { nip, subjectType },
-            "Requesting export for subject type",
-          );
-          const subjectResult = await this.syncSubjectType(
-            accessToken,
-            nip,
-            subjectType,
-            forceRedownloadId,
-            Boolean(forced),
-            forceRedownloadAll,
-          );
-          summary.downloaded += subjectResult.downloaded;
-          summary.skipped += subjectResult.skipped;
-          summary.failed += subjectResult.failed;
-          summary.items.push(...subjectResult.items);
-        }
+      for (const subjectType of this.config.sync.subjectTypes) {
+        this.logger.debug(
+          { nip, subjectType },
+          "Requesting export for subject type",
+        );
+        const subjectResult = await this.syncSubjectType(
+          accessToken,
+          nip,
+          subjectType,
+          forceRedownloadId,
+          Boolean(forced),
+          forceRedownloadAll,
+        );
+        nipResult.downloaded += subjectResult.downloaded;
+        nipResult.skipped += subjectResult.skipped;
+        nipResult.failed += subjectResult.failed;
+        nipResult.items.push(...subjectResult.items);
+      }
+      return nipResult;
+    };
+
+    const syncNipWithAuth = async (nip: string): Promise<SyncResult> => {
+      this.logger.debug({ nip }, "Syncing NIP");
+      this.reportProgress(`Progress: syncing NIP ${nip}`);
+      const tokens = await this.auth.getAccessToken(nip);
+      return syncSingleNip(nip, tokens);
+    };
+
+    try {
+      const limit = pLimit<string, SyncResult>(maxConcurrent);
+      const results = await limit(syncNipWithAuth)(nips);
+
+      for (const result of results) {
+        summary.downloaded += result.downloaded;
+        summary.skipped += result.skipped;
+        summary.failed += result.failed;
+        summary.items.push(...result.items);
       }
 
       await this.store.withDb((db) => {
@@ -409,7 +497,7 @@ export class SyncService {
 
   async runDaemon(): Promise<void> {
     this.logger.info("Starting daemon mode");
-     
+
     while (true) {
       try {
         const result = await this.runOnce();
@@ -664,8 +752,7 @@ export class SyncService {
       let downloaded = 0;
       let skipped = 0;
       let failed = 0;
-      const items: { nip: string; ksefNumber: string; path: string }[] =
-        [];
+      const items: { nip: string; ksefNumber: string; path: string }[] = [];
 
       for (const entry of entries) {
         if (!entry.entryName.endsWith(".xml")) continue;

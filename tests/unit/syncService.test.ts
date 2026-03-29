@@ -69,6 +69,7 @@ const createConfig = (overrides: Partial<AppConfig> = {}): AppConfig => ({
     subjectTypes: ["Subject1"],
     includeMetadataHeader: true,
     generatePdf: false,
+    maxConcurrentNips: 1,
   },
   ...overrides,
 });
@@ -100,7 +101,142 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+const createDeferred = <T>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+};
+
 describe("SyncService", () => {
+  it("syncs configured NIPs in parallel when maxConcurrentNips is greater than one", async () => {
+    const store = new SqliteStore(":memory:");
+    const logger = createLogger();
+    const deferredA = createDeferred<{
+      accessToken: string;
+      accessTokenValidUntil: string;
+      refreshToken: string;
+      refreshTokenValidUntil: string;
+    }>();
+    const deferredB = createDeferred<{
+      accessToken: string;
+      accessTokenValidUntil: string;
+      refreshToken: string;
+      refreshTokenValidUntil: string;
+    }>();
+    const auth = {
+      getAccessToken: vi.fn((nip: string) => {
+        if (nip === "1234567890") return deferredA.promise;
+        if (nip === "9876543210") return deferredB.promise;
+        throw new Error(`Unexpected NIP ${nip}`);
+      }),
+    } as unknown as AuthService;
+    const client = {} as KsefClient;
+    const config = createConfig({
+      organizations: [{ nip: "1234567890" }, { nip: "9876543210" }],
+      sync: {
+        subjectTypes: [],
+        includeMetadataHeader: true,
+        generatePdf: false,
+        maxConcurrentNips: 2,
+      },
+    });
+
+    const service = new SyncService(client, auth, config, logger, store);
+    const runPromise = service.runOnce();
+
+    await vi.waitFor(() => {
+      expect(auth.getAccessToken).toHaveBeenCalledTimes(2);
+    });
+
+    deferredA.resolve({
+      accessToken: "ACCESS-A",
+      accessTokenValidUntil: "",
+      refreshToken: "",
+      refreshTokenValidUntil: "",
+    });
+    deferredB.resolve({
+      accessToken: "ACCESS-B",
+      accessTokenValidUntil: "",
+      refreshToken: "",
+      refreshTokenValidUntil: "",
+    });
+
+    await expect(runPromise).resolves.toEqual({
+      downloaded: 0,
+      skipped: 0,
+      failed: 0,
+      items: [],
+    });
+  });
+
+  it("force-redownload-all applies to all configured NIPs when nip is not provided", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
+    const initialSyncFrom = "2026-02-01T00:00:00.000Z";
+    const exportInvoices = vi
+      .fn()
+      .mockResolvedValue({ referenceNumber: "EXPORT-1" });
+    const client = {
+      exportInvoices,
+      getPublicKeyCertificates: vi.fn().mockResolvedValue([]),
+      getExportStatus: vi.fn().mockResolvedValue({
+        status: { code: 200, description: "OK" },
+        package: {
+          invoiceCount: 0,
+          size: 0,
+          isTruncated: false,
+          permanentStorageHwmDate: new Date().toISOString(),
+          parts: [],
+        },
+      }),
+    } as unknown as KsefClient;
+    const auth = {
+      getAccessToken: vi.fn().mockResolvedValue({
+        accessToken: "ACCESS",
+        accessTokenValidUntil: "",
+        refreshToken: "",
+        refreshTokenValidUntil: "",
+      }),
+    } as unknown as AuthService;
+    const config = createConfig({
+      organizations: [{ nip: "1234567890" }, { nip: "9876543210" }],
+      storage: { root: path.join(tmpDir, "storage") },
+      sync: {
+        subjectTypes: ["Subject1"],
+        includeMetadataHeader: true,
+        generatePdf: false,
+        initialSyncFrom,
+        maxConcurrentNips: 1,
+      },
+    });
+    const logger = createLogger();
+
+    const service = new SyncService(client, auth, config, logger, store);
+    await service.runOnce(undefined, undefined, true);
+
+    expect(auth.getAccessToken).toHaveBeenCalledTimes(2);
+    expect(auth.getAccessToken).toHaveBeenCalledWith("1234567890");
+    expect(auth.getAccessToken).toHaveBeenCalledWith("9876543210");
+    expect(exportInvoices).toHaveBeenCalledTimes(2);
+
+    const requests = exportInvoices.mock.calls.map(
+      ([, request]) =>
+        request as { filters?: { dateRange?: { from?: string; to?: string } } },
+    );
+    const fromDates = requests.map(
+      (request) => request.filters?.dateRange?.from,
+    );
+    const toDates = requests.map((request) => request.filters?.dateRange?.to);
+
+    expect(fromDates).toEqual([initialSyncFrom, initialSyncFrom]);
+    expect(toDates).toHaveLength(2);
+    expect(toDates.every((value) => Boolean(value))).toBe(true);
+  });
+
   it("advances continuation point when export window is out of range", async () => {
     const now = new Date("2026-05-10T12:00:00Z");
     vi.useFakeTimers();
@@ -125,6 +261,7 @@ describe("SyncService", () => {
         includeMetadataHeader: true,
         generatePdf: false,
         initialSyncFrom: "2026-02-01T00:00:00Z",
+        maxConcurrentNips: 1,
       },
     });
     const logger = createLogger();
@@ -157,6 +294,7 @@ describe("SyncService", () => {
         subjectTypes: [],
         includeMetadataHeader: true,
         generatePdf: false,
+        maxConcurrentNips: 1,
       },
     });
     const logger = createLogger();
@@ -244,6 +382,7 @@ describe("SyncService", () => {
         includeMetadataHeader: true,
         generatePdf: false,
         initialSyncFrom,
+        maxConcurrentNips: 1,
       },
     });
     const logger = createLogger();
@@ -312,6 +451,7 @@ describe("SyncService", () => {
         subjectTypes: ["Subject1"],
         includeMetadataHeader: true,
         generatePdf: false,
+        maxConcurrentNips: 1,
       },
     });
     const logger = createLogger();
@@ -395,6 +535,7 @@ describe("SyncService", () => {
         includeMetadataHeader: true,
         generatePdf: false,
         initialSyncFrom: new Date(now.getTime() - 86400000).toISOString(),
+        maxConcurrentNips: 1,
       },
     });
     const logger = createLogger();

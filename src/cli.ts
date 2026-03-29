@@ -908,11 +908,6 @@ program
       if (options.forceRedownload && nips.length > 1) {
         throw new ConfigError("Use --nip when force redownload is requested");
       }
-      if (options.forceRedownloadAll && nips.length > 1) {
-        throw new ConfigError(
-          "Use --nip when force redownload all is requested",
-        );
-      }
       printHeader("Sync");
       printKeyValues([
         ["status", "starting"],

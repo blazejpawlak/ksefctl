@@ -1,4 +1,4 @@
-import type { KeychainStore} from "./keychainStore";
+import type { KeychainStore } from "./keychainStore";
 import type { AuthenticationTokensResponse } from "../api/ksefClient";
 import type { KsefClient } from "../api/ksefClient";
 import type { AppConfig } from "../config/schema";
@@ -11,7 +11,7 @@ import { AuthError } from "../utils/errors";
 import { formatDuration, sleep, sleepWithCountdown } from "../utils/time";
 import { type KeychainEntry } from "./keychainStore";
 
-type AuthTokens = Required<
+export type AuthTokens = Required<
   Pick<
     KeychainEntry,
     | "accessToken"

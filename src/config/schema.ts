@@ -95,6 +95,7 @@ const SyncSchema = z.object({
   includeMetadataHeader: z.boolean().default(true),
   generatePdf: z.boolean().default(true),
   initialSyncFrom: z.string().datetime().optional(),
+  maxConcurrentNips: z.number().int().min(1).default(1),
 });
 
 export const AppConfigSchema = z.object({
