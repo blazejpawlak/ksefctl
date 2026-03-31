@@ -1,3 +1,7 @@
+import type {
+  SyncItem} from "./invoiceExtractor";
+import type {
+  MetadataFile} from "./window";
 import type { InvoiceExportStatusResponse } from "../api/ksefClient";
 import type { KsefClient } from "../api/ksefClient";
 import type { AuthService, AuthTokens } from "../auth/authService";
@@ -5,9 +9,8 @@ import type { AppConfig, SubjectType } from "../config/schema";
 import type { SqliteStore } from "../db/sqlite";
 import type { Logger } from "pino";
 import AdmZip from "adm-zip";
-import { xml2js } from "xml-js";
-import fs from "node:fs/promises";
 import path from "node:path";
+import { sanitizeForTerminal } from "../cli/commandTree";
 import { resolveBaseUrl } from "../config/environment";
 import {
   getContinuationPoint,
@@ -18,279 +21,43 @@ import {
   upsertInvoice,
 } from "../db/repository";
 import { PdfService } from "../services/pdfService";
+import { pLimit } from "../utils/concurrency";
 import { decryptAes256Cbc, sha256Base64 } from "../utils/crypto";
-import { ConfigError } from "../utils/errors";
+import { sanitizeErrorMessage } from "../utils/errors";
 import { formatDuration, sleep, sleepWithCountdown } from "../utils/time";
 import { createEncryptionData, selectCertificateByUsage } from "./encryption";
 import {
-  analyzeInvoicePayment,
-  isEligibleForNotification,
-} from "./invoicePaymentAnalyzer";
+  createSyncItem,
+  hasValidInvoiceXml,
+  maxDecryptedPackageBytes,
+  maxInvoiceNumberXmlBytes,
+  maxInvoicePdfXmlBytes,
+  maxZipEntries,
+  maxZipEntryBytes,
+  maxZipTotalBytes,
+  resolveInvoiceFileBase,
+} from "./invoiceExtractor";
 import { atomicWriteFile, ensureStorageDirs, getInvoiceDir } from "./storage";
+import {
+  addUtcMonths,
+  advanceWindow,
+  isOutOfRangeError,
+  ksefStartDateIso,
+  maxDateRangeMonths,
+  minDate,
+  parseIsoDate,
+  resolveConfiguredStart,
+  resolveDefaultStart,
+  resolveNextCursor,
+} from "./window";
 
-export type SyncItem = {
-  nip: string;
-  ksefNumber: string;
-  path: string;
-  dueDate: string | null;
-  needsPaymentNotification: boolean;
-};
+export type { SyncItem };
 
 export type SyncResult = {
   downloaded: number;
   skipped: number;
   failed: number;
   items: SyncItem[];
-};
-
-type MetadataFile = {
-  invoices?: (Record<string, unknown> & {
-    ksefNumber?: string;
-    permanentStorageDate?: string;
-  })[];
-};
-
-const maxDateRangeMonths = 3;
-const ksefStartDateIso = "2026-02-01T00:00:00Z";
-
-const pLimit = <T, R>(concurrency: number) => {
-  if (concurrency === 1) {
-    return (_fn: (item: T) => Promise<R>) =>
-      (items: T[]): Promise<R[]> =>
-        Promise.all(items.map(_fn));
-  }
-  return (fn: (item: T) => Promise<R>) =>
-    (items: T[]): Promise<R[]> =>
-      new Promise((resolve, reject) => {
-        if (items.length === 0) {
-          resolve([]);
-          return;
-        }
-
-        const results = new Array<R>(items.length);
-        let currentIndex = 0;
-        let activeCount = 0;
-        let completedCount = 0;
-        let isSettled = false;
-
-        const resolveIfComplete = () => {
-          if (completedCount !== items.length || isSettled) return;
-          isSettled = true;
-          resolve(results);
-        };
-
-        const rejectOnce = (error: unknown) => {
-          if (isSettled) return;
-          isSettled = true;
-          reject(error instanceof Error ? error : new Error(String(error)));
-        };
-
-        const processNext = () => {
-          if (isSettled) return;
-
-          while (activeCount < concurrency && currentIndex < items.length) {
-            const index = currentIndex++;
-            const item = items[index] as T;
-            activeCount++;
-            fn(item)
-              .then((result) => {
-                results[index] = result;
-                activeCount--;
-                completedCount++;
-                resolveIfComplete();
-                processNext();
-              })
-              .catch((error: unknown) => {
-                activeCount--;
-                rejectOnce(error);
-              });
-          }
-        };
-
-        processNext();
-      });
-};
-
-const addUtcMonths = (date: Date, months: number): Date => {
-  const next = new Date(date.getTime());
-  next.setUTCMonth(next.getUTCMonth() + months);
-  return next;
-};
-
-const minDate = (first: Date, second: Date): Date =>
-  first.getTime() <= second.getTime() ? first : second;
-
-const maxDate = (first: Date, second: Date): Date =>
-  first.getTime() >= second.getTime() ? first : second;
-
-const outOfRangeErrorToken =
-  "zakres filtrowania wykracza poza dostepny zakres danych";
-
-const maxInvoiceNumberXmlBytes = 5_000_000;
-const maxInvoiceFileBaseLength = 180;
-const maxZipEntries = 2000;
-const maxZipEntryBytes = 20_000_000;
-const maxZipTotalBytes = 200_000_000;
-const maxInvoicePdfXmlBytes = 5_000_000;
-const maxDecryptedPackageBytes = 200_000_000;
-
-const invoiceNumberKeys = new Set(["p_2", "nrfaktury", "numerfaktury"]);
-
-const stripDoctype = (xml: string): string =>
-  xml.replace(/<!DOCTYPE[\s\S]*?>/gi, "");
-
-const isOutOfRangeError = (message: string): boolean => {
-  const normalized = message
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-  return normalized.includes(outOfRangeErrorToken);
-};
-
-const sanitizeForTerminal = (value: string): string =>
-  value.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
-
-const stripPrefixes = (value: unknown): unknown => {
-  if (Array.isArray(value)) {
-    return value.map(stripPrefixes);
-  }
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, entry]) => {
-        const normalizedKey = key.includes(":") ? key.split(":")[1] : key;
-        return [normalizedKey, stripPrefixes(entry)];
-      }),
-    );
-  }
-  return value;
-};
-
-const extractTextValue = (value: unknown): string | null => {
-  if (typeof value === "string") return value;
-  if (value && typeof value === "object") {
-    const record = value as { _text?: unknown; _cdata?: unknown };
-    if (typeof record._text === "string") return record._text;
-    if (typeof record._cdata === "string") return record._cdata;
-  }
-  return null;
-};
-
-const findInvoiceNumber = (node: unknown): string | null => {
-  if (Array.isArray(node)) {
-    for (const entry of node) {
-      const match = findInvoiceNumber(entry);
-      if (match) return match;
-    }
-    return null;
-  }
-  if (!node || typeof node !== "object") return null;
-  for (const [key, value] of Object.entries(node)) {
-    if (invoiceNumberKeys.has(key.toLowerCase())) {
-      const direct = extractTextValue(value);
-      if (direct) return direct;
-    }
-  }
-  for (const value of Object.values(node)) {
-    const nested = findInvoiceNumber(value);
-    if (nested) return nested;
-  }
-  return null;
-};
-
-const extractInvoiceNumber = (xml: string): string | null => {
-  if (Buffer.byteLength(xml, "utf-8") > maxInvoiceNumberXmlBytes) {
-    return null;
-  }
-  try {
-    const parsed = xml2js(stripDoctype(xml), { compact: true }) as unknown;
-    return findInvoiceNumber(stripPrefixes(parsed));
-  } catch {
-    return null;
-  }
-};
-
-const sanitizeFileName = (value: string): string => {
-  const cleaned = value
-    .trim()
-    .replace(/\s+/g, " ")
-    .replace(/[\\/:*?"<>|]/g, "-")
-    .replace(/[\u0000-\u001f]/g, "");
-  const truncated =
-    cleaned.length > maxInvoiceFileBaseLength
-      ? cleaned.slice(0, maxInvoiceFileBaseLength)
-      : cleaned;
-  return truncated.trim().replace(/[. ]+$/g, "");
-};
-
-const hasValidInvoiceXml = async (
-  invoiceDir: string,
-  expectedHash: string | null,
-): Promise<boolean> => {
-  try {
-    const entries = await fs.readdir(invoiceDir);
-    const xmlNames = entries.filter((entry) => entry.endsWith(".xml"));
-    if (xmlNames.length === 0) return false;
-    if (!expectedHash) return false;
-    for (const xmlName of xmlNames) {
-      try {
-        const xmlData = await fs.readFile(path.join(invoiceDir, xmlName));
-        if (sha256Base64(xmlData) === expectedHash) {
-          return true;
-        }
-      } catch {
-        continue;
-      }
-    }
-    return false;
-  } catch {
-    return false;
-  }
-};
-
-const resolveInvoiceFileBase = (xml: string, ksefNumber: string): string => {
-  const invoiceNumber = extractInvoiceNumber(xml);
-  if (!invoiceNumber) return ksefNumber;
-  const safeInvoiceNumber = sanitizeFileName(invoiceNumber);
-  if (!safeInvoiceNumber) return ksefNumber;
-  const baseName = sanitizeFileName(`Faktura nr ${safeInvoiceNumber}`);
-  return baseName || ksefNumber;
-};
-
-const createSyncItem = (
-  nip: string,
-  ksefNumber: string,
-  path: string,
-  xmlText: string,
-): SyncItem => {
-  const paymentInfo = analyzeInvoicePayment(xmlText, nip);
-  return {
-    nip,
-    ksefNumber,
-    path,
-    dueDate: paymentInfo.dueDate,
-    needsPaymentNotification: isEligibleForNotification(paymentInfo),
-  };
-};
-
-const parseIsoDate = (value: string, label: string): Date => {
-  const parsed = new Date(value);
-  if (!Number.isFinite(parsed.getTime())) {
-    throw new ConfigError(`Invalid ${label}: ${value}`);
-  }
-  return parsed;
-};
-
-const resolveNextCursor = (
-  packageInfo: InvoiceExportStatusResponse["package"] | undefined,
-  fallback: string,
-): string => {
-  if (packageInfo?.isTruncated && packageInfo.lastPermanentStorageDate) {
-    return packageInfo.lastPermanentStorageDate;
-  }
-  if (packageInfo?.permanentStorageHwmDate) {
-    return packageInfo.permanentStorageHwmDate;
-  }
-  return fallback;
 };
 
 export class SyncService {
@@ -441,7 +208,7 @@ export class SyncService {
       };
       const accessToken = tokens.accessToken;
       const forced =
-        forceRedownloadId && !nipFilter
+        forceRedownloadId && (!nipFilter || nipFilter === nip)
           ? await this.downloadByKsefNumber(accessToken, nip, forceRedownloadId)
           : null;
       if (forced) {
@@ -508,13 +275,14 @@ export class SyncService {
       return summary;
     } catch (error) {
       const message = (error as Error).message;
-      this.logger.debug({ err: message }, "Sync run failed");
+      const sanitizedMessage = sanitizeErrorMessage(message);
+      this.logger.debug({ err: sanitizedMessage }, "Sync run failed");
       await this.store.withDb((db) => {
         const previous = getSyncState(db);
         setSyncState(db, {
           last_sync_at: new Date().toISOString(),
           last_success_at: previous.last_success_at,
-          last_error: message,
+          last_error: sanitizedMessage,
           last_downloaded_count: summary.downloaded,
         });
         return previous;
@@ -532,12 +300,13 @@ export class SyncService {
         this.logger.info(result, "Sync cycle completed");
       } catch (error) {
         const message = (error as Error).message;
-        this.logger.error({ err: message }, "Sync cycle failed");
+        const sanitizedMessage = sanitizeErrorMessage(message);
+        this.logger.error({ err: sanitizedMessage }, "Sync cycle failed");
         await this.store.withDb((db) =>
           setSyncState(db, {
             last_sync_at: new Date().toISOString(),
             last_success_at: getSyncState(db).last_success_at,
-            last_error: message,
+            last_error: sanitizedMessage,
             last_downloaded_count: getSyncState(db).last_downloaded_count,
           }),
         );
@@ -558,27 +327,16 @@ export class SyncService {
   ): Promise<SyncResult> {
     const now = new Date();
     const ksefStartDate = parseIsoDate(ksefStartDateIso, "KSeF start date");
-    const defaultFrom = maxDate(
-      ksefStartDate,
-      addUtcMonths(now, -maxDateRangeMonths),
-    );
+    const defaultFrom = resolveDefaultStart(now);
     const cursor = forceRedownloadAll
       ? null
       : await this.store.withDb((db) =>
           getContinuationPoint(db, nip, subjectType),
         );
-    const configuredStart = forceRedownloadAll
-      ? this.config.sync.initialSyncFrom
-        ? maxDate(
-            parseIsoDate(this.config.sync.initialSyncFrom, "initialSyncFrom"),
-            ksefStartDate,
-          )
-        : ksefStartDate
-      : this.config.sync.initialSyncFrom
-        ? maxDate(
-            parseIsoDate(this.config.sync.initialSyncFrom, "initialSyncFrom"),
-            ksefStartDate,
-          )
+    const configuredStart = this.config.sync.initialSyncFrom
+      ? resolveConfiguredStart(this.config.sync.initialSyncFrom, ksefStartDate)
+      : forceRedownloadAll
+        ? ksefStartDate
         : defaultFrom;
     let windowStart = configuredStart;
     if (cursor) {
@@ -608,11 +366,8 @@ export class SyncService {
       failed: 0,
       items: [],
     };
-    const exportCooldownSeconds = Math.max(
-      0,
-      this.config.operational.exportCooldownSeconds ?? 0,
-    );
-    const exportCooldownMs = exportCooldownSeconds * 1000;
+    const exportCooldownMs =
+      Math.max(0, this.config.operational.exportCooldownSeconds ?? 0) * 1000;
     let windowIndex = 0;
 
     while (windowStart.getTime() < now.getTime()) {
@@ -684,15 +439,15 @@ export class SyncService {
           await this.store.withDb((db) =>
             setContinuationPoint(db, nip, subjectType, toDate),
           );
-          const nextFrom = parseIsoDate(toDate, "continuation point");
-          if (nextFrom.getTime() <= windowStart.getTime()) {
+          const { nextStart, stalled } = advanceWindow(windowStart, toDate);
+          if (stalled) {
             this.logger.warn(
               { nip, subjectType, nextCursor: toDate },
               "Continuation point did not advance",
             );
             break;
           }
-          windowStart = nextFrom;
+          windowStart = nextStart;
           continue;
         }
         throw error;
@@ -706,15 +461,15 @@ export class SyncService {
         await this.store.withDb((db) =>
           setContinuationPoint(db, nip, subjectType, toDate),
         );
-        const nextFrom = parseIsoDate(toDate, "continuation point");
-        if (nextFrom.getTime() <= windowStart.getTime()) {
+        const { nextStart, stalled } = advanceWindow(windowStart, toDate);
+        if (stalled) {
           this.logger.warn(
             { nip, subjectType, nextCursor: toDate },
             "Continuation point did not advance",
           );
           break;
         }
-        windowStart = nextFrom;
+        windowStart = nextStart;
         continue;
       }
 
@@ -883,6 +638,9 @@ export class SyncService {
           downloaded += 1;
           items.push(createSyncItem(nip, ksefNumber, invoiceDir, xmlText));
         } catch (error) {
+          const sanitizedMessage = sanitizeErrorMessage(
+            (error as Error).message,
+          );
           await this.store.withDb((db) =>
             upsertInvoice(db, {
               nip,
@@ -892,7 +650,7 @@ export class SyncService {
               status: "failed",
               downloaded_at: existing?.downloaded_at ?? null,
               received_at: existing?.received_at ?? null,
-              error: (error as Error).message,
+              error: sanitizedMessage,
             }),
           );
           failed += 1;
@@ -907,22 +665,22 @@ export class SyncService {
         `Progress: window complete (downloaded=${downloaded}, skipped=${skipped}, failed=${failed})`,
       );
 
-      if (failed > 0) {
-        return summary;
-      }
-
       await this.store.withDb((db) =>
         setContinuationPoint(db, nip, subjectType, nextCursor),
       );
-      const nextFrom = parseIsoDate(nextCursor, "continuation point");
-      if (nextFrom.getTime() <= windowStart.getTime()) {
+
+      if (failed > 0) {
+        return summary;
+      }
+      const { nextStart, stalled } = advanceWindow(windowStart, nextCursor);
+      if (stalled) {
         this.logger.warn(
           { nip, subjectType, nextCursor },
           "Continuation point did not advance",
         );
         break;
       }
-      windowStart = nextFrom;
+      windowStart = nextStart;
     }
 
     return summary;
