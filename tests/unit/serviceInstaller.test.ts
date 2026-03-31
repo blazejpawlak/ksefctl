@@ -26,6 +26,20 @@ describe("ServiceInstaller", () => {
   const originalHome = process.env.HOME;
   const originalNodeOptions = process.env.NODE_OPTIONS;
 
+  const allowPrivilegedPaths = (allowedPaths: string[]) => {
+    const originalLstat = fs.lstat.bind(fs);
+    return vi.spyOn(fs, "lstat").mockImplementation(async (filePath) => {
+      if (typeof filePath === "string" && allowedPaths.includes(filePath)) {
+        return {
+          isSymbolicLink: () => false,
+          mode: 0o100600,
+          uid: 0,
+        } as Awaited<ReturnType<typeof fs.lstat>>;
+      }
+      return originalLstat(filePath);
+    });
+  };
+
   afterEach(() => {
     process.env.HOME = originalHome;
     process.env.NODE_OPTIONS = originalNodeOptions;
@@ -38,8 +52,11 @@ describe("ServiceInstaller", () => {
     const homeDir = path.join(tmpDir, "home");
     const storageRoot = path.join(tmpDir, "storage");
     process.env.HOME = homeDir;
-    process.env.NODE_OPTIONS =
-      "--localstorage-file \"/tmp/local storage.json\" --trace-warnings";
+    process.env.NODE_OPTIONS = [
+      "--localstorage-file",
+      JSON.stringify("/tmp/local storage.json"),
+      "--trace-warnings",
+    ].join(" ");
     if (process.getuid) {
       vi.spyOn(process, "getuid").mockReturnValue(501);
     }
@@ -80,6 +97,11 @@ describe("ServiceInstaller", () => {
       if (process.getuid) {
         vi.spyOn(process, "getuid").mockReturnValue(0);
       }
+      const privilegedPathSpy = allowPrivilegedPaths([
+        "/usr/local/bin/node&",
+        "/usr/local/bin/ksefctl<",
+        "/tmp/ksefctl&.yml",
+      ]);
 
       const installer = new ServiceInstaller();
       const plistPath = await installer.install({
@@ -97,6 +119,38 @@ describe("ServiceInstaller", () => {
         `<key>WorkingDirectory</key><string>${storageRoot.replace("&", "&amp;")}</string>`,
       );
       expect(plist).not.toContain("NODE_OPTIONS");
+      privilegedPathSpy.mockRestore();
+    },
+  );
+
+  maybeIt(
+    "rejects root installs when execution paths are not root-owned",
+    async () => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-service-"));
+      const homeDir = path.join(tmpDir, "home");
+      const storageRoot = path.join(tmpDir, "storage");
+      const nodePath = path.join(tmpDir, "node");
+      const cliPath = path.join(tmpDir, "ksefctl");
+      const configPath = path.join(tmpDir, "ksefctl.yml");
+      process.env.HOME = homeDir;
+      await fs.mkdir(homeDir, { recursive: true });
+      await fs.writeFile(nodePath, "node", "utf-8");
+      await fs.writeFile(cliPath, "cli", "utf-8");
+      await fs.writeFile(configPath, "config", "utf-8");
+      if (process.getuid) {
+        vi.spyOn(process, "getuid").mockReturnValue(0);
+      }
+
+      const installer = new ServiceInstaller();
+
+      await expect(
+        installer.install({
+          configPath,
+          storageRoot,
+          nodePath,
+          cliPath,
+        }),
+      ).rejects.toThrow("nodePath must be owned by root");
     },
   );
 });

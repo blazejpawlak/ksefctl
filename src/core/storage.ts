@@ -43,7 +43,7 @@ export const atomicWriteFile = async (
   const dir = path.dirname(filePath);
   await ensureDir(dir);
   const tempPath = `${filePath}.tmp`;
-  await fs.writeFile(tempPath, data, { mode: 0o600 });
+  await fs.writeFile(tempPath, data, { mode: 0o600, flag: "wx" });
   await fs.chmod(tempPath, 0o600);
   await fs.rename(tempPath, filePath);
   await fs.chmod(filePath, 0o600);

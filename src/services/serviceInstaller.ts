@@ -43,12 +43,14 @@ const escapeXml = (value: string): string =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
 
-const escapeSystemdEnvValue = (value: string): string =>
-  value
+const escapeSystemdEnvValue = (value: string): string => {
+  const escapedQuotes = String.raw`\"`;
+  return value
     .replace(/[\r\n\0]/g, " ")
     .replace(/%/g, "%%")
     .replace(/\\/g, "\\\\")
-    .replace(/"/g, "\\\"");
+    .replace(/"/g, escapedQuotes);
+};
 
 const escapeSystemdUnitValue = (value: string): string =>
   escapeSystemdEnvValue(value);
@@ -57,6 +59,41 @@ const assertSafeUnitValue = (label: string, value: string): void => {
   if (!value || /[\r\n\0]/.test(value)) {
     throw new Error(`Invalid ${label} value`);
   }
+};
+
+const assertSafePrivilegedPath = async (
+  label: string,
+  filePath: string,
+): Promise<void> => {
+  if (!path.isAbsolute(filePath)) {
+    throw new Error(
+      `${label} must be an absolute path for root service installation`,
+    );
+  }
+  const stats = await fs.lstat(filePath);
+  if (stats.isSymbolicLink()) {
+    throw new Error(
+      `${label} must not be a symlink for root service installation`,
+    );
+  }
+  if (stats.uid !== 0) {
+    throw new Error(
+      `${label} must be owned by root for root service installation`,
+    );
+  }
+  if ((stats.mode & 0o022) !== 0) {
+    throw new Error(
+      `${label} must not be group or world writable for root service installation`,
+    );
+  }
+};
+
+const validatePrivilegedInstallOptions = async (
+  options: ServiceInstallOptions,
+): Promise<void> => {
+  await assertSafePrivilegedPath("nodePath", options.nodePath);
+  await assertSafePrivilegedPath("cliPath", options.cliPath);
+  await assertSafePrivilegedPath("configPath", options.configPath);
 };
 
 export class ServiceInstaller {
@@ -94,6 +131,9 @@ export class ServiceInstaller {
     const localstoragePath = path.join(defaultDataRoot(), "localstorage.json");
 
     const isRoot = process.getuid?.() === 0;
+    if (isRoot) {
+      await validatePrivilegedInstallOptions(options);
+    }
     const nodeOptionsValue = isRoot
       ? null
       : buildNodeOptionsWithLocalstorage(
@@ -170,6 +210,9 @@ export class ServiceInstaller {
     options: ServiceInstallOptions,
   ): Promise<string> {
     const isRoot = process.getuid?.() === 0;
+    if (isRoot) {
+      await validatePrivilegedInstallOptions(options);
+    }
     const homeDir = process.env.HOME ?? os.homedir();
     if (!path.isAbsolute(homeDir)) {
       throw new Error("HOME is not an absolute path");

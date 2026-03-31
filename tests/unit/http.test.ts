@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NetworkError } from "../../src/utils/errors";
+import { NetworkError, sanitizeErrorMessage } from "../../src/utils/errors";
 import { HttpClient } from "../../src/utils/http";
 
 const createClient = () =>
@@ -24,6 +24,22 @@ afterEach(() => {
 });
 
 describe("HttpClient", () => {
+  it("sanitizes HTTP error messages while preserving request IDs", () => {
+    expect(
+      sanitizeErrorMessage(
+        "HTTP 500 GET /invoices/exports: token=secret request failed (requestId=req-1)",
+      ),
+    ).toBe("HTTP 500 GET /invoices/exports (requestId=req-1)");
+  });
+
+  it("sanitizes wrapped network failure messages", () => {
+    expect(
+      sanitizeErrorMessage(
+        "Network failure: HTTP 502 POST /invoices/exports: raw upstream body",
+      ),
+    ).toBe("Network failure: HTTP 502 POST /invoices/exports");
+  });
+
   it("does not retry non-retryable 4xx responses", async () => {
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response("bad request", {
