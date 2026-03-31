@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import YAML from "yaml";
+import { execFile } from "node:child_process";
 import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import {
   bootstrapInteractive,
   ensureInitialized,
@@ -34,6 +36,55 @@ import { formatDuration, sleep, sleepWithCountdown } from "./utils/time";
 
 const resolveLocalstoragePath = (): string =>
   path.join(defaultDataRoot(), "localstorage.json");
+
+const execFileAsync = promisify(execFile);
+
+let packageVersionPromise: Promise<string> | null = null;
+let versionOutputPromise: Promise<string> | null = null;
+
+const formatVersionOutput = (version: string, commit: string): string =>
+  `${version} (${commit})`;
+
+const readPackageVersion = async (): Promise<string> => {
+  packageVersionPromise ??= fs
+    .readFile(path.join(__dirname, "..", "package.json"), "utf-8")
+    .then((raw) => {
+      const parsed = JSON.parse(raw) as { version?: string };
+      return parsed.version ?? "unknown";
+    });
+
+  return packageVersionPromise;
+};
+
+const readShortCommit = async (): Promise<string> => {
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["rev-parse", "--short", "HEAD"],
+      {
+        cwd: path.join(__dirname, ".."),
+        encoding: "utf-8",
+      },
+    );
+    const commit = stdout.trim();
+    return commit.length > 0 ? commit : "unknown";
+  } catch {
+    return "unknown";
+  }
+};
+
+const readVersionOutput = async (): Promise<string> => {
+  versionOutputPromise ??= Promise.all([
+    readPackageVersion(),
+    readShortCommit(),
+  ]).then(([version, commit]) => formatVersionOutput(version, commit));
+
+  return versionOutputPromise;
+};
+
+const printVersion = async (): Promise<void> => {
+  console.log(await readVersionOutput());
+};
 
 const ensureLocalstorageNodeOption = async (): Promise<void> => {
   const localstoragePath = resolveLocalstoragePath();
@@ -624,6 +675,18 @@ const parseConfigOverride = (args: string[]): string | undefined => {
 const parseFirstRunFlag = (args: string[]): boolean | undefined =>
   args.includes("--no-first-run") ? false : undefined;
 
+const hasVersionFlag = (args: string[]): boolean => {
+  for (const arg of args) {
+    if (arg === "--") {
+      return false;
+    }
+    if (arg === "--version" || arg === "-V") {
+      return true;
+    }
+  }
+  return false;
+};
+
 const hasCommandArgs = (args: string[]): boolean => {
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i] ?? "";
@@ -767,6 +830,7 @@ program
   .description("KSeF inbox sync CLI")
   .option("-c, --config <path>", "path to config file")
   .option("-v, --verbose", "enable verbose logging")
+  .option("-V, --version", "output application version")
   .option("--no-first-run", "disable first-run prompts");
 
 const system = program.command("system").description("System commands");
@@ -1181,10 +1245,7 @@ program
   .description("Show current version")
   .action(async () => {
     try {
-      const pkgPath = path.join(__dirname, "..", "package.json");
-      const raw = await fs.readFile(pkgPath, "utf-8");
-      const parsed = JSON.parse(raw) as { version?: string };
-      console.log(parsed.version ?? "unknown");
+      await printVersion();
     } catch (error) {
       console.error((error as Error).message);
       process.exitCode = exitCodeFromError(error);
@@ -1325,6 +1386,10 @@ const main = async () => {
       program.outputHelp();
       return;
     }
+    if (hasVersionFlag(args)) {
+      await printVersion();
+      return;
+    }
     if (!hasHelp && !hasCommand) {
       const configPath = parseConfigOverride(args);
       const firstRunFlag = parseFirstRunFlag(args);
@@ -1347,6 +1412,8 @@ if (require.main === module) {
 
 export {
   buildCompletionSpec,
+  formatVersionOutput,
+  hasVersionFlag,
   installCompletion,
   renderBashCompletion,
   renderFishCompletion,

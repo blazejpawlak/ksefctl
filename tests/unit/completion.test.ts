@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import {
   buildCompletionSpec,
+  formatVersionOutput,
+  hasVersionFlag,
   installCompletion,
   renderBashCompletion,
   renderFishCompletion,
@@ -63,6 +65,19 @@ describe("completion helpers", () => {
     const output = renderFishCompletion(spec);
 
     expect(output).toContain("__fish_complete_path");
+  });
+
+  it("detects global version flags before command parsing", () => {
+    expect(hasVersionFlag(["--version"])).toBe(true);
+    expect(hasVersionFlag(["-V"])).toBe(true);
+    expect(hasVersionFlag(["sync", "--version"])).toBe(true);
+    expect(hasVersionFlag(["--", "--version"])).toBe(false);
+  });
+
+  it("formats version output with short commit info", () => {
+    expect(formatVersionOutput("2026.02.21", "06fa00c")).toBe(
+      "2026.02.21 (06fa00c)",
+    );
   });
 
   it("installs bash completion and updates rc file", async () => {

@@ -74,7 +74,7 @@ The environment prompt shows full names with the API URLs for clarity.
 - `ksefctl sync [--once] [--nip <nip>] [--force-redownload <ksefNumber>] [--force-redownload-all]` – run sync.
 - `ksefctl daemon` – run continuously in foreground.
 - `ksefctl status [--json]` – show last sync status.
-- `ksefctl version` – show current version.
+- `ksefctl version` – show current version and latest short commit.
 - `ksefctl system init [--force] [--yes]` – create config template and storage directories.
 - `ksefctl system verify [--nip <nip>]` – validate authentication against the configured environment.
 - `ksefctl system service install` – install + enable launchd/systemd.
@@ -89,6 +89,7 @@ Global options:
 
 - `-c, --config <path>` – override config path.
 - `-v, --verbose` – enable detailed logs for supported commands.
+- `-V, --version` – print the application version and latest short commit.
 - `--no-first-run` – disable first-run prompts for the no-args path.
 
 All commands except `system init` require a config file and keychain tokens for each configured NIP.
