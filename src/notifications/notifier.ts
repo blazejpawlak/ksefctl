@@ -9,6 +9,10 @@ import {
   hasInvoiceNotification,
   markInvoiceNotification,
 } from "../db/repository";
+import {
+  formatEmailNotificationContent,
+  formatMacNotificationContent,
+} from "./unpaidNotificationContent";
 
 const unpaidDueNotificationKind = "unpaid_due";
 
@@ -69,15 +73,12 @@ export class Notifier {
     if (!this.config.notifications.macosNotification) return false;
     if (process.platform !== "darwin") return false;
 
-    const firstItem = summary.items[0];
-    const subtitle = firstItem
-      ? `${firstItem.nip} | ${firstItem.ksefNumber} | due ${firstItem.dueDate ?? "-"}`
-      : "";
+    const content = formatMacNotificationContent(summary.items);
     try {
       notifier.notify({
-        title: "KSeFctl",
-        message: `Invoices to pay: ${summary.items.length}`,
-        subtitle,
+        title: content.title,
+        message: content.message,
+        subtitle: content.subtitle,
       });
       return true;
     } catch (error) {
@@ -112,25 +113,17 @@ export class Notifier {
       },
     });
 
-    const lines = summary.items.map(
-      (item) =>
-        `- ${item.nip} | ${item.ksefNumber} | due ${item.dueDate ?? "-"}: ${item.path}`,
+    const content = formatEmailNotificationContent(
+      summary.items,
+      new Date().toISOString(),
     );
-    const body = [
-      `Invoices to pay: ${summary.items.length}`,
-      "",
-      "Unpaid payable invoices:",
-      ...lines,
-      "",
-      `Generated at: ${new Date().toISOString()}`,
-    ].join("\n");
 
     try {
       await transporter.sendMail({
         from: smtp.from,
         to: smtp.to.join(","),
-        subject: `KSeFctl: ${summary.items.length} invoice(s) to pay`,
-        text: body,
+        subject: content.subject,
+        text: content.body,
       });
       return true;
     } catch (error) {

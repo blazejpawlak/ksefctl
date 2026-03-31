@@ -44,7 +44,7 @@ describe("paymentSummary", () => {
         dueDate: "2026-03-24",
         needsPaymentNotification: true,
       }),
-    ).toBe("1234567890 | KSEF-1 | due 2026-03-24 | -> /tmp/a");
+    ).toBe("NIP 1234567890 | due 2026-03-24 | KSeF KSEF-1 | -> /tmp/a");
   });
 
   it("sanitizes terminal output and formats multiple invoices", () => {
@@ -58,6 +58,6 @@ describe("paymentSummary", () => {
           needsPaymentNotification: true,
         },
       ]),
-    ).toEqual(["1234567890 | KSEF-1 | due 2026-03-24 | -> /tmp/a"]);
+    ).toEqual(["NIP 1234567890 | due 2026-03-24 | KSeF KSEF-1 | -> /tmp/a"]);
   });
 });

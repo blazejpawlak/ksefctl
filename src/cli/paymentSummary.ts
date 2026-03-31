@@ -9,9 +9,9 @@ export const getInvoicesToPay = (items: SyncItem[]): SyncItem[] =>
 export const formatInvoiceToPay = (item: SyncItem): string => {
   const dueDate = item.dueDate ?? "-";
   return [
-    sanitizeForTerminal(item.nip),
-    sanitizeForTerminal(item.ksefNumber),
+    `NIP ${sanitizeForTerminal(item.nip)}`,
     `due ${sanitizeForTerminal(dueDate)}`,
+    `KSeF ${sanitizeForTerminal(item.ksefNumber)}`,
     `-> ${sanitizeForTerminal(item.path)}`,
   ].join(" | ");
 };

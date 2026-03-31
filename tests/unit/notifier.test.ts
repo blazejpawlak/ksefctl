@@ -124,12 +124,16 @@ describe("Notifier", () => {
     expect(createTransportMock).toHaveBeenCalledTimes(1);
     expect(sendMailMock).toHaveBeenCalledTimes(1);
     expect(sendMailMock.mock.calls[0]?.[0]).toMatchObject({
-      subject: "KSeFctl: 1 invoice(s) to pay",
+      subject: "KSeFctl: 1 invoice requires payment",
     });
     const sentMessage = sendMailMock.mock.calls[0]?.[0] as
       | { text?: string }
       | undefined;
+    expect(String(sentMessage?.text)).toContain(
+      "The following invoice requires payment.",
+    );
     expect(String(sentMessage?.text)).toContain("2026-03-24");
+    expect(String(sentMessage?.text)).toContain("Folder: /tmp/invoice-1");
 
     const notified = await store.withDb((db) =>
       hasInvoiceNotification(db, "1234567890", "KSEF-1", "unpaid_due"),
@@ -181,5 +185,32 @@ describe("Notifier", () => {
       hasInvoiceNotification(db, "1234567890", "KSEF-1", "unpaid_due"),
     );
     expect(notified).toBe(false);
+  });
+
+  it("uses a summary-style subject for multiple invoices", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-notifier-"));
+    const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
+    const notifier = new Notifier(createConfig(), createLogger());
+    const result: SyncResult = {
+      downloaded: 2,
+      skipped: 0,
+      failed: 0,
+      items: [
+        ...createResult().items,
+        {
+          nip: "7393955632",
+          ksefNumber: "KSEF-2",
+          path: "/tmp/invoice-2",
+          dueDate: "2026-03-25",
+          needsPaymentNotification: true,
+        },
+      ],
+    };
+
+    await notifier.notifyUnpaidInvoices(result, store);
+
+    expect(sendMailMock.mock.calls[0]?.[0]).toMatchObject({
+      subject: "KSeFctl: 2 invoices require payment",
+    });
   });
 });
