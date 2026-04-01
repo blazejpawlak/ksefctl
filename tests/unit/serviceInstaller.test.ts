@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { ServiceInstaller } from "../../src/services/serviceInstaller";
+import {
+  buildLaunchdPlist,
+  resolveLaunchdTarget,
+  ServiceInstaller,
+} from "../../src/services/serviceInstaller";
 
 type ExecCallback = (
   error: Error | null,
@@ -87,32 +91,26 @@ describe("ServiceInstaller", () => {
   });
 
   maybeIt(
-    "escapes launchd plist values and omits NODE_OPTIONS when root",
-    async () => {
-      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-service-"));
-      const homeDir = path.join(tmpDir, "home");
-      const storageRoot = path.join(tmpDir, "storage & logs");
-      process.env.HOME = homeDir;
+    "uses a fixed root-controlled launchd target and omits NODE_OPTIONS when root",
+    () => {
+      const storageRoot = "/tmp/storage & logs";
       process.env.NODE_OPTIONS = "--localstorage-file=/tmp/local.json";
-      if (process.getuid) {
-        vi.spyOn(process, "getuid").mockReturnValue(0);
-      }
-      const privilegedPathSpy = allowPrivilegedPaths([
-        "/usr/local/bin/node&",
-        "/usr/local/bin/ksefctl<",
-        "/tmp/ksefctl&.yml",
-        storageRoot,
-      ]);
+      const plist = buildLaunchdPlist(
+        {
+          configPath: "/tmp/ksefctl&.yml",
+          storageRoot,
+          nodePath: "/usr/local/bin/node&",
+          cliPath: "/usr/local/bin/ksefctl<",
+        },
+        null,
+      );
+      const target = resolveLaunchdTarget("/tmp/untrusted-home", 0, true);
 
-      const installer = new ServiceInstaller();
-      const plistPath = await installer.install({
-        configPath: "/tmp/ksefctl&.yml",
-        storageRoot,
-        nodePath: "/usr/local/bin/node&",
-        cliPath: "/usr/local/bin/ksefctl<",
+      expect(target).toEqual({
+        launchdDir: "/Library/LaunchDaemons",
+        plistPath: "/Library/LaunchDaemons/com.ksefctl.plist",
+        domain: "system",
       });
-      const plist = await fs.readFile(plistPath, "utf-8");
-
       expect(plist).toContain("<string>/usr/local/bin/node&amp;</string>");
       expect(plist).toContain("<string>/usr/local/bin/ksefctl&lt;</string>");
       expect(plist).toContain("<string>/tmp/ksefctl&amp;.yml</string>");
@@ -120,9 +118,22 @@ describe("ServiceInstaller", () => {
         `<key>WorkingDirectory</key><string>${storageRoot.replace("&", "&amp;")}</string>`,
       );
       expect(plist).not.toContain("NODE_OPTIONS");
-      privilegedPathSpy.mockRestore();
     },
   );
+
+  maybeIt("resolves non-root launchd target from HOME", () => {
+    expect(resolveLaunchdTarget("/tmp/home", 501, false)).toEqual({
+      launchdDir: "/tmp/home/Library/LaunchAgents",
+      plistPath: "/tmp/home/Library/LaunchAgents/com.ksefctl.plist",
+      domain: "gui/501",
+    });
+  });
+
+  maybeIt("rejects non-absolute HOME for non-root launchd target", () => {
+    expect(() => resolveLaunchdTarget("relative-home", 501, false)).toThrow(
+      "HOME is not an absolute path",
+    );
+  });
 
   maybeIt(
     "rejects root installs when execution paths are not root-owned",

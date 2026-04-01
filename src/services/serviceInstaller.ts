@@ -34,6 +34,12 @@ export type ServiceInstallOptions = {
   cliPath: string;
 };
 
+export type LaunchdTarget = {
+  launchdDir: string;
+  plistPath: string;
+  domain: string;
+};
+
 const serviceName = APP_NAME;
 
 const escapeXml = (value: string): string =>
@@ -98,6 +104,78 @@ const validatePrivilegedInstallOptions = async (
   await assertSafePrivilegedPath("storageRoot", options.storageRoot);
 };
 
+export const resolveLaunchdTarget = (
+  homeDir: string,
+  uid: number,
+  isRoot: boolean,
+): LaunchdTarget => {
+  if (isRoot) {
+    const launchdDir = "/Library/LaunchDaemons";
+    return {
+      launchdDir,
+      plistPath: path.join(launchdDir, `com.${serviceName}.plist`),
+      domain: "system",
+    };
+  }
+  if (!path.isAbsolute(homeDir)) {
+    throw new Error("HOME is not an absolute path");
+  }
+  const launchdDir = path.join(homeDir, "Library", "LaunchAgents");
+  return {
+    launchdDir,
+    plistPath: path.join(launchdDir, `com.${serviceName}.plist`),
+    domain: `gui/${uid}`,
+  };
+};
+
+export const buildLaunchdPlist = (
+  options: ServiceInstallOptions,
+  nodeOptionsValue: string | null,
+): string => {
+  const nodeOptionsEntry =
+    nodeOptionsValue === null
+      ? ""
+      : `\n      <key>NODE_OPTIONS</key><string>${escapeXml(nodeOptionsValue)}</string>`;
+
+  const nodePathValue = escapeXml(options.nodePath);
+  const cliPathValue = escapeXml(options.cliPath);
+  const configPathValue = escapeXml(options.configPath);
+  const storageRootValue = escapeXml(options.storageRoot);
+  const stdoutPath = escapeXml(
+    path.join(options.storageRoot, "logs", `${serviceName}.out.log`),
+  );
+  const stderrPath = escapeXml(
+    path.join(options.storageRoot, "logs", `${serviceName}.err.log`),
+  );
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key><string>com.${serviceName}</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>${nodePathValue}</string>
+      <string>${cliPathValue}</string>
+      <string>daemon</string>
+      <string>--config</string>
+      <string>${configPathValue}</string>
+    </array>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <key>WorkingDirectory</key><string>${storageRootValue}</string>
+    <key>StandardOutPath</key><string>${stdoutPath}</string>
+    <key>StandardErrorPath</key><string>${stderrPath}</string>
+    <key>Umask</key><integer>63</integer>
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>NODE_ENV</key><string>production</string>${nodeOptionsEntry}
+    </dict>
+  </dict>
+</plist>
+`;
+};
+
 const ensureRegularFile = async (filePath: string): Promise<boolean> => {
   try {
     const stat = await fs.lstat(filePath);
@@ -157,18 +235,23 @@ export class ServiceInstaller {
   private async installLaunchd(
     options: ServiceInstallOptions,
   ): Promise<string> {
+    const uid = process.getuid?.() ?? 0;
+    const isRoot = uid === 0;
     const homeDir = process.env.HOME ?? os.homedir();
-    if (!path.isAbsolute(homeDir)) {
-      throw new Error("HOME is not an absolute path");
-    }
-    const isRoot = process.getuid?.() === 0;
     if (isRoot) {
       await validatePrivilegedInstallOptions(options);
     }
-    const launchAgentsDir = path.join(homeDir, "Library", "LaunchAgents");
-    await ensureDir(launchAgentsDir);
+    const { launchdDir, plistPath, domain } = resolveLaunchdTarget(
+      homeDir,
+      uid,
+      isRoot,
+    );
+    if (isRoot) {
+      await assertSafePrivilegedPath("launchdDir", launchdDir);
+    } else {
+      await ensureDir(launchdDir);
+    }
     await ensureDir(path.join(options.storageRoot, "logs"));
-    const plistPath = path.join(launchAgentsDir, `com.${serviceName}.plist`);
 
     assertSafeUnitValue("nodePath", options.nodePath);
     assertSafeUnitValue("cliPath", options.cliPath);
@@ -182,68 +265,23 @@ export class ServiceInstaller {
           process.env.NODE_OPTIONS,
           localstoragePath,
         );
-    const nodeOptionsEntry =
-      nodeOptionsValue === null
-        ? ""
-        : `\n      <key>NODE_OPTIONS</key><string>${escapeXml(nodeOptionsValue)}</string>`;
-
-    const nodePathValue = escapeXml(options.nodePath);
-    const cliPathValue = escapeXml(options.cliPath);
-    const configPathValue = escapeXml(options.configPath);
-    const storageRootValue = escapeXml(options.storageRoot);
-    const stdoutPath = escapeXml(
-      path.join(options.storageRoot, "logs", `${serviceName}.out.log`),
-    );
-    const stderrPath = escapeXml(
-      path.join(options.storageRoot, "logs", `${serviceName}.err.log`),
-    );
-
-    const plist = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-  <dict>
-    <key>Label</key><string>com.${serviceName}</string>
-    <key>ProgramArguments</key>
-    <array>
-      <string>${nodePathValue}</string>
-      <string>${cliPathValue}</string>
-      <string>daemon</string>
-      <string>--config</string>
-      <string>${configPathValue}</string>
-    </array>
-    <key>RunAtLoad</key><true/>
-    <key>KeepAlive</key><true/>
-    <key>WorkingDirectory</key><string>${storageRootValue}</string>
-    <key>StandardOutPath</key><string>${stdoutPath}</string>
-    <key>StandardErrorPath</key><string>${stderrPath}</string>
-    <key>Umask</key><integer>63</integer>
-    <key>EnvironmentVariables</key>
-    <dict>
-      <key>NODE_ENV</key><string>production</string>${nodeOptionsEntry}
-    </dict>
-  </dict>
-</plist>
-`;
+    const plist = buildLaunchdPlist(options, nodeOptionsValue);
 
     await writeRegularFile(plistPath, plist);
-    const uid = process.getuid?.() ?? 0;
-    await execFileAsync("launchctl", ["bootstrap", `gui/${uid}`, plistPath]);
+    await execFileAsync("launchctl", ["bootstrap", domain, plistPath]);
     await execFileAsync("launchctl", [
       "enable",
-      `gui/${uid}/com.${serviceName}`,
+      `${domain}/com.${serviceName}`,
     ]);
     return plistPath;
   }
 
   private async uninstallLaunchd(): Promise<string> {
-    const homeDir = process.env.HOME ?? os.homedir();
-    if (!path.isAbsolute(homeDir)) {
-      throw new Error("HOME is not an absolute path");
-    }
-    const launchAgentsDir = path.join(homeDir, "Library", "LaunchAgents");
-    const plistPath = path.join(launchAgentsDir, `com.${serviceName}.plist`);
     const uid = process.getuid?.() ?? 0;
-    await execFileSafe("launchctl", ["bootout", `gui/${uid}`, plistPath]);
+    const isRoot = uid === 0;
+    const homeDir = process.env.HOME ?? os.homedir();
+    const { plistPath, domain } = resolveLaunchdTarget(homeDir, uid, isRoot);
+    await execFileSafe("launchctl", ["bootout", domain, plistPath]);
     await fs.rm(plistPath, { force: true });
     return plistPath;
   }
