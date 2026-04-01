@@ -184,4 +184,31 @@ describe("ServiceInstaller", () => {
       ).rejects.toThrow("storageRoot must be owned by root");
     },
   );
+
+  maybeIt("refuses to overwrite a symlinked launchd plist", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-service-"));
+    const homeDir = path.join(tmpDir, "home");
+    const storageRoot = path.join(tmpDir, "storage");
+    const launchAgentsDir = path.join(homeDir, "Library", "LaunchAgents");
+    const plistPath = path.join(launchAgentsDir, "com.ksefctl.plist");
+    const targetPath = path.join(tmpDir, "other.plist");
+    process.env.HOME = homeDir;
+    await fs.mkdir(launchAgentsDir, { recursive: true });
+    await fs.writeFile(targetPath, "target", "utf-8");
+    await fs.symlink(targetPath, plistPath);
+    if (process.getuid) {
+      vi.spyOn(process, "getuid").mockReturnValue(501);
+    }
+
+    const installer = new ServiceInstaller();
+
+    await expect(
+      installer.install({
+        configPath: "/tmp/ksefctl.yml",
+        storageRoot,
+        nodePath: "/usr/local/bin/node",
+        cliPath: "/usr/local/bin/ksefctl",
+      }),
+    ).rejects.toThrow("Refusing to modify symlinked service file");
+  });
 });

@@ -43,7 +43,11 @@ import { StatusService } from "./core/statusService";
 import { SyncService } from "./core/syncService";
 import { Notifier } from "./notifications/notifier";
 import { ServiceInstaller } from "./services/serviceInstaller";
-import { exitCodeFromError, ConfigError } from "./utils/errors";
+import {
+  ConfigError,
+  exitCodeFromError,
+  formatErrorMessage,
+} from "./utils/errors";
 import { formatDuration, sleep, sleepWithCountdown } from "./utils/time";
 
 const program = new Command();
@@ -96,6 +100,9 @@ type SecretSetOptions = {
 type SecretClearOptions = {
   nip: string;
 };
+
+const formatCliError = (error: unknown): string =>
+  sanitizeForTerminal(formatErrorMessage(error));
 
 const getRootOptions = (): RootOptions => program.opts<RootOptions>();
 
@@ -202,7 +209,7 @@ system
       printHeader("Init");
       printKeyValues([["status", "initialized"]]);
     } catch (error) {
-      console.error((error as Error).message);
+      console.error(formatCliError(error));
       process.exitCode = exitCodeFromError(error);
     }
   });
@@ -245,7 +252,7 @@ system
       ]);
     } catch (error) {
       renderer?.done();
-      console.error((error as Error).message);
+      console.error(formatCliError(error));
       process.exitCode = exitCodeFromError(error);
     }
   });
@@ -355,7 +362,7 @@ program
       }
       await notifier.notifyUnpaidInvoices(result, ctx.store);
     } catch (error) {
-      const message = (error as Error).message;
+      const message = formatCliError(error);
       renderer?.done();
       if (started) {
         printKeyValues([
@@ -428,7 +435,7 @@ program
           result = await sync.runOnce();
           await notifier.notifyUnpaidInvoices(result, ctx.store);
         } catch (error) {
-          errorMessage = (error as Error).message;
+          errorMessage = formatCliError(error);
         }
         renderer?.done();
         const durationMs = Date.now() - startedAt;
@@ -446,7 +453,7 @@ program
           ["NextRunIn", formatDuration(intervalMs)],
         ];
         if (errorMessage) {
-          summaryEntries.push(["Error", sanitizeForTerminal(errorMessage)]);
+          summaryEntries.push(["Error", errorMessage]);
         }
         printLabelValues(summaryEntries);
         if (invoicesToPay.length > 0) {
@@ -471,7 +478,7 @@ program
       }
     } catch (error) {
       renderer?.done();
-      console.error((error as Error).message);
+      console.error(formatCliError(error));
       process.exitCode = exitCodeFromError(error);
     }
   });
@@ -504,7 +511,7 @@ systemService
       printHeader("System Service Install");
       printKeyValues([["servicePath", pathInstalled]]);
     } catch (error) {
-      console.error((error as Error).message);
+      console.error(formatCliError(error));
       process.exitCode = exitCodeFromError(error);
     }
   });
@@ -521,7 +528,7 @@ systemService
       printHeader("System Service Uninstall");
       printKeyValues([["servicePath", pathRemoved]]);
     } catch (error) {
-      console.error((error as Error).message);
+      console.error(formatCliError(error));
       process.exitCode = exitCodeFromError(error);
     }
   });
@@ -561,7 +568,7 @@ program
         ["lastDownloadedCount", payload.lastDownloadedCount],
       ]);
     } catch (error) {
-      console.error((error as Error).message);
+      console.error(formatCliError(error));
       process.exitCode = exitCodeFromError(error);
     }
   });
@@ -573,7 +580,7 @@ program
     try {
       await printVersion();
     } catch (error) {
-      console.error((error as Error).message);
+      console.error(formatCliError(error));
       process.exitCode = exitCodeFromError(error);
     }
   });
@@ -596,7 +603,7 @@ systemConfig
       const sanitized = sanitizeConfig(ctx.config);
       console.log(YAML.stringify(sanitized));
     } catch (error) {
-      console.error((error as Error).message);
+      console.error(formatCliError(error));
       process.exitCode = exitCodeFromError(error);
     }
   });
@@ -620,7 +627,7 @@ secret
       printHeader("Secret Set");
       printKeyValues([["nip", result.nip]]);
     } catch (error) {
-      console.error((error as Error).message);
+      console.error(formatCliError(error));
       process.exitCode = exitCodeFromError(error);
     }
   });
@@ -640,7 +647,7 @@ secret
         ]),
       );
     } catch (error) {
-      console.error((error as Error).message);
+      console.error(formatCliError(error));
       process.exitCode = exitCodeFromError(error);
     }
   });
@@ -656,7 +663,7 @@ secret
       printHeader("Secret Clear");
       printKeyValues([["nip", options.nip]]);
     } catch (error) {
-      console.error((error as Error).message);
+      console.error(formatCliError(error));
       process.exitCode = exitCodeFromError(error);
     }
   });
@@ -727,7 +734,7 @@ const main = async () => {
     await ensureLocalstorageNodeOption();
     await program.parseAsync(process.argv);
   } catch (error) {
-    console.error((error as Error).message);
+    console.error(formatCliError(error));
     process.exitCode = exitCodeFromError(error);
   }
 };
@@ -738,6 +745,7 @@ if (require.main === module) {
 
 export {
   buildCompletionSpec,
+  formatCliError,
   formatVersionOutput,
   hasVersionFlag,
   installCompletion,

@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NetworkError, sanitizeErrorMessage } from "../../src/utils/errors";
+import {
+  formatErrorMessage,
+  NetworkError,
+  sanitizeErrorMessage,
+} from "../../src/utils/errors";
 import { HttpClient } from "../../src/utils/http";
 
 const createClient = () =>
@@ -48,6 +52,16 @@ describe("HttpClient", () => {
     ).toBe(
       "SMTP failure: Authorization=[REDACTED] url=https://[REDACTED]@example.com/callback?token=[REDACTED]&signature=[REDACTED]",
     );
+  });
+
+  it("formats unknown errors through the shared sanitizer", () => {
+    expect(
+      formatErrorMessage(
+        new Error(
+          "HTTP 500 GET /invoices/exports: token=secret request failed (requestId=req-1)",
+        ),
+      ),
+    ).toBe("HTTP 500 GET /invoices/exports (requestId=req-1)");
   });
 
   it("does not retry non-retryable 4xx responses", async () => {

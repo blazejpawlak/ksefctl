@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -97,6 +98,47 @@ const validatePrivilegedInstallOptions = async (
   await assertSafePrivilegedPath("storageRoot", options.storageRoot);
 };
 
+const ensureRegularFile = async (filePath: string): Promise<boolean> => {
+  try {
+    const stat = await fs.lstat(filePath);
+    if (stat.isSymbolicLink()) {
+      throw new Error("Refusing to modify symlinked service file");
+    }
+    if (!stat.isFile()) {
+      throw new Error("Refusing to modify non-file service path");
+    }
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
+};
+
+const writeRegularFile = async (
+  filePath: string,
+  content: string,
+): Promise<void> => {
+  const exists = await ensureRegularFile(filePath);
+  const flags = exists
+    ? fsConstants.O_WRONLY | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW
+    : fsConstants.O_WRONLY |
+      fsConstants.O_CREAT |
+      fsConstants.O_EXCL |
+      fsConstants.O_NOFOLLOW;
+  const handle = await fs.open(filePath, flags, 0o600);
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile()) {
+      throw new Error("Refusing to modify non-file service path");
+    }
+    await handle.writeFile(content, "utf-8");
+  } finally {
+    await handle.close();
+  }
+};
+
 export class ServiceInstaller {
   async install(options: ServiceInstallOptions): Promise<string> {
     if (process.platform === "darwin") {
@@ -183,7 +225,7 @@ export class ServiceInstaller {
 </plist>
 `;
 
-    await fs.writeFile(plistPath, plist, "utf-8");
+    await writeRegularFile(plistPath, plist);
     const uid = process.getuid?.() ?? 0;
     await execFileAsync("launchctl", ["bootstrap", `gui/${uid}`, plistPath]);
     await execFileAsync("launchctl", [
@@ -264,7 +306,7 @@ UMask=0077
 WantedBy=${target}
 `;
 
-    await fs.writeFile(unitPath, unit, "utf-8");
+    await writeRegularFile(unitPath, unit);
 
     if (isRoot) {
       await execFileAsync("systemctl", ["daemon-reload"]);

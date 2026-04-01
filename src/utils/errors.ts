@@ -54,6 +54,16 @@ export const sanitizeErrorMessage = (message: string): string => {
   return sanitizeGenericErrorMessage(sanitizeHttpErrorMessage(message));
 };
 
+export const formatErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) {
+    return sanitizeErrorMessage(error.message);
+  }
+  if (typeof error === "string") {
+    return sanitizeErrorMessage(error);
+  }
+  return "Unknown error";
+};
+
 export class ConfigError extends Error {
   constructor(message: string) {
     super(message);
