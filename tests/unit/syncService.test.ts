@@ -8,7 +8,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { SyncService } from "../../src/core/syncService";
-import { getContinuationPoint, upsertInvoice } from "../../src/db/repository";
+import {
+  getContinuationPoint,
+  getInvoice,
+  getSyncState,
+  upsertInvoice,
+} from "../../src/db/repository";
 import { SqliteStore } from "../../src/db/sqlite";
 import { encryptAes256Cbc, sha256Base64 } from "../../src/utils/crypto";
 
@@ -112,6 +117,73 @@ const createDeferred = <T>() => {
 };
 
 describe("SyncService", () => {
+  it("serializes configured NIPs when maxConcurrentNips is one", async () => {
+    const store = new SqliteStore(":memory:");
+    const logger = createLogger();
+    const deferredA = createDeferred<{
+      accessToken: string;
+      accessTokenValidUntil: string;
+      refreshToken: string;
+      refreshTokenValidUntil: string;
+    }>();
+    const deferredB = createDeferred<{
+      accessToken: string;
+      accessTokenValidUntil: string;
+      refreshToken: string;
+      refreshTokenValidUntil: string;
+    }>();
+    const getAccessToken = vi.fn((nip: string) => {
+      if (nip === "1234567890") return deferredA.promise;
+      if (nip === "9876543210") return deferredB.promise;
+      throw new Error(`Unexpected NIP ${nip}`);
+    });
+    const auth = {
+      getAccessToken,
+    } as unknown as AuthService;
+    const client = {} as KsefClient;
+    const config = createConfig({
+      organizations: [{ nip: "1234567890" }, { nip: "9876543210" }],
+      sync: {
+        subjectTypes: [],
+        includeMetadataHeader: true,
+        generatePdf: false,
+        maxConcurrentNips: 1,
+      },
+    });
+
+    const service = new SyncService(client, auth, config, logger, store);
+    const runPromise = service.runOnce();
+
+    await vi.waitFor(() => {
+      expect(getAccessToken).toHaveBeenCalledTimes(1);
+    });
+
+    deferredA.resolve({
+      accessToken: "ACCESS-A",
+      accessTokenValidUntil: "",
+      refreshToken: "",
+      refreshTokenValidUntil: "",
+    });
+
+    await vi.waitFor(() => {
+      expect(getAccessToken).toHaveBeenCalledTimes(2);
+    });
+
+    deferredB.resolve({
+      accessToken: "ACCESS-B",
+      accessTokenValidUntil: "",
+      refreshToken: "",
+      refreshTokenValidUntil: "",
+    });
+
+    await expect(runPromise).resolves.toEqual({
+      downloaded: 0,
+      skipped: 0,
+      failed: 0,
+      items: [],
+    });
+  });
+
   it("syncs configured NIPs in parallel when maxConcurrentNips is greater than one", async () => {
     const store = new SqliteStore(":memory:");
     const logger = createLogger();
@@ -319,6 +391,44 @@ describe("SyncService", () => {
     expect(xml).toContain("FV/1:2026?");
   });
 
+  it("directly downloads force-redownload invoices when a nip filter is set", async () => {
+    const now = new Date("2026-02-15T08:00:00Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
+    const downloadInvoiceXml = vi
+      .fn()
+      .mockResolvedValue("<Faktura><P_2>FV/1</P_2></Faktura>");
+    const client = {
+      downloadInvoiceXml,
+    } as unknown as KsefClient;
+    const config = createConfig({
+      organizations: [{ nip: "1234567890" }, { nip: "9876543210" }],
+      storage: { root: path.join(tmpDir, "storage") },
+      sync: {
+        subjectTypes: [],
+        includeMetadataHeader: true,
+        generatePdf: false,
+        maxConcurrentNips: 1,
+      },
+    });
+    const logger = createLogger();
+    const auth = createAuth();
+
+    const service = new SyncService(client, auth, config, logger, store);
+    const result = await service.runOnce("KSEF-INV-1", "1234567890");
+
+    expect(downloadInvoiceXml).toHaveBeenCalledTimes(1);
+    expect(downloadInvoiceXml).toHaveBeenCalledWith("ACCESS", "KSEF-INV-1");
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        nip: "1234567890",
+        ksefNumber: "KSEF-INV-1",
+      }),
+    ]);
+  });
+
   it("returns payment-notification metadata for direct downloads", async () => {
     const now = new Date("2026-03-24T12:00:00Z");
     vi.useFakeTimers();
@@ -451,6 +561,149 @@ describe("SyncService", () => {
         needsPaymentNotification: true,
       }),
     ]);
+  });
+
+  it("advances continuation point after partial export failures", async () => {
+    const now = new Date("2026-05-10T12:00:00Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
+    const zip = new AdmZip();
+    zip.addFile(
+      "KSEF-GOOD.xml",
+      Buffer.from("<Faktura><P_2>GOOD</P_2></Faktura>"),
+    );
+    zip.addFile(
+      "KSEF-BAD.xml",
+      Buffer.from("<Faktura><P_2>BAD</P_2></Faktura>"),
+    );
+    const zipBuffer = zip.toBuffer();
+    const encrypted = encryptAes256Cbc(testKey, testIv, zipBuffer);
+    const partHash = sha256Base64(zipBuffer);
+    const encryptedPartHash = sha256Base64(encrypted);
+    const exportInvoices = vi
+      .fn()
+      .mockResolvedValue({ referenceNumber: "EXPORT-1" });
+    const client = {
+      exportInvoices,
+      getPublicKeyCertificates: vi.fn().mockResolvedValue([]),
+      getExportStatus: vi.fn().mockResolvedValue({
+        status: { code: 200, description: "OK" },
+        package: {
+          invoiceCount: 2,
+          size: encrypted.length,
+          isTruncated: false,
+          permanentStorageHwmDate: now.toISOString(),
+          parts: [
+            {
+              ordinalNumber: 1,
+              partName: "part1.zip.aes",
+              method: "GET",
+              url: "https://example.test/part1",
+              partHash,
+              encryptedPartHash,
+            },
+          ],
+        },
+      }),
+      downloadPackagePart: vi.fn().mockResolvedValue(encrypted),
+    } as unknown as KsefClient;
+    const config = createConfig({
+      storage: { root: path.join(tmpDir, "storage") },
+      security: {
+        tls: { enablePinning: false, pins: [], pinningHosts: [] },
+        allowedHosts: ["example.test"],
+      },
+      sync: {
+        subjectTypes: ["Subject1"],
+        includeMetadataHeader: true,
+        generatePdf: false,
+        initialSyncFrom: new Date(now.getTime() - 86400000).toISOString(),
+        maxConcurrentNips: 1,
+      },
+    });
+    const logger = createLogger();
+    const auth = createAuth();
+    const originalWriteFile = fs.writeFile.bind(fs);
+    const writeFileSpy = vi
+      .spyOn(fs, "writeFile")
+      .mockImplementation(async (...args) => {
+        const filePath = args[0];
+        if (
+          typeof filePath === "string" &&
+          filePath.includes("KSEF-BAD") &&
+          filePath.endsWith(".xml.tmp")
+        ) {
+          throw new Error(
+            "HTTP 500 GET /download: token=secret response body (requestId=req-1)",
+          );
+        }
+        return originalWriteFile(...args);
+      });
+
+    const service = new SyncService(client, auth, config, logger, store);
+    const firstRun = await service.runOnce();
+    const failedInvoice = await store.withDb((db) =>
+      getInvoice(db, "1234567890", "KSEF-BAD"),
+    );
+    const continuation = await store.withDb((db) =>
+      getContinuationPoint(db, "1234567890", "Subject1" as SubjectType),
+    );
+    const secondRun = await service.runOnce();
+    writeFileSpy.mockRestore();
+
+    expect(firstRun.downloaded).toBe(1);
+    expect(firstRun.failed).toBe(1);
+    expect(failedInvoice?.error).toBe(
+      "HTTP 500 GET /download (requestId=req-1)",
+    );
+    expect(continuation).toBe(now.toISOString());
+    expect(exportInvoices).toHaveBeenCalledTimes(1);
+    expect(secondRun).toEqual({
+      downloaded: 0,
+      skipped: 0,
+      failed: 0,
+      items: [],
+    });
+  });
+
+  it("stores sanitized sync errors when a run fails", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
+    const client = {
+      exportInvoices: vi
+        .fn()
+        .mockRejectedValue(
+          new Error(
+            "HTTP 500 POST /invoices/exports: raw upstream response (requestId=req-2)",
+          ),
+        ),
+      getPublicKeyCertificates: vi.fn().mockResolvedValue([]),
+    } as unknown as KsefClient;
+    const config = createConfig({
+      storage: { root: path.join(tmpDir, "storage") },
+      sync: {
+        subjectTypes: ["Subject1"],
+        includeMetadataHeader: true,
+        generatePdf: false,
+        initialSyncFrom: "2026-02-01T00:00:00Z",
+        maxConcurrentNips: 1,
+      },
+    });
+    const logger = createLogger();
+    const auth = createAuth();
+
+    const service = new SyncService(client, auth, config, logger, store);
+
+    await expect(service.runOnce()).rejects.toThrow(
+      "HTTP 500 POST /invoices/exports: raw upstream response (requestId=req-2)",
+    );
+
+    const syncState = await store.withDb((db) => getSyncState(db));
+    expect(syncState.last_error).toBe(
+      "HTTP 500 POST /invoices/exports (requestId=req-2)",
+    );
   });
 
   it("re-downloads already downloaded invoices when forceRedownloadAll is set", async () => {

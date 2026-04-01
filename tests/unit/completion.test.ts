@@ -106,6 +106,27 @@ describe("completion helpers", () => {
     expect(rcContent).toContain(`source '${completionPath}'`);
   });
 
+  it("refuses to overwrite symlinked completion files", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksefctl-comp-"));
+    process.env.HOME = tmpDir;
+    setTty(true);
+
+    const completionDir = path.join(defaultDataRoot(), "completions");
+    await fs.mkdir(completionDir, { recursive: true, mode: 0o700 });
+    const targetPath = path.join(tmpDir, "target.bash");
+    const completionPath = path.join(completionDir, "ksefctl.bash");
+    await fs.writeFile(targetPath, "target", "utf-8");
+    await fs.symlink(targetPath, completionPath);
+
+    const program = new Command();
+    program.command("sync");
+    const spec = buildCompletionSpec(program);
+
+    await expect(installCompletion("bash", spec)).rejects.toThrow(
+      "Refusing to modify symlinked rc file",
+    );
+  });
+
   it("respects first-run opt-out and config existence", async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksefctl-first-"));
     process.env.HOME = tmpDir;

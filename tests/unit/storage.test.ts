@@ -41,4 +41,16 @@ describe("storage paths", () => {
     expect(content).toBe("new");
     await expect(fs.stat(tempPath)).rejects.toThrow();
   });
+
+  it("refuses to overwrite a pre-existing temp file", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-storage-"));
+    const filePath = path.join(tmpDir, "payload.txt");
+    const tempPath = `${filePath}.tmp`;
+    await fs.writeFile(tempPath, "stale", "utf-8");
+
+    await expect(atomicWriteFile(filePath, "new")).rejects.toMatchObject({
+      code: "EEXIST",
+    });
+    await expect(fs.readFile(tempPath, "utf-8")).resolves.toBe("stale");
+  });
 });

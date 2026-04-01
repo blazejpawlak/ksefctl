@@ -19,6 +19,16 @@ Keep changes consistent with existing patterns and conventions.
 
 ## Common commands
 
+Install dependencies:
+
+```bash
+npm ci
+```
+
+Notes:
+
+- `npm ci` runs the repo `postinstall` hook, which prepares the pinned `@akmf/ksef-fe-invoice-converter` dependency for local use.
+
 Build:
 
 ```bash
@@ -69,8 +79,10 @@ npm run generate:openapi
 
 Lint/format:
 
-- No ESLint/Prettier/Biome configured. Do not introduce new tooling without discussion.
-- Do run the @linter agent to lint
+- ESLint is configured via `eslint.config.js`.
+- Use `npm run lint` and `npm run lint:fix` for linting.
+- Do not introduce additional formatting/lint tooling without discussion.
+- Do run the @linter agent to lint.
 
 ## Key paths
 

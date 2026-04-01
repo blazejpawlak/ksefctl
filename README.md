@@ -43,6 +43,8 @@ npm run build
 npm link
 ```
 
+`npm ci` runs the repo `postinstall` hook, which prepares the pinned `@akmf/ksef-fe-invoice-converter` dependency for local use.
+
 Or global:
 
 ```bash
@@ -56,7 +58,7 @@ Node requirement: `>= 22`.
 ```bash
 ksefctl system init
 ksefctl system verify
-ksefctl sync --once
+ksefctl sync
 ```
 
 `system init` is interactive and stores tokens in keychain.
@@ -71,7 +73,7 @@ The environment prompt shows full names with the API URLs for clarity.
 
 ## Commands
 
-- `ksefctl sync [--once] [--nip <nip>] [--force-redownload <ksefNumber>] [--force-redownload-all]` – run sync.
+- `ksefctl sync [--nip <nip>] [--force-redownload <ksefNumber>] [--force-redownload-all]` – run sync.
 - `ksefctl daemon` – run continuously in foreground.
 - `ksefctl status [--json]` – show last sync status.
 - `ksefctl version` – show current version and latest short commit.
@@ -120,7 +122,7 @@ Exit codes:
 Run a single sync cycle:
 
 ```bash
-ksefctl sync --once
+ksefctl sync
 ```
 
 Set a KSeF token for a NIP:
@@ -383,7 +385,7 @@ npm run lint:fix
 
 1. `ksefctl system init` → config + storage directories created
 2. `ksefctl system verify` → auth succeeds or returns exit code 2
-3. `ksefctl sync --once` → invoices written, DB updated
+3. `ksefctl sync` → invoices written, DB updated
 4. `ksefctl status` → last sync time + counts
 5. `npm test` and `npm run test:integration` → pass
 

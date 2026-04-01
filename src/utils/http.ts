@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import tls from "node:tls";
 import { calculateBackoff } from "./backoff";
-import { AuthError, NetworkError } from "./errors";
+import { AuthError, NetworkError, sanitizeErrorMessage } from "./errors";
 import { formatDuration, sleep, sleepWithCountdown } from "./time";
 
 export type RetryOptions = {
@@ -258,7 +258,12 @@ export class HttpClient {
         }
 
         this.logger?.warn(
-          { attempt, method, path: safePath, err: message },
+          {
+            attempt,
+            method,
+            path: safePath,
+            err: sanitizeErrorMessage(message),
+          },
           "HTTP request failed, retrying",
         );
         const delay = calculateBackoff({
