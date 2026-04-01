@@ -328,13 +328,42 @@ const ensureRegularFile = async (filePath: string): Promise<boolean> => {
 };
 
 const ensureSafeCompletionDir = async (dirPath: string): Promise<void> => {
-  const stat = await fs.stat(dirPath);
+  const stat = await fs.lstat(dirPath);
+  if (stat.isSymbolicLink()) {
+    throw new Error("Completion directory must not be a symlink");
+  }
+  if (!stat.isDirectory()) {
+    throw new Error("Completion path is not a directory");
+  }
   const uid = process.getuid?.();
   if (uid !== undefined && stat.uid !== uid) {
     throw new Error("Completion directory is not owned by current user");
   }
   if ((stat.mode & 0o022) !== 0) {
     throw new Error("Completion directory is group/world-writable");
+  }
+};
+
+const writeRegularFile = async (
+  filePath: string,
+  content: string,
+): Promise<void> => {
+  const exists = await ensureRegularFile(filePath);
+  const flags = exists
+    ? fsConstants.O_WRONLY | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW
+    : fsConstants.O_WRONLY |
+      fsConstants.O_CREAT |
+      fsConstants.O_EXCL |
+      fsConstants.O_NOFOLLOW;
+  const handle = await fs.open(filePath, flags, 0o600);
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile()) {
+      throw new Error("Refusing to modify non-file completion path");
+    }
+    await handle.writeFile(content, "utf-8");
+  } finally {
+    await handle.close();
   }
 };
 
@@ -430,8 +459,9 @@ export const installCompletion = async (
       "completions",
     );
     await ensureDir(fishDir);
+    await ensureSafeCompletionDir(fishDir);
     const fishPath = path.join(fishDir, "ksefctl.fish");
-    await fs.writeFile(fishPath, `${renderFishCompletion(spec)}\n`, "utf-8");
+    await writeRegularFile(fishPath, `${renderFishCompletion(spec)}\n`);
     return {
       installed: true,
       message: `Installed completion to ${fishPath}`,
@@ -441,11 +471,7 @@ export const installCompletion = async (
 
   if (shell === "bash") {
     const completionPath = path.join(completionDir, "ksefctl.bash");
-    await fs.writeFile(
-      completionPath,
-      `${renderBashCompletion(spec)}\n`,
-      "utf-8",
-    );
+    await writeRegularFile(completionPath, `${renderBashCompletion(spec)}\n`);
     const rcPath = await selectBashRcPath(homeDir);
     try {
       await appendRcBlock(rcPath, [`source ${shQuote(completionPath)}`]);
@@ -463,7 +489,7 @@ export const installCompletion = async (
   }
 
   const completionPath = path.join(completionDir, "_ksefctl");
-  await fs.writeFile(completionPath, `${renderZshCompletion(spec)}\n`, "utf-8");
+  await writeRegularFile(completionPath, `${renderZshCompletion(spec)}\n`);
   const rcPath = path.join(homeDir, ".zshrc");
   try {
     await appendRcBlock(rcPath, [

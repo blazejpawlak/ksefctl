@@ -101,6 +101,7 @@ describe("ServiceInstaller", () => {
         "/usr/local/bin/node&",
         "/usr/local/bin/ksefctl<",
         "/tmp/ksefctl&.yml",
+        storageRoot,
       ]);
 
       const installer = new ServiceInstaller();
@@ -151,6 +152,36 @@ describe("ServiceInstaller", () => {
           cliPath,
         }),
       ).rejects.toThrow("nodePath must be owned by root");
+    },
+  );
+
+  maybeIt(
+    "rejects root installs when storageRoot is not root-owned",
+    async () => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-service-"));
+      const homeDir = path.join(tmpDir, "home");
+      const storageRoot = path.join(tmpDir, "storage");
+      const nodePath = "/usr/local/bin/node";
+      const cliPath = "/usr/local/bin/ksefctl";
+      const configPath = "/tmp/ksefctl.yml";
+      process.env.HOME = homeDir;
+      await fs.mkdir(homeDir, { recursive: true });
+      await fs.mkdir(storageRoot, { recursive: true });
+      if (process.getuid) {
+        vi.spyOn(process, "getuid").mockReturnValue(0);
+      }
+      allowPrivilegedPaths([nodePath, cliPath, configPath]);
+
+      const installer = new ServiceInstaller();
+
+      await expect(
+        installer.install({
+          configPath,
+          storageRoot,
+          nodePath,
+          cliPath,
+        }),
+      ).rejects.toThrow("storageRoot must be owned by root");
     },
   );
 });

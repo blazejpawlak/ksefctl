@@ -40,6 +40,16 @@ describe("HttpClient", () => {
     ).toBe("Network failure: HTTP 502 POST /invoices/exports");
   });
 
+  it("sanitizes non-HTTP secret-bearing messages", () => {
+    expect(
+      sanitizeErrorMessage(
+        "SMTP failure: Authorization=Bearer abc123 url=https://user:pass@example.com/callback?token=secret&signature=sig",
+      ),
+    ).toBe(
+      "SMTP failure: Authorization=[REDACTED] url=https://[REDACTED]@example.com/callback?token=[REDACTED]&signature=[REDACTED]",
+    );
+  });
+
   it("does not retry non-retryable 4xx responses", async () => {
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response("bad request", {

@@ -94,6 +94,7 @@ const validatePrivilegedInstallOptions = async (
   await assertSafePrivilegedPath("nodePath", options.nodePath);
   await assertSafePrivilegedPath("cliPath", options.cliPath);
   await assertSafePrivilegedPath("configPath", options.configPath);
+  await assertSafePrivilegedPath("storageRoot", options.storageRoot);
 };
 
 export class ServiceInstaller {
@@ -118,6 +119,10 @@ export class ServiceInstaller {
     if (!path.isAbsolute(homeDir)) {
       throw new Error("HOME is not an absolute path");
     }
+    const isRoot = process.getuid?.() === 0;
+    if (isRoot) {
+      await validatePrivilegedInstallOptions(options);
+    }
     const launchAgentsDir = path.join(homeDir, "Library", "LaunchAgents");
     await ensureDir(launchAgentsDir);
     await ensureDir(path.join(options.storageRoot, "logs"));
@@ -129,11 +134,6 @@ export class ServiceInstaller {
     assertSafeUnitValue("storageRoot", options.storageRoot);
 
     const localstoragePath = path.join(defaultDataRoot(), "localstorage.json");
-
-    const isRoot = process.getuid?.() === 0;
-    if (isRoot) {
-      await validatePrivilegedInstallOptions(options);
-    }
     const nodeOptionsValue = isRoot
       ? null
       : buildNodeOptionsWithLocalstorage(

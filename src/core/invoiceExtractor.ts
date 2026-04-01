@@ -6,7 +6,6 @@ import {
   analyzeInvoicePayment,
   isEligibleForNotification,
 } from "./invoicePaymentAnalyzer";
-// MetadataFile is defined in ./window.ts
 export type SyncItem = {
   nip: string;
   ksefNumber: string;
@@ -24,6 +23,7 @@ export const maxZipEntryBytes = 20_000_000;
 export const maxZipTotalBytes = 200_000_000;
 export const maxInvoicePdfXmlBytes = 5_000_000;
 export const maxDecryptedPackageBytes = 200_000_000;
+export const maxExtractedTextValueLength = 4096;
 
 const invoiceNumberKeys = new Set(["p_2", "nrfaktury", "numerfaktury"]);
 
@@ -47,12 +47,18 @@ const stripPrefixes = (value: unknown): unknown => {
   return value;
 };
 
+const limitExtractedText = (value: string): string =>
+  value.slice(0, maxExtractedTextValueLength);
+
 export const extractTextValue = (value: unknown): string | null => {
-  if (typeof value === "string") return value;
+  if (typeof value === "string") return limitExtractedText(value);
   if (value && typeof value === "object") {
     const record = value as { _text?: unknown; _cdata?: unknown };
-    if (typeof record._text === "string") return record._text;
-    if (typeof record._cdata === "string") return record._cdata;
+    if (typeof record._text === "string")
+      return limitExtractedText(record._text);
+    if (typeof record._cdata === "string") {
+      return limitExtractedText(record._cdata);
+    }
   }
   return null;
 };
