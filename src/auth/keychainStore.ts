@@ -1,6 +1,28 @@
 import type { AppConfig } from "../config/schema";
 import type { Logger } from "pino";
-import keytar from "keytar";
+
+type KeytarModule = {
+  getPassword(service: string, account: string): Promise<string | null>;
+  setPassword(
+    service: string,
+    account: string,
+    password: string,
+  ): Promise<void>;
+  deletePassword(service: string, account: string): Promise<boolean>;
+  findCredentials(
+    service: string,
+  ): Promise<{ account: string; password: string }[]>;
+};
+
+let keytarModulePromise: Promise<KeytarModule> | undefined;
+
+const loadKeytar = async (): Promise<KeytarModule> => {
+  keytarModulePromise ??= import("keytar").then((module) => {
+    const keytar = "default" in module ? module.default : module;
+    return keytar as KeytarModule;
+  });
+  return keytarModulePromise;
+};
 
 export type KeychainEntry = {
   ksefToken: string;
@@ -38,6 +60,7 @@ export class KeychainStore {
     environment: string,
     nip: string,
   ): Promise<KeychainEntry | null> {
+    const keytar = await loadKeytar();
     const account = this.buildAccount(environment, nip);
     const raw = await keytar.getPassword(this.service, account);
     const parseEntry = (value: string | null): KeychainEntry | null => {
@@ -82,6 +105,7 @@ export class KeychainStore {
     nip: string,
     entry: KeychainEntry,
   ): Promise<void> {
+    const keytar = await loadKeytar();
     const account = this.buildAccount(environment, nip);
     await keytar.setPassword(this.service, account, JSON.stringify(entry));
   }
@@ -121,11 +145,13 @@ export class KeychainStore {
   }
 
   async clear(environment: string, nip: string): Promise<void> {
+    const keytar = await loadKeytar();
     const account = this.buildAccount(environment, nip);
     await keytar.deletePassword(this.service, account);
   }
 
   async clearAll(): Promise<void> {
+    const keytar = await loadKeytar();
     const credentials = await keytar.findCredentials(this.service);
     for (const credential of credentials) {
       await keytar.deletePassword(this.service, credential.account);
