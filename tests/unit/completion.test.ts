@@ -91,8 +91,7 @@ describe("completion helpers", () => {
     const result = await installCompletion("bash", spec);
 
     const completionPath = path.join(
-      tmpDir,
-      ".ksefctl",
+      defaultDataRoot(),
       "completions",
       "ksefctl.bash",
     );
