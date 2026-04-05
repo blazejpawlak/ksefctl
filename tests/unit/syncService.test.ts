@@ -500,8 +500,8 @@ describe("SyncService", () => {
     await expect(fs.readFile(xmlPath, "utf-8")).resolves.toContain(
       "FV/1:2026?",
     );
-    await expect(fs.readFile(metadataPath, "utf-8")).resolves.toContain(
-      '"ksefNumber": "KSEF-INV-1"',
+    await expect(fs.readFile(metadataPath, "utf-8")).resolves.toMatch(
+      /"ksefNumber": "KSEF-INV-1"/,
     );
   });
 

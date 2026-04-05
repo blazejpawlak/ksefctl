@@ -105,8 +105,8 @@ export const loadConfig = async (configPath: string): Promise<AppConfig> => {
   };
   const storageRoot = resolveMaybeRelative(storageRootRaw);
   const loggingFile = resolveMaybeRelative(loggingFileRaw);
-  const organizationsValue = Array.isArray(parsed.organizations)
-    ? parsed.organizations
+  const organizationsValue: unknown[] = Array.isArray(parsed.organizations)
+    ? (parsed.organizations as unknown[])
     : [];
   const organizations = organizationsValue.map((organization) => {
     if (!isRecord(organization)) {
