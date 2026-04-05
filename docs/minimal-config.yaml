@@ -5,6 +5,9 @@ auth:
 organizations:
   - nip: "1234567890"
     label: "Org A"
+    outputPath: /path/to/custom-output/org-a
+  - nip: "9876543210"
+    label: "Org B"
 pollingIntervalSeconds: 300
 storage:
   root: /path/to/storage
@@ -25,3 +28,4 @@ security:
 sync:
   subjectTypes: [Subject1, Subject2, Subject3]
   generatePdf: true
+  flatSync: false

@@ -94,6 +94,7 @@ const SyncSchema = z.object({
     .default(["Subject1", "Subject2", "Subject3", "SubjectAuthorized"]),
   includeMetadataHeader: z.boolean().default(true),
   generatePdf: z.boolean().default(true),
+  flatSync: z.boolean().default(false),
   initialSyncFrom: z.string().datetime().optional(),
   maxConcurrentNips: z.number().int().min(1).default(1),
 });
@@ -107,6 +108,7 @@ export const AppConfigSchema = z.object({
       z.object({
         nip: z.string().regex(/^\d{10}$/),
         label: z.string().optional(),
+        outputPath: z.string().min(1).optional(),
       }),
     )
     .default([]),

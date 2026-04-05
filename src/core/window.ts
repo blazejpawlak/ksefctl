@@ -52,6 +52,11 @@ export type MetadataFile = {
   invoices?: (Record<string, unknown> & {
     ksefNumber?: string;
     permanentStorageDate?: string;
+    invoiceNumber?: string;
+    seller?: {
+      nip?: string;
+      name?: string | null;
+    };
   })[];
 };
 
@@ -67,7 +72,7 @@ export type SyncWindow = {
   windowStart: Date;
   windowEnd: Date;
   cursor: string | null;
-}
+};
 
 export const computeSyncWindow = (
   now: Date,

@@ -122,6 +122,7 @@ export const initConfig = async (
       subjectTypes: ["Subject1", "Subject2", "Subject3", "SubjectAuthorized"],
       includeMetadataHeader: true,
       generatePdf: true,
+      flatSync: false,
       initialSyncFrom: initialSyncFrom.toISOString(),
     },
   };

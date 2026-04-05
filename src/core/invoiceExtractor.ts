@@ -14,6 +14,13 @@ export type SyncItem = {
   needsPaymentNotification: boolean;
 };
 
+export type InvoiceFileMetadata = {
+  invoiceNumber?: string | null;
+  seller?: {
+    name?: string | null;
+  } | null;
+};
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 export const maxInvoiceNumberXmlBytes = 5_000_000;
@@ -26,6 +33,12 @@ export const maxDecryptedPackageBytes = 200_000_000;
 export const maxExtractedTextValueLength = 4096;
 
 const invoiceNumberKeys = new Set(["p_2", "nrfaktury", "numerfaktury"]);
+const sellerNamePaths = [
+  ["Podmiot1", "DaneIdentyfikacyjne", "Nazwa"],
+  ["Podmiot1", "DaneIdentyfikacyjne", "PelnaNazwa"],
+  ["Podmiot1", "DaneIdentyfikacyjne", "NazwaPelna"],
+  ["Podmiot1", "DaneIdentyfikacyjne", "SkroconaNazwa"],
+];
 
 // ─── XML helpers ──────────────────────────────────────────────────────────────
 
@@ -63,6 +76,31 @@ export const extractTextValue = (value: unknown): string | null => {
   return null;
 };
 
+const getChild = (value: unknown, key: string): unknown => {
+  if (!value || typeof value !== "object") return null;
+  return (value as Record<string, unknown>)[key] ?? null;
+};
+
+const getNestedText = (value: unknown, keys: string[]): string | null => {
+  let current: unknown = value;
+  for (const key of keys) {
+    current = getChild(current, key);
+    if (!current) return null;
+  }
+  return extractTextValue(current)?.trim() ?? null;
+};
+
+const parseInvoiceXml = (xml: string): unknown => {
+  try {
+    return stripPrefixes(xml2js(stripDoctype(xml), { compact: true }));
+  } catch {
+    return null;
+  }
+};
+
+const getInvoiceNode = (parsed: unknown): unknown =>
+  getChild(parsed, "Faktura") ?? parsed;
+
 const findInvoiceNumber = (node: unknown): string | null => {
   if (Array.isArray(node)) {
     for (const entry of node) {
@@ -89,12 +127,20 @@ export const extractInvoiceNumber = (xml: string): string | null => {
   if (Buffer.byteLength(xml, "utf-8") > maxInvoiceNumberXmlBytes) {
     return null;
   }
-  try {
-    const parsed = xml2js(stripDoctype(xml), { compact: true }) as unknown;
-    return findInvoiceNumber(stripPrefixes(parsed));
-  } catch {
+  const parsed = parseInvoiceXml(xml);
+  return findInvoiceNumber(getInvoiceNode(parsed));
+};
+
+export const extractSellerName = (xml: string): string | null => {
+  if (Buffer.byteLength(xml, "utf-8") > maxInvoiceNumberXmlBytes) {
     return null;
   }
+  const invoice = getInvoiceNode(parseInvoiceXml(xml));
+  for (const sellerNamePath of sellerNamePaths) {
+    const sellerName = getNestedText(invoice, sellerNamePath);
+    if (sellerName) return sellerName;
+  }
+  return null;
 };
 
 // ─── File helpers ─────────────────────────────────────────────────────────────
@@ -146,6 +192,28 @@ export const resolveInvoiceFileBase = (
   const safeInvoiceNumber = sanitizeFileName(invoiceNumber);
   if (!safeInvoiceNumber) return ksefNumber;
   const baseName = sanitizeFileName(`Faktura nr ${safeInvoiceNumber}`);
+  return baseName || ksefNumber;
+};
+
+const sanitizeBaseSegment = (value: string | null | undefined): string => {
+  if (!value) return "";
+  return sanitizeFileName(value);
+};
+
+export const resolveFlatInvoiceFileBase = (
+  xml: string,
+  ksefNumber: string,
+  metadata?: InvoiceFileMetadata,
+): string => {
+  const sellerName = sanitizeBaseSegment(
+    metadata?.seller?.name ?? extractSellerName(xml),
+  );
+  const invoiceNumber = sanitizeBaseSegment(
+    metadata?.invoiceNumber ?? extractInvoiceNumber(xml),
+  );
+  const baseName = sanitizeFileName(
+    [sellerName, invoiceNumber].filter((value) => value.length > 0).join(" - "),
+  );
   return baseName || ksefNumber;
 };
 

@@ -48,6 +48,7 @@ import {
   exitCodeFromError,
   formatErrorMessage,
 } from "./utils/errors";
+import { expandHome } from "./utils/paths";
 import { formatDuration, sleep, sleepWithCountdown } from "./utils/time";
 
 const program = new Command();
@@ -72,6 +73,8 @@ type SyncOptions = {
   nip?: string;
   forceRedownload?: string;
   forceRedownloadAll?: boolean;
+  flatSync?: boolean;
+  outputPath?: string;
   verbose?: boolean;
 };
 
@@ -126,6 +129,12 @@ const parseConfigOverride = (args: string[]): string | undefined => {
 
 const parseFirstRunFlag = (args: string[]): boolean | undefined =>
   args.includes("--no-first-run") ? false : undefined;
+
+const resolveCliOutputPath = (outputPath?: string): string | undefined => {
+  if (!outputPath) return undefined;
+  const expanded = expandHome(outputPath);
+  return path.isAbsolute(expanded) ? expanded : path.resolve(expanded);
+};
 
 const hasVersionFlag = (args: string[]): boolean => {
   for (const arg of args) {
@@ -269,6 +278,11 @@ program
     "--force-redownload-all",
     "force re-download of all invoices in sync window",
   )
+  .option("--flat-sync", "store fetched invoices in flat monthly folders")
+  .option(
+    "--output-path <path>",
+    "override invoice output path for the selected NIP or single-org run",
+  )
   .option("-v, --verbose", "enable verbose logging")
   .action(async (options: SyncOptions) => {
     let started = false;
@@ -306,12 +320,19 @@ program
       if (options.forceRedownload && nips.length > 1) {
         throw new ConfigError("Use --nip when force redownload is requested");
       }
+      if (options.outputPath && nips.length > 1) {
+        throw new ConfigError(
+          "Use --nip with --output-path when multiple organizations are configured",
+        );
+      }
+      const outputPath = resolveCliOutputPath(options.outputPath);
       printHeader("Sync");
       printKeyValues([
         ["status", "starting"],
         ["environment", ctx.config.environment],
         ["nips", nips.join(", ")],
         ["logFile", ctx.config.logging.file],
+        ["outputPath", outputPath ?? "(config/default)"],
       ]);
       if (!verbose) {
         console.log("Progress: run with --verbose for detailed logs.");
@@ -333,6 +354,8 @@ program
         options.forceRedownload,
         nipFilter,
         Boolean(options.forceRedownloadAll),
+        options.flatSync,
+        outputPath,
       );
       const notifier = new Notifier(ctx.config, ctx.logger);
       const invoicesToPay = getInvoicesToPay(result.items);
