@@ -105,6 +105,22 @@ export const loadConfig = async (configPath: string): Promise<AppConfig> => {
   };
   const storageRoot = resolveMaybeRelative(storageRootRaw);
   const loggingFile = resolveMaybeRelative(loggingFileRaw);
+  const organizationsValue = Array.isArray(parsed.organizations)
+    ? parsed.organizations
+    : [];
+  const organizations = organizationsValue.map((organization) => {
+    if (!isRecord(organization)) {
+      return organization;
+    }
+    const outputPath = organization.outputPath;
+    if (typeof outputPath !== "string" || outputPath.length === 0) {
+      return organization;
+    }
+    return {
+      ...organization,
+      outputPath: resolveMaybeRelative(outputPath),
+    };
+  });
 
   if (typeof parsed.environment === "string") {
     const env = parsed.environment.toLowerCase();
@@ -117,6 +133,7 @@ export const loadConfig = async (configPath: string): Promise<AppConfig> => {
   const normalized = {
     ...parsed,
     environment: parsed.environment ?? "prod",
+    organizations,
     storage: { root: storageRoot },
     logging: { ...logging, file: loggingFile },
   };

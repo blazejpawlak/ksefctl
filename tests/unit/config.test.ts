@@ -25,10 +25,39 @@ describe("config schema", () => {
         pollIntervalSeconds: 10,
       },
       security: { tls: { enablePinning: false, pins: [], pinningHosts: [] } },
-      sync: { subjectTypes: ["Subject1"], includeMetadataHeader: true },
+      sync: {
+        subjectTypes: ["Subject1"],
+        includeMetadataHeader: true,
+        flatSync: true,
+      },
     });
 
     expect(config.environment).toBe("test");
+    expect(config.sync.flatSync).toBe(true);
+  });
+
+  it("accepts per-organization output paths", () => {
+    const config = AppConfigSchema.parse({
+      environment: "test",
+      auth: {
+        method: "ksefToken",
+        keychainServiceName: "ksefctl",
+      },
+      organizations: [{ nip: "1234567890", outputPath: "/tmp/custom-output" }],
+      pollingIntervalSeconds: 300,
+      storage: { root: "/tmp/ksef" },
+      notifications: { macosNotification: false, email: { enabled: false } },
+      logging: { level: "info", file: "/tmp/ksef/logs/app.log", pretty: false },
+      operational: {
+        maxConcurrency: 2,
+        timeoutSeconds: 60,
+        pollIntervalSeconds: 10,
+      },
+      security: { tls: { enablePinning: false, pins: [], pinningHosts: [] } },
+      sync: { subjectTypes: ["Subject1"], includeMetadataHeader: true },
+    });
+
+    expect(config.organizations[0]?.outputPath).toBe("/tmp/custom-output");
   });
 
   it("fails when organization NIP invalid", () => {
@@ -81,6 +110,43 @@ describe("config schema", () => {
     await fs.writeFile(configPath, yaml, "utf-8");
     const loaded = await loadConfig(configPath);
     expect(loaded.environment).toBe("test");
+  });
+
+  it("resolves relative per-nip output paths via loader", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-config-"));
+    const configPath = path.join(tmpDir, "config.yaml");
+    const yaml = YAML.stringify({
+      environment: "test",
+      auth: {
+        method: "ksefToken",
+        keychainServiceName: "ksefctl",
+      },
+      organizations: [{ nip: "1234567890", outputPath: "exports/org-a" }],
+      pollingIntervalSeconds: 300,
+      storage: { root: "storage" },
+      notifications: { macosNotification: false, email: { enabled: false } },
+      logging: { level: "info", file: "storage/logs/app.log", pretty: false },
+      operational: {
+        maxConcurrency: 2,
+        timeoutSeconds: 60,
+        pollIntervalSeconds: 10,
+      },
+      security: { tls: { enablePinning: false, pins: [], pinningHosts: [] } },
+      sync: {
+        subjectTypes: ["Subject1"],
+        includeMetadataHeader: true,
+        flatSync: true,
+      },
+    });
+    await fs.writeFile(configPath, yaml, "utf-8");
+
+    const loaded = await loadConfig(configPath);
+
+    expect(loaded.sync.flatSync).toBe(true);
+    expect(loaded.organizations[0]?.outputPath).toBe(
+      path.join(tmpDir, "exports", "org-a"),
+    );
+    expect(loaded.storage.root).toBe(path.join(tmpDir, "storage"));
   });
 
   it("redacts sensitive fields", () => {

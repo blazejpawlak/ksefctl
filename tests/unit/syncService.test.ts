@@ -42,42 +42,102 @@ const createLogger = (): Logger =>
     error: vi.fn(),
   }) as unknown as Logger;
 
-const createConfig = (overrides: Partial<AppConfig> = {}): AppConfig => ({
-  environment: "test",
-  apiBaseUrl: "http://localhost/v2",
-  auth: { method: "ksefToken", keychainServiceName: "ksefctl-test" },
-  organizations: [{ nip: "1234567890" }],
-  pollingIntervalSeconds: 300,
-  storage: { root: "/tmp/ksef" },
-  notifications: { macosNotification: false, email: { enabled: false } },
-  logging: { level: "info", file: "/tmp/ksef/logs/app.log", pretty: false },
-  operational: {
-    maxConcurrency: 2,
-    timeoutSeconds: 60,
-    pollIntervalSeconds: 5,
-    authPollMaxAttempts: 1,
-    exportPollMaxAttempts: 2,
-    exportCooldownSeconds: 0,
-    allowInsecureHttp: true,
-    retry: {
-      maxAttempts: 1,
-      baseDelayMs: 1,
-      maxDelayMs: 1,
-      jitter: 0,
+type ConfigOverrides = Omit<
+  Partial<AppConfig>,
+  | "auth"
+  | "storage"
+  | "notifications"
+  | "logging"
+  | "operational"
+  | "security"
+  | "sync"
+> & {
+  auth?: Partial<AppConfig["auth"]>;
+  storage?: Partial<AppConfig["storage"]>;
+  notifications?: Partial<AppConfig["notifications"]>;
+  logging?: Partial<AppConfig["logging"]>;
+  operational?: Partial<AppConfig["operational"]>;
+  security?: Partial<AppConfig["security"]>;
+  sync?: Partial<AppConfig["sync"]>;
+};
+
+const createConfig = (overrides: ConfigOverrides = {}): AppConfig => {
+  const base: AppConfig = {
+    environment: "test",
+    apiBaseUrl: "http://localhost/v2",
+    auth: { method: "ksefToken", keychainServiceName: "ksefctl-test" },
+    organizations: [{ nip: "1234567890" }],
+    pollingIntervalSeconds: 300,
+    storage: { root: "/tmp/ksef" },
+    notifications: { macosNotification: false, email: { enabled: false } },
+    logging: {
+      level: "info",
+      file: "/tmp/ksef/logs/app.log",
+      pretty: false,
     },
-  },
-  security: {
-    tls: { enablePinning: false, pins: [], pinningHosts: [] },
-    allowedHosts: [],
-  },
-  sync: {
-    subjectTypes: ["Subject1"],
-    includeMetadataHeader: true,
-    generatePdf: false,
-    maxConcurrentNips: 1,
-  },
-  ...overrides,
-});
+    operational: {
+      maxConcurrency: 2,
+      timeoutSeconds: 60,
+      pollIntervalSeconds: 5,
+      authPollMaxAttempts: 1,
+      exportPollMaxAttempts: 2,
+      exportCooldownSeconds: 0,
+      allowInsecureHttp: true,
+      retry: {
+        maxAttempts: 1,
+        baseDelayMs: 1,
+        maxDelayMs: 1,
+        jitter: 0,
+      },
+    },
+    security: {
+      tls: { enablePinning: false, pins: [], pinningHosts: [] },
+      allowedHosts: [],
+    },
+    sync: {
+      subjectTypes: ["Subject1"],
+      includeMetadataHeader: true,
+      generatePdf: false,
+      flatSync: false,
+      maxConcurrentNips: 1,
+    },
+  };
+
+  return {
+    ...base,
+    ...overrides,
+    auth: { ...base.auth, ...overrides.auth },
+    storage: { ...base.storage, ...overrides.storage },
+    notifications: {
+      ...base.notifications,
+      ...overrides.notifications,
+      email: {
+        ...base.notifications.email,
+        ...overrides.notifications?.email,
+      },
+    },
+    logging: { ...base.logging, ...overrides.logging },
+    operational: {
+      ...base.operational,
+      ...overrides.operational,
+      retry: {
+        ...base.operational.retry,
+        ...overrides.operational?.retry,
+      },
+    },
+    security: {
+      ...base.security,
+      ...overrides.security,
+      tls: {
+        ...base.security.tls,
+        ...overrides.security?.tls,
+      },
+      allowedHosts:
+        overrides.security?.allowedHosts ?? base.security.allowedHosts,
+    },
+    sync: { ...base.sync, ...overrides.sync },
+  };
+};
 
 const createAuth = (): AuthService =>
   ({
@@ -389,6 +449,271 @@ describe("SyncService", () => {
     const filePath = path.join(invoiceDir, "Faktura nr FV-1-2026-.xml");
     const xml = await fs.readFile(filePath, "utf-8");
     expect(xml).toContain("FV/1:2026?");
+  });
+
+  it("stores direct downloads in flat monthly folders when flat sync is enabled", async () => {
+    const now = new Date("2026-02-15T08:00:00Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
+    const client = {
+      downloadInvoiceXml: vi.fn().mockResolvedValue(`
+        <Faktura>
+          <Podmiot1>
+            <DaneIdentyfikacyjne>
+              <Nazwa>ACME Sp. z o.o.</Nazwa>
+            </DaneIdentyfikacyjne>
+          </Podmiot1>
+          <Fa><P_2>FV/1:2026?</P_2></Fa>
+        </Faktura>
+      `),
+    } as unknown as KsefClient;
+    const config = createConfig({
+      storage: { root: path.join(tmpDir, "storage") },
+      sync: {
+        subjectTypes: [],
+        includeMetadataHeader: true,
+        generatePdf: false,
+        maxConcurrentNips: 1,
+      },
+    });
+    const logger = createLogger();
+    const auth = createAuth();
+
+    const service = new SyncService(client, auth, config, logger, store);
+    await service.runOnce("KSEF-INV-1", undefined, false, true);
+
+    const invoiceDir = path.join(
+      config.storage.root,
+      "invoices",
+      "1234567890",
+      "2026",
+      "02",
+    );
+    const xmlPath = path.join(invoiceDir, "ACME Sp. z o.o - FV-1-2026-.xml");
+    const metadataPath = path.join(
+      invoiceDir,
+      "ACME Sp. z o.o - FV-1-2026-.metadata.json",
+    );
+
+    await expect(fs.readFile(xmlPath, "utf-8")).resolves.toContain(
+      "FV/1:2026?",
+    );
+    await expect(fs.readFile(metadataPath, "utf-8")).resolves.toContain(
+      '"ksefNumber": "KSEF-INV-1"',
+    );
+  });
+
+  it("uses config flat sync and per-nip output path by default", async () => {
+    const now = new Date("2026-02-15T08:00:00Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
+    const outputPath = path.join(tmpDir, "exports", "org-a");
+    const client = {
+      downloadInvoiceXml: vi.fn().mockResolvedValue(`
+        <Faktura>
+          <Podmiot1>
+            <DaneIdentyfikacyjne>
+              <Nazwa>Config Seller</Nazwa>
+            </DaneIdentyfikacyjne>
+          </Podmiot1>
+          <Fa><P_2>CFG/1</P_2></Fa>
+        </Faktura>
+      `),
+    } as unknown as KsefClient;
+    const config = createConfig({
+      storage: { root: path.join(tmpDir, "storage") },
+      organizations: [{ nip: "1234567890", outputPath }],
+      sync: {
+        subjectTypes: [],
+        includeMetadataHeader: true,
+        generatePdf: false,
+        flatSync: true,
+        maxConcurrentNips: 1,
+      },
+    });
+    const logger = createLogger();
+    const auth = createAuth();
+
+    const service = new SyncService(client, auth, config, logger, store);
+    const result = await service.runOnce("KSEF-CONFIG-1");
+
+    expect(result.items[0]?.path).toBe(path.join(outputPath, "2026", "02"));
+    await expect(
+      fs.readFile(
+        path.join(outputPath, "2026", "02", "Config Seller - CFG-1.xml"),
+        "utf-8",
+      ),
+    ).resolves.toContain("CFG/1");
+  });
+
+  it("prefers cli output path override over per-nip config output path", async () => {
+    const now = new Date("2026-02-15T08:00:00Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
+    const configOutputPath = path.join(tmpDir, "exports", "config");
+    const cliOutputPath = path.join(tmpDir, "exports", "cli");
+    const client = {
+      downloadInvoiceXml: vi.fn().mockResolvedValue(`
+        <Faktura>
+          <Podmiot1>
+            <DaneIdentyfikacyjne>
+              <Nazwa>CLI Seller</Nazwa>
+            </DaneIdentyfikacyjne>
+          </Podmiot1>
+          <Fa><P_2>CLI/1</P_2></Fa>
+        </Faktura>
+      `),
+    } as unknown as KsefClient;
+    const config = createConfig({
+      storage: { root: path.join(tmpDir, "storage") },
+      organizations: [{ nip: "1234567890", outputPath: configOutputPath }],
+      sync: {
+        subjectTypes: [],
+        includeMetadataHeader: true,
+        generatePdf: false,
+        flatSync: true,
+        maxConcurrentNips: 1,
+      },
+    });
+    const logger = createLogger();
+    const auth = createAuth();
+
+    const service = new SyncService(client, auth, config, logger, store);
+    const result = await service.runOnce(
+      "KSEF-CLI-1",
+      "1234567890",
+      false,
+      undefined,
+      cliOutputPath,
+    );
+
+    expect(result.items[0]?.path).toBe(path.join(cliOutputPath, "2026", "02"));
+    await expect(
+      fs.readFile(
+        path.join(cliOutputPath, "2026", "02", "CLI Seller - CLI-1.xml"),
+        "utf-8",
+      ),
+    ).resolves.toContain("CLI/1");
+    await expect(
+      fs.stat(
+        path.join(configOutputPath, "2026", "02", "CLI Seller - CLI-1.xml"),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("suffixes KSeF number only when flat sync file names collide", async () => {
+    const now = new Date("2026-05-10T12:00:00Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
+    const zip = new AdmZip();
+    zip.addFile(
+      "KSEF-COLLIDE-1.xml",
+      Buffer.from(
+        "<Faktura><Podmiot1><DaneIdentyfikacyjne><Nazwa>XML Seller</Nazwa></DaneIdentyfikacyjne></Podmiot1><Fa><P_2>XML/1</P_2></Fa></Faktura>",
+      ),
+    );
+    zip.addFile(
+      "KSEF-COLLIDE-2.xml",
+      Buffer.from(
+        "<Faktura><Podmiot1><DaneIdentyfikacyjne><Nazwa>XML Seller</Nazwa></DaneIdentyfikacyjne></Podmiot1><Fa><P_2>XML/1</P_2></Fa></Faktura>",
+      ),
+    );
+    zip.addFile(
+      "_metadata.json",
+      Buffer.from(
+        JSON.stringify({
+          invoices: [
+            {
+              ksefNumber: "KSEF-COLLIDE-1",
+              invoiceNumber: "FV/1",
+              permanentStorageDate: now.toISOString(),
+              seller: { name: "ACME Seller" },
+            },
+            {
+              ksefNumber: "KSEF-COLLIDE-2",
+              invoiceNumber: "FV/1",
+              permanentStorageDate: now.toISOString(),
+              seller: { name: "ACME Seller" },
+            },
+          ],
+        }),
+      ),
+    );
+    const zipBuffer = zip.toBuffer();
+    const encrypted = encryptAes256Cbc(testKey, testIv, zipBuffer);
+    const partHash = sha256Base64(zipBuffer);
+    const encryptedPartHash = sha256Base64(encrypted);
+    const client = {
+      exportInvoices: vi
+        .fn()
+        .mockResolvedValue({ referenceNumber: "EXPORT-1" }),
+      getPublicKeyCertificates: vi.fn().mockResolvedValue([]),
+      getExportStatus: vi.fn().mockResolvedValue({
+        status: { code: 200, description: "OK" },
+        package: {
+          invoiceCount: 2,
+          size: encrypted.length,
+          isTruncated: false,
+          permanentStorageHwmDate: now.toISOString(),
+          parts: [
+            {
+              ordinalNumber: 1,
+              partName: "part1.zip.aes",
+              method: "GET",
+              url: "https://example.test/part1",
+              partHash,
+              encryptedPartHash,
+            },
+          ],
+        },
+      }),
+      downloadPackagePart: vi.fn().mockResolvedValue(encrypted),
+    } as unknown as KsefClient;
+    const config = createConfig({
+      storage: { root: path.join(tmpDir, "storage") },
+      security: {
+        tls: { enablePinning: false, pins: [], pinningHosts: [] },
+        allowedHosts: ["example.test"],
+      },
+      sync: {
+        subjectTypes: ["Subject1"],
+        includeMetadataHeader: true,
+        generatePdf: false,
+        initialSyncFrom: new Date(now.getTime() - 86400000).toISOString(),
+        maxConcurrentNips: 1,
+      },
+    });
+    const logger = createLogger();
+    const auth = createAuth();
+
+    const service = new SyncService(client, auth, config, logger, store);
+    await service.runOnce(undefined, undefined, false, true);
+
+    const invoiceDir = path.join(
+      config.storage.root,
+      "invoices",
+      "1234567890",
+      "2026",
+      "05",
+    );
+
+    await expect(
+      fs.readFile(path.join(invoiceDir, "ACME Seller - FV-1.xml"), "utf-8"),
+    ).resolves.toContain("XML/1");
+    await expect(
+      fs.readFile(
+        path.join(invoiceDir, "ACME Seller - FV-1 - KSEF-COLLIDE-2.xml"),
+        "utf-8",
+      ),
+    ).resolves.toContain("XML/1");
   });
 
   it("directly downloads force-redownload invoices when a nip filter is set", async () => {

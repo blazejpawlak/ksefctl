@@ -73,7 +73,7 @@ The environment prompt shows full names with the API URLs for clarity.
 
 ## Commands
 
-- `ksefctl sync [--nip <nip>] [--force-redownload <ksefNumber>] [--force-redownload-all]` – run sync.
+- `ksefctl sync [--nip <nip>] [--force-redownload <ksefNumber>] [--force-redownload-all] [--flat-sync] [--output-path <path>]` – run sync.
 - `ksefctl daemon` – run continuously in foreground.
 - `ksefctl status [--json]` – show last sync status.
 - `ksefctl version` – show current version and latest short commit.
@@ -106,6 +106,14 @@ Sync prints short progress messages on stderr; use `-v/--verbose` for detailed l
 
 If an invoice directory is missing on disk, sync will re-download it even if the DB marks it as downloaded.
 `--force-redownload-all` resets cursors to `sync.initialSyncFrom` (or `2026-02-01`) and re-downloads all available invoices for all configured NIPs (or only the chosen one when `--nip` is provided).
+`--flat-sync` keeps the default sync logic but stores fetched invoices in monthly folders (`invoices/<NIP>/YYYY/MM/`) using `Seller - InvoiceNumber` filenames. When a filename collides, ksefctl appends the KSeF number only for the conflicting invoice.
+`--output-path` overrides the invoice output root for the selected NIP or a single-organization run. When multiple organizations are configured, combine it with `--nip`.
+
+Config equivalents:
+
+- `sync.flatSync: true` enables flat sync by default.
+- `organizations[].outputPath` sets a custom invoice output root per NIP.
+- CLI options take precedence over config for the current run.
 
 If you see a Node warning about `--localstorage-file`, make sure you run the `ksefctl` binary (not `node dist/cli.js`) so the wrapper can sanitize `NODE_OPTIONS`.
 
@@ -142,6 +150,59 @@ Sync a single NIP:
 ```bash
 ksefctl sync --nip 1234567890
 ```
+
+Run a sync cycle with flat monthly storage:
+
+```bash
+ksefctl sync --flat-sync
+```
+
+Run a sync cycle for one NIP with a custom output root:
+
+```bash
+ksefctl sync --nip 1234567890 --output-path ~/Exports/org-a --flat-sync
+```
+
+Configure flat sync and a per-NIP output root:
+
+```yaml
+storage:
+  root: /var/lib/ksefctl
+
+organizations:
+  - nip: "1234567890"
+    label: "Org A"
+    outputPath: /path/to/custom-output/org-a
+  - nip: "9876543210"
+    label: "Org B"
+    outputPath: /path/to/custom-output/org-b
+
+sync:
+  flatSync: true
+```
+
+Example: keep the default storage root for one organization and override another:
+
+```yaml
+storage:
+  root: /var/lib/ksefctl
+
+organizations:
+  - nip: "1234567890"
+    label: "Default root"
+  - nip: "9876543210"
+    label: "Separate export root"
+    outputPath: /srv/ksef/org-b
+
+sync:
+  flatSync: true
+```
+
+In that setup:
+
+- NIP `1234567890` writes to `/var/lib/ksefctl/invoices/1234567890/...`
+- NIP `9876543210` writes to `/srv/ksef/org-b/...`
+- `ksefctl sync --nip 9876543210 --output-path ~/Exports/manual-run` overrides the config path just for that run
 
 Run foreground daemon:
 
@@ -306,6 +367,8 @@ To be a good citizen, `operational.exportCooldownSeconds` adds a short pause bet
 
 ## Storage layout
 
+Default layout:
+
 ```
 storageRoot/
   db/state.sqlite
@@ -315,6 +378,22 @@ storageRoot/
     Faktura nr <nr_faktury>.pdf (fallback: <ksefNumber>.pdf)
   logs/ksefctl.log
 ```
+
+Flat sync layout (`ksefctl sync --flat-sync`):
+
+```text
+storageRoot/
+  db/state.sqlite
+  invoices/<NIP>/YYYY/MM/
+    <Seller> - <invoice_number>.xml
+    <Seller> - <invoice_number>.metadata.json
+    <Seller> - <invoice_number>.pdf
+  logs/ksefctl.log
+```
+
+If two invoices would produce the same flat filename, ksefctl keeps the first name and appends ` - <ksefNumber>` only for the conflicting invoice.
+
+If `organizations[].outputPath` is set, or `--output-path` is passed on the CLI, that path becomes the invoice root for that NIP instead of `storageRoot/invoices/<NIP>/`.
 
 ## Notifications
 

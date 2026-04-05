@@ -1,7 +1,5 @@
-import type {
-  SyncItem} from "./invoiceExtractor";
-import type {
-  MetadataFile} from "./window";
+import type { InvoiceFileMetadata, SyncItem } from "./invoiceExtractor";
+import type { MetadataFile } from "./window";
 import type { InvoiceExportStatusResponse } from "../api/ksefClient";
 import type { KsefClient } from "../api/ksefClient";
 import type { AuthService, AuthTokens } from "../auth/authService";
@@ -9,6 +7,7 @@ import type { AppConfig, SubjectType } from "../config/schema";
 import type { SqliteStore } from "../db/sqlite";
 import type { Logger } from "pino";
 import AdmZip from "adm-zip";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { sanitizeForTerminal } from "../cli/commandTree";
 import { resolveBaseUrl } from "../config/environment";
@@ -35,9 +34,17 @@ import {
   maxZipEntries,
   maxZipEntryBytes,
   maxZipTotalBytes,
+  resolveFlatInvoiceFileBase,
   resolveInvoiceFileBase,
+  sanitizeFileName,
 } from "./invoiceExtractor";
-import { atomicWriteFile, ensureStorageDirs, getInvoiceDir } from "./storage";
+import {
+  atomicWriteFile,
+  ensureStorageDirs,
+  getFlatInvoiceDirForRoot,
+  getInvoiceDirForRoot,
+  resolveInvoiceOutputRoot,
+} from "./storage";
 import {
   addUtcMonths,
   advanceWindow,
@@ -58,6 +65,17 @@ export type SyncResult = {
   skipped: number;
   failed: number;
   items: SyncItem[];
+};
+
+type StoredInvoiceMetadata = InvoiceFileMetadata & {
+  ksefNumber?: string;
+  permanentStorageDate?: string;
+};
+
+type InvoiceStorageTarget = {
+  invoiceDir: string;
+  fileBaseName: string;
+  metadataFileName: string;
 };
 
 export class SyncService {
@@ -171,10 +189,129 @@ export class SyncService {
     return cert;
   }
 
+  private getOrganization(nip: string) {
+    return this.config.organizations.find(
+      (organization) => organization.nip === nip,
+    );
+  }
+
+  private resolveInvoiceOutputRoot(
+    nip: string,
+    outputPathOverride?: string,
+  ): string {
+    return resolveInvoiceOutputRoot(
+      this.config.storage.root,
+      nip,
+      outputPathOverride ?? this.getOrganization(nip)?.outputPath,
+    );
+  }
+
+  private resolveFlatSyncFlag(flatSync?: boolean): boolean {
+    return flatSync ?? this.config.sync.flatSync;
+  }
+
+  private getMetadataFileName(fileBaseName: string, flatSync: boolean): string {
+    return flatSync ? `${fileBaseName}.metadata.json` : "metadata.json";
+  }
+
+  private async pathExists(filePath: string): Promise<boolean> {
+    try {
+      await fs.stat(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async readStoredKsefNumber(filePath: string): Promise<string | null> {
+    try {
+      const content = await fs.readFile(filePath, "utf-8");
+      const parsed = JSON.parse(content) as { ksefNumber?: unknown };
+      return typeof parsed.ksefNumber === "string" ? parsed.ksefNumber : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async canUseFlatFileBase(
+    invoiceDir: string,
+    fileBaseName: string,
+    ksefNumber: string,
+  ): Promise<boolean> {
+    const metadataPath = path.join(
+      invoiceDir,
+      this.getMetadataFileName(fileBaseName, true),
+    );
+    const storedKsefNumber = await this.readStoredKsefNumber(metadataPath);
+    if (storedKsefNumber === ksefNumber) {
+      return true;
+    }
+    const candidatePaths = [
+      path.join(invoiceDir, `${fileBaseName}.xml`),
+      path.join(invoiceDir, `${fileBaseName}.pdf`),
+      metadataPath,
+    ];
+    const existingFlags = await Promise.all(
+      candidatePaths.map((candidatePath) => this.pathExists(candidatePath)),
+    );
+    return existingFlags.every((exists) => !exists);
+  }
+
+  private async resolveFlatFileBase(
+    invoiceDir: string,
+    preferredBase: string,
+    ksefNumber: string,
+  ): Promise<string> {
+    if (await this.canUseFlatFileBase(invoiceDir, preferredBase, ksefNumber)) {
+      return preferredBase;
+    }
+    const suffixedBase =
+      sanitizeFileName(`${preferredBase} - ${ksefNumber}`) || ksefNumber;
+    return suffixedBase;
+  }
+
+  private async resolveInvoiceStorageTarget(
+    nip: string,
+    storageDate: Date,
+    ksefNumber: string,
+    xmlText: string,
+    flatSync: boolean,
+    metadata?: InvoiceFileMetadata,
+    outputPathOverride?: string,
+  ): Promise<InvoiceStorageTarget> {
+    const invoiceRoot = this.resolveInvoiceOutputRoot(nip, outputPathOverride);
+    if (!flatSync) {
+      const fileBaseName = resolveInvoiceFileBase(xmlText, ksefNumber);
+      return {
+        invoiceDir: getInvoiceDirForRoot(invoiceRoot, storageDate, ksefNumber),
+        fileBaseName,
+        metadataFileName: this.getMetadataFileName(fileBaseName, false),
+      };
+    }
+    const invoiceDir = getFlatInvoiceDirForRoot(invoiceRoot, storageDate);
+    const preferredBase = resolveFlatInvoiceFileBase(
+      xmlText,
+      ksefNumber,
+      metadata,
+    );
+    const fileBaseName = await this.resolveFlatFileBase(
+      invoiceDir,
+      preferredBase,
+      ksefNumber,
+    );
+    return {
+      invoiceDir,
+      fileBaseName,
+      metadataFileName: this.getMetadataFileName(fileBaseName, true),
+    };
+  }
+
   async runOnce(
     forceRedownloadId?: string,
     nipFilter?: string,
     forceRedownloadAll = false,
+    flatSync?: boolean,
+    outputPath?: string,
   ): Promise<SyncResult> {
     await ensureStorageDirs(this.config.storage.root);
     const nips = nipFilter
@@ -183,9 +320,15 @@ export class SyncService {
     if (nips.length === 0) {
       throw new Error("No organizations configured");
     }
+    if (outputPath && nips.length !== 1) {
+      throw new Error(
+        "Custom output path requires --nip or a single configured organization",
+      );
+    }
+    const effectiveFlatSync = this.resolveFlatSyncFlag(flatSync);
     const maxConcurrent = this.config.sync.maxConcurrentNips ?? 1;
     this.logger.debug(
-      { nipCount: nips.length, maxConcurrent },
+      { nipCount: nips.length, maxConcurrent, flatSync: effectiveFlatSync },
       "Starting sync run",
     );
 
@@ -209,7 +352,13 @@ export class SyncService {
       const accessToken = tokens.accessToken;
       const forced =
         forceRedownloadId && (!nipFilter || nipFilter === nip)
-          ? await this.downloadByKsefNumber(accessToken, nip, forceRedownloadId)
+          ? await this.downloadByKsefNumber(
+              accessToken,
+              nip,
+              forceRedownloadId,
+              effectiveFlatSync,
+              outputPath,
+            )
           : null;
       if (forced) {
         nipResult.downloaded += 1;
@@ -228,6 +377,8 @@ export class SyncService {
           forceRedownloadId,
           Boolean(forced),
           forceRedownloadAll,
+          effectiveFlatSync,
+          outputPath,
         );
         nipResult.downloaded += subjectResult.downloaded;
         nipResult.skipped += subjectResult.skipped;
@@ -324,6 +475,8 @@ export class SyncService {
     forceRedownloadId?: string,
     skipForcedId = false,
     forceRedownloadAll = false,
+    flatSync = false,
+    outputPath?: string,
   ): Promise<SyncResult> {
     const now = new Date();
     const ksefStartDate = parseIsoDate(ksefStartDateIso, "KSeF start date");
@@ -527,7 +680,7 @@ export class SyncService {
           );
         }
       }
-      const metadataMap = new Map<string, Record<string, unknown>>();
+      const metadataMap = new Map<string, StoredInvoiceMetadata>();
       metadata?.invoices?.forEach((invoice) => {
         if (invoice.ksefNumber) metadataMap.set(invoice.ksefNumber, invoice);
       });
@@ -573,9 +726,8 @@ export class SyncService {
           }
           const xmlText = xmlData.toString("utf-8");
           const hash = sha256Base64(xmlData);
-          const meta = metadataMap.get(ksefNumber) ?? {};
-          const dateString = (meta as { permanentStorageDate?: string })
-            .permanentStorageDate;
+          const meta = metadataMap.get(ksefNumber);
+          const dateString = meta?.permanentStorageDate;
           let storageDate = new Date();
           if (dateString) {
             const parsedDate = new Date(dateString);
@@ -588,19 +740,24 @@ export class SyncService {
               );
             }
           }
-          const invoiceDir = getInvoiceDir(
-            this.config.storage.root,
-            storageDate,
+          const storageTarget = await this.resolveInvoiceStorageTarget(
             nip,
+            storageDate,
             ksefNumber,
+            xmlText,
+            flatSync,
+            meta,
+            outputPath,
           );
-          const fileBaseName = resolveInvoiceFileBase(xmlText, ksefNumber);
           await atomicWriteFile(
-            path.join(invoiceDir, `${fileBaseName}.xml`),
+            path.join(
+              storageTarget.invoiceDir,
+              `${storageTarget.fileBaseName}.xml`,
+            ),
             xmlData,
           );
           await atomicWriteFile(
-            path.join(invoiceDir, "metadata.json"),
+            path.join(storageTarget.invoiceDir, storageTarget.metadataFileName),
             JSON.stringify(
               {
                 ksefNumber,
@@ -608,7 +765,7 @@ export class SyncService {
                 downloadedAt: new Date().toISOString(),
                 sourceEnvironment: this.config.environment,
                 hash,
-                metadata: meta,
+                metadata: meta ?? {},
               },
               null,
               2,
@@ -616,18 +773,18 @@ export class SyncService {
           );
 
           await this.maybeWritePdf(
-            invoiceDir,
+            storageTarget.invoiceDir,
             xmlText,
             ksefNumber,
             nip,
-            fileBaseName,
+            storageTarget.fileBaseName,
           );
 
           await this.store.withDb((db) =>
             upsertInvoice(db, {
               nip,
               ksef_number: ksefNumber,
-              file_path: invoiceDir,
+              file_path: storageTarget.invoiceDir,
               hash,
               status: "downloaded",
               downloaded_at: new Date().toISOString(),
@@ -636,7 +793,9 @@ export class SyncService {
             }),
           );
           downloaded += 1;
-          items.push(createSyncItem(nip, ksefNumber, invoiceDir, xmlText));
+          items.push(
+            createSyncItem(nip, ksefNumber, storageTarget.invoiceDir, xmlText),
+          );
         } catch (error) {
           const sanitizedMessage = sanitizeErrorMessage(
             (error as Error).message,
@@ -792,28 +951,32 @@ export class SyncService {
     accessToken: string,
     nip: string,
     ksefNumber: string,
+    flatSync = false,
+    outputPath?: string,
   ): Promise<SyncItem | null> {
     const xml = await this.client.downloadInvoiceXml(accessToken, ksefNumber);
     if (Buffer.byteLength(xml, "utf-8") > maxInvoiceNumberXmlBytes) {
       throw new Error("Invoice XML too large for direct download");
     }
     const date = new Date();
-    const invoiceDir = getInvoiceDir(
-      this.config.storage.root,
-      date,
+    const storageTarget = await this.resolveInvoiceStorageTarget(
       nip,
+      date,
       ksefNumber,
+      xml,
+      flatSync,
+      undefined,
+      outputPath,
     );
     const xmlBuffer = Buffer.from(xml, "utf-8");
     const hash = sha256Base64(xmlBuffer);
-    const fileBaseName = resolveInvoiceFileBase(xml, ksefNumber);
 
     await atomicWriteFile(
-      path.join(invoiceDir, `${fileBaseName}.xml`),
+      path.join(storageTarget.invoiceDir, `${storageTarget.fileBaseName}.xml`),
       xmlBuffer,
     );
     await atomicWriteFile(
-      path.join(invoiceDir, "metadata.json"),
+      path.join(storageTarget.invoiceDir, storageTarget.metadataFileName),
       JSON.stringify(
         {
           ksefNumber,
@@ -828,13 +991,19 @@ export class SyncService {
       ),
     );
 
-    await this.maybeWritePdf(invoiceDir, xml, ksefNumber, nip, fileBaseName);
+    await this.maybeWritePdf(
+      storageTarget.invoiceDir,
+      xml,
+      ksefNumber,
+      nip,
+      storageTarget.fileBaseName,
+    );
 
     await this.store.withDb((db) =>
       upsertInvoice(db, {
         nip,
         ksef_number: ksefNumber,
-        file_path: invoiceDir,
+        file_path: storageTarget.invoiceDir,
         hash,
         status: "downloaded",
         downloaded_at: new Date().toISOString(),
@@ -843,6 +1012,6 @@ export class SyncService {
       }),
     );
 
-    return createSyncItem(nip, ksefNumber, invoiceDir, xml);
+    return createSyncItem(nip, ksefNumber, storageTarget.invoiceDir, xml);
   }
 }

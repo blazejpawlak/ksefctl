@@ -2,13 +2,23 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { atomicWriteFile, getInvoiceDir } from "../../src/core/storage";
+import {
+  atomicWriteFile,
+  getFlatInvoiceDir,
+  getInvoiceDir,
+} from "../../src/core/storage";
 
 describe("storage paths", () => {
   it("creates deterministic invoice directory", () => {
     const date = new Date(Date.UTC(2025, 0, 2));
     const dir = getInvoiceDir("/data", date, "1234567890", "KSEF123");
     expect(dir).toBe("/data/invoices/1234567890/2025/01/02/KSEF123");
+  });
+
+  it("creates deterministic flat invoice directory", () => {
+    const date = new Date(Date.UTC(2025, 0, 2));
+    const dir = getFlatInvoiceDir("/data", date, "1234567890");
+    expect(dir).toBe("/data/invoices/1234567890/2025/01");
   });
 
   it("atomically writes files with secure permissions", async () => {

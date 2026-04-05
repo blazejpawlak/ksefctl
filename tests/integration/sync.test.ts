@@ -99,14 +99,22 @@ describe("integration sync", () => {
       const ksefNumber = "KSEF-TEST-1";
       zip.addFile(
         `${ksefNumber}.xml`,
-        Buffer.from("<Faktura><P_2>FV/1/2026</P_2></Faktura>", "utf-8"),
+        Buffer.from(
+          "<Faktura><Podmiot1><DaneIdentyfikacyjne><Nazwa>ACME Sp. z o.o.</Nazwa></DaneIdentyfikacyjne></Podmiot1><Fa><P_2>FV/1/2026</P_2></Fa></Faktura>",
+          "utf-8",
+        ),
       );
       zip.addFile(
         "_metadata.json",
         Buffer.from(
           JSON.stringify({
             invoices: [
-              { ksefNumber, permanentStorageDate: new Date().toISOString() },
+              {
+                ksefNumber,
+                permanentStorageDate: new Date().toISOString(),
+                invoiceNumber: "FV/1/2026",
+                seller: { name: "ACME Sp. z o.o." },
+              },
             ],
           }),
         ),
@@ -213,6 +221,78 @@ describe("integration sync", () => {
       const xmlPath = path.join(invoicePath, "Faktura nr FV-1-2026.xml");
       const xml = await fs.readFile(xmlPath, "utf-8");
       expect(xml).toContain("P_2");
+    } finally {
+      await keytar.deletePassword(serviceName, `test:nip:${nip}`);
+    }
+  });
+
+  it("runs a flat sync and writes files into monthly folders", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const configPath = path.join(tmpDir, "config.yaml");
+    const configYaml = YAML.stringify({
+      environment: "test",
+      apiBaseUrl: baseUrl,
+      auth: {
+        method: "ksefToken",
+        keychainServiceName: serviceName,
+      },
+      organizations: [{ nip }],
+      pollingIntervalSeconds: 300,
+      storage: { root: path.join(tmpDir, "storage") },
+      notifications: { macosNotification: false, email: { enabled: false } },
+      logging: {
+        level: "info",
+        file: path.join(tmpDir, "storage", "logs", "app.log"),
+        pretty: false,
+      },
+      operational: {
+        maxConcurrency: 2,
+        timeoutSeconds: 60,
+        pollIntervalSeconds: 5,
+        allowInsecureHttp: true,
+      },
+      security: { tls: { enablePinning: false, pins: [], pinningHosts: [] } },
+      sync: {
+        subjectTypes: ["Subject1"],
+        includeMetadataHeader: true,
+        generatePdf: false,
+      },
+    });
+    await fs.writeFile(configPath, configYaml, "utf-8");
+
+    await keytar.setPassword(
+      serviceName,
+      `test:nip:${nip}`,
+      JSON.stringify({ ksefToken: "TOKEN" }),
+    );
+
+    try {
+      const ctx = await createContext(configPath);
+      const sync = new SyncService(
+        ctx.client,
+        ctx.auth,
+        ctx.config,
+        ctx.logger,
+        ctx.store,
+      );
+      const result = await sync.runOnce(undefined, undefined, false, true);
+
+      expect(result.downloaded).toBe(1);
+      expect(result.items[0]?.path).toMatch(
+        /invoices\/1234567890\/\d{4}\/\d{2}$/,
+      );
+
+      const invoicePath = result.items[0]?.path ?? "";
+      const xmlPath = path.join(invoicePath, "ACME Sp. z o.o - FV-1-2026.xml");
+      const metadataPath = path.join(
+        invoicePath,
+        "ACME Sp. z o.o - FV-1-2026.metadata.json",
+      );
+      const xml = await fs.readFile(xmlPath, "utf-8");
+      const metadata = await fs.readFile(metadataPath, "utf-8");
+
+      expect(xml).toContain("P_2");
+      expect(metadata).toContain("\"ksefNumber\": \"KSEF-TEST-1\"");
     } finally {
       await keytar.deletePassword(serviceName, `test:nip:${nip}`);
     }
