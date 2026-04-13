@@ -2,6 +2,7 @@ import YAML from "yaml";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { ConfigError } from "../utils/errors";
+import { validateTlsOptions } from "../utils/http";
 import {
   defaultConfigPath,
   defaultDataRoot,
@@ -51,6 +52,12 @@ export const loadConfig = async (configPath: string): Promise<AppConfig> => {
     }
   }
 
+  // ─── Legacy config migration shims ───────────────────────────────────────
+  // These silently upgrade configs written for pre-2026 schema versions.
+  // They are intentionally kept so users do not need to run `ksefctl system init --force`
+  // after upgrading. Remove when the old format is fully extinct.
+  //
+  // Shim 1: auth.mode → auth.method
   const auth = isRecord(parsed.auth) ? parsed.auth : null;
   if (auth) {
     const mode = auth.mode;
@@ -60,6 +67,7 @@ export const loadConfig = async (configPath: string): Promise<AppConfig> => {
     }
   }
 
+  // Shim 2: auth.ksefToken.contextIdentifier → organizations[]
   const ksefToken = auth && isRecord(auth.ksefToken) ? auth.ksefToken : null;
   const contextIdentifier =
     ksefToken && isRecord(ksefToken.contextIdentifier)
@@ -77,12 +85,14 @@ export const loadConfig = async (configPath: string): Promise<AppConfig> => {
     parsed.organizations = organizations;
   }
 
+  // Shim 3: remove obsolete auth sub-fields that Zod would reject
   if (auth && "ksefToken" in auth) {
     delete auth.ksefToken;
   }
   if (auth && "xades" in auth) {
     delete auth.xades;
   }
+  // ─────────────────────────────────────────────────────────────────────────
 
   const storageRootRaw = (() => {
     const storage = isRecord(parsed.storage) ? parsed.storage : null;
@@ -138,7 +148,15 @@ export const loadConfig = async (configPath: string): Promise<AppConfig> => {
     logging: { ...logging, file: loggingFile },
   };
 
-  return AppConfigSchema.parse(normalized);
+  const config = AppConfigSchema.parse(normalized);
+  const { tls } = config.security;
+  await validateTlsOptions({
+    enablePinning: tls.enablePinning,
+    pins: tls.pins,
+    pinningHosts: tls.pinningHosts,
+    caPath: tls.caPath,
+  });
+  return config;
 };
 
 export const sanitizeConfig = (config: AppConfig): Record<string, unknown> => {
@@ -152,11 +170,6 @@ export const sanitizeConfig = (config: AppConfig): Record<string, unknown> => {
     if (!obj) return;
     if (key in obj) obj[key] = redactValue;
   };
-
-  const auth = redacted.auth as Record<string, unknown> | undefined;
-  if (auth) {
-    apply(auth, "keychainServiceName");
-  }
 
   const notifications = redacted.notifications as
     | Record<string, unknown>

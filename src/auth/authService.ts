@@ -21,6 +21,7 @@ export type AuthTokens = Required<
   >
 >;
 
+// skewSeconds=60: proactively refresh tokens 60 s before expiry to absorb clock drift and network latency.
 const isExpired = (validUntil: string | null, skewSeconds = 60): boolean => {
   if (!validUntil) return true;
   const expiry = new Date(validUntil).getTime();

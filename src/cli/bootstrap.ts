@@ -61,13 +61,12 @@ export const getInitializationStatus = async (configPathOverride?: string) => {
 export const ensureInitialized = async (configPathOverride?: string) => {
   const status = await getInitializationStatus(configPathOverride);
   if (!status.initialized) {
-    const missingInfo =
-      status.missingNips.length > 0
-        ? ` Missing token for NIP(s): ${status.missingNips.join(", ")}.`
-        : "";
-    throw new ConfigError(
-      `System not initialized.${missingInfo} Run "ksefctl system init".`,
-    );
+    if (status.missingNips.length > 0) {
+      throw new ConfigError(
+        `Missing keychain token for NIP(s): ${status.missingNips.join(", ")}. Run "ksefctl system secret set".`,
+      );
+    }
+    throw new ConfigError("System not initialized. Run \"ksefctl system init\".");
   }
   return status;
 };

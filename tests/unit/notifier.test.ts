@@ -12,23 +12,31 @@ import {
 import { SqliteStore } from "../../src/db/sqlite";
 import { Notifier } from "../../src/notifications/notifier";
 
-const { notifyMock, sendMailMock, createTransportMock } = vi.hoisted(() => ({
-  notifyMock: vi.fn(),
-  sendMailMock: vi.fn(),
-  createTransportMock: vi.fn(),
-}));
+ 
+var notifyMock: ReturnType<typeof vi.fn>;
+ 
+var sendMailMock: ReturnType<typeof vi.fn>;
+ 
+var createTransportMock: ReturnType<typeof vi.fn>;
 
-vi.mock("node-notifier", () => ({
-  default: {
-    notify: notifyMock,
-  },
-}));
+vi.mock("node-notifier", () => {
+  notifyMock = vi.fn();
+  return {
+    default: {
+      notify: notifyMock,
+    },
+  };
+});
 
-vi.mock("nodemailer", () => ({
-  default: {
-    createTransport: createTransportMock,
-  },
-}));
+vi.mock("nodemailer", () => {
+  sendMailMock = vi.fn();
+  createTransportMock = vi.fn();
+  return {
+    default: {
+      createTransport: createTransportMock,
+    },
+  };
+});
 
 const createLogger = (): Logger =>
   ({

@@ -73,7 +73,8 @@ The environment prompt shows full names with the API URLs for clarity.
 
 ## Commands
 
-- `ksefctl sync [--nip <nip>] [--force-redownload <ksefNumber>] [--force-redownload-all] [--flat-sync] [--output-path <path>]` – run sync.
+- `ksefctl sync [--nip <nip>] [--force-redownload-all] [--flat-sync] [--output-path <path>]` – run sync.
+- `ksefctl sync --nip <nip> --force-redownload <ksefNumber>` – re-download a single invoice (`--nip` is required with `--force-redownload`).
 - `ksefctl daemon` – run continuously in foreground.
 - `ksefctl status [--json]` – show last sync status.
 - `ksefctl version` – show current version and latest short commit.
@@ -86,6 +87,7 @@ The environment prompt shows full names with the API URLs for clarity.
 - `ksefctl system secret show` – show which NIPs have keychain secrets.
 - `ksefctl system secret clear --nip <nip>` – remove keychain secret for a NIP.
 - `ksefctl system completion <bash|zsh|fish>` – print shell completion script.
+- `ksefctl system pin fetch <host> [-p <port>]` – print the SPKI SHA-256 TLS pin for a host (ready to paste into `security.tls.pins`).
 
 Global options:
 
@@ -98,13 +100,14 @@ All commands except `system init` require a config file and keychain tokens for 
 
 `system init --force` will remove the config file and keychain tokens for all configured NIPs.
 
-`system init` requires an interactive terminal. Use `--yes` with `--force` to skip confirmation.
+`system init` requires an interactive terminal for the full interactive bootstrap (NIP entry, token prompts). When run without a TTY (e.g. in CI or a pipe), it writes the config template and creates storage directories without prompting, then exits with a hint to run the full interactive flow manually. Use `--yes` with `--force` to skip the confirmation prompt.
 
 `system verify` performs the authentication flow only; it does not download invoices.
 
 Sync prints short progress messages on stderr; use `-v/--verbose` for detailed logs.
 
 If an invoice directory is missing on disk, sync will re-download it even if the DB marks it as downloaded.
+`--force-redownload <ksefNumber>` re-downloads a single invoice. Requires `--nip`.
 `--force-redownload-all` resets cursors to `sync.initialSyncFrom` (or `2026-02-01`) and re-downloads all available invoices for all configured NIPs (or only the chosen one when `--nip` is provided).
 `--flat-sync` keeps the default sync logic but stores fetched invoices in monthly folders (`invoices/<NIP>/YYYY/MM/`) using `Seller - InvoiceNumber` filenames. When a filename collides, ksefctl appends the KSeF number only for the conflicting invoice.
 `--output-path` overrides the invoice output root for the selected NIP or a single-organization run. When multiple organizations are configured, combine it with `--nip`.
@@ -133,22 +136,30 @@ Run a single sync cycle:
 ksefctl sync
 ```
 
-Set a KSeF token for a NIP:
+Set a KSeF token for a NIP (interactive — prompts for NIP and token):
 
 ```bash
 ksefctl system secret set
 ```
 
-Non-interactive (read token from stdin):
+Non-interactive (CI/scripts) — requires both `--nip` and `--token-stdin`:
 
 ```bash
 cat token.txt | ksefctl system secret set --nip 1234567890 --token-stdin
 ```
 
+Without `--token-stdin`, running in a non-TTY will produce an error. Without `--nip`, the command cannot determine which NIP to store the token for in non-interactive mode.
+
 Sync a single NIP:
 
 ```bash
 ksefctl sync --nip 1234567890
+```
+
+Re-download a specific invoice by KSeF number (`--nip` is required):
+
+```bash
+ksefctl sync --nip 1234567890 --force-redownload 1234567890-20260101-ABC123
 ```
 
 Run a sync cycle with flat monthly storage:
@@ -274,10 +285,11 @@ Default config paths:
 - Linux: `${XDG_CONFIG_HOME:-~/.config}/ksefctl/config.yaml`
 - macOS: `~/.ksefctl/config.yaml`
 
-Override config path:
+Override config path (highest precedence first):
 
-- CLI: `--config /path/to/config.yaml`
-- Env: `KSEFCTL_CONFIG=/path/to/config.yaml`
+1. CLI `--config <path>`
+2. `KSEFCTL_CONFIG` environment variable
+3. Platform default path (see above)
 
 Default storage path:
 
@@ -297,10 +309,41 @@ Key config fields:
 - `logging` (level, file, pretty)
 - `operational` (retry, timeouts, poll, exportCooldownSeconds, allowInsecureHttp)
 - `security.tls` (pinning)
-- `security.allowedHosts`: allowed hosts for package downloads (default: API host)
+- `security.allowedHosts`: allowed hosts for package downloads (schema default: `[]`; if empty at runtime the API host is allowed automatically)
 - `sync` (subject types, HWM, generatePdf, initialSyncFrom)
 
 Minimal config example: `docs/minimal-config.yaml`
+
+Run `ksefctl system config show` after `system init` to see the resolved configuration.
+
+### Config defaults
+
+| Field | Default |
+|---|---|
+| `environment` | `prod` |
+| `pollingIntervalSeconds` | `300` (5 min) |
+| `notifications.macosNotification` | `true` |
+| `notifications.email.enabled` | `false` |
+| `logging.level` | `info` |
+| `logging.pretty` | `false` |
+| `operational.maxConcurrency` | `2` |
+| `operational.timeoutSeconds` | `60` |
+| `operational.pollIntervalSeconds` | `10` |
+| `operational.authPollMaxAttempts` | `60` |
+| `operational.exportPollMaxAttempts` | `120` |
+| `operational.exportCooldownSeconds` | `2` |
+| `operational.allowInsecureHttp` | `false` |
+| `operational.retry.maxAttempts` | `5` |
+| `operational.retry.baseDelayMs` | `500` |
+| `operational.retry.maxDelayMs` | `10000` |
+| `operational.retry.jitter` | `0.2` |
+| `sync.subjectTypes` | all four subject types |
+| `sync.includeMetadataHeader` | `true` |
+| `sync.generatePdf` | `true` |
+| `sync.flatSync` | `false` |
+| `sync.maxConcurrentNips` | `1` |
+| `security.tls.enablePinning` | `false` |
+| `security.allowedHosts` | `[]` (API host allowed by default) |
 
 Use `ksefctl system secret set` to store a token in keychain; add the NIP to `organizations` in config.
 
@@ -331,12 +374,16 @@ The `contextIdentifier` is always `Nip` and comes from the configured `organizat
 
 Token generation is described in `tokeny-ksef.md` and requires a one-time XAdES authentication outside this CLI.
 
-### Secret overrides (env)
+### Environment variables
 
-- `KSEFCTL_SMTP_USER`
-- `KSEFCTL_SMTP_PASS`
-- `KSEFCTL_CONFIG` (override config path)
-- `KSEFCTL_NO_FIRST_RUN=1` (disable first-run prompts)
+| Variable | Effect |
+|---|---|
+| `KSEFCTL_CONFIG` | Override config file path (lower precedence than `--config`) |
+| `KSEFCTL_SMTP_USER` | Override `notifications.email.smtp.user` |
+| `KSEFCTL_SMTP_PASS` | Override `notifications.email.smtp.pass` |
+| `KSEFCTL_NO_FIRST_RUN=1` | Disable first-run prompts |
+
+Config path resolution order: `--config` CLI flag → `KSEFCTL_CONFIG` → platform default.
 
 ## Incremental sync behavior
 
@@ -415,6 +462,12 @@ If `organizations[].outputPath` is set, or `--output-path` is passed on the CLI,
 - User service: `~/.config/systemd/user/ksefctl.service`
 - System service (if run as root): `/etc/systemd/system/ksefctl.service`
 
+The install command automatically runs `systemctl --user daemon-reload` (or the system equivalent). If you edit the unit file manually afterwards, reload the daemon yourself:
+
+```bash
+systemctl --user daemon-reload
+```
+
 For user services that should run after logout:
 
 ```bash
@@ -434,6 +487,14 @@ security:
     pinningHosts:
       - "api-test.ksef.mf.gov.pl"
 ```
+
+To obtain the pin value for a host:
+
+```bash
+ksefctl system pin fetch api.ksef.mf.gov.pl
+```
+
+This prints the SHA-256 hash of the server certificate's raw public key (as returned by Node.js `getPeerCertificate().pubkey`), formatted as base64, plus a ready-to-paste config snippet. Use this command rather than manual `openssl` pipelines, which produce a different (SPKI DER wrapper) hash.
 
 If invoice package parts are served from a different host, add it to `pinningHosts`.
 

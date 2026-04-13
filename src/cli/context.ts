@@ -6,7 +6,7 @@ import { resolveBaseUrl } from "../config/environment";
 import { loadConfig, resolveConfigPath } from "../config/loadConfig";
 import { SqliteStore } from "../db/sqlite";
 import { ConfigError } from "../utils/errors";
-import { HttpClient } from "../utils/http";
+import { HttpClient, validateTlsOptions } from "../utils/http";
 import { createLogger } from "../utils/logger";
 
 type ContextOptions = {
@@ -55,16 +55,19 @@ export const createContext = async (
     );
   }
 
+  const tlsSecurity = {
+    enablePinning: config.security.tls.enablePinning,
+    pins: config.security.tls.pins,
+    pinningHosts: config.security.tls.pinningHosts,
+    caPath: config.security.tls.caPath,
+  };
+  await validateTlsOptions(tlsSecurity);
+
   const http = new HttpClient({
     baseUrl,
     timeoutMs: config.operational.timeoutSeconds * 1000,
     retry: config.operational.retry,
-    security: {
-      enablePinning: config.security.tls.enablePinning,
-      pins: config.security.tls.pins,
-      pinningHosts: config.security.tls.pinningHosts,
-      caPath: config.security.tls.caPath,
-    },
+    security: tlsSecurity,
     logger,
     progress: options?.progress,
     countdownIntervalSeconds,

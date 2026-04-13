@@ -1,6 +1,6 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import { ensureDir } from "../utils/paths";
+export { atomicWriteFile } from "../utils/paths";
 
 const assertSafePathSegment = (value: string, label: string): void => {
   if (!value || value === "." || value === "..") {
@@ -69,19 +69,6 @@ export const getFlatInvoiceDir = (
     resolveInvoiceOutputRoot(storageRoot, nip),
     date,
   );
-};
-
-export const atomicWriteFile = async (
-  filePath: string,
-  data: string | Buffer,
-): Promise<void> => {
-  const dir = path.dirname(filePath);
-  await ensureDir(dir);
-  const tempPath = `${filePath}.tmp`;
-  await fs.writeFile(tempPath, data, { mode: 0o600, flag: "wx" });
-  await fs.chmod(tempPath, 0o600);
-  await fs.rename(tempPath, filePath);
-  await fs.chmod(filePath, 0o600);
 };
 
 export const ensureStorageDirs = async (storageRoot: string): Promise<void> => {

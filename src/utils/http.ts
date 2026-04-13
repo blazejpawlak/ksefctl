@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import tls from "node:tls";
 import { calculateBackoff } from "./backoff";
-import { AuthError, NetworkError, sanitizeErrorMessage } from "./errors";
+import { AuthError, ConfigError, NetworkError, sanitizeErrorMessage } from "./errors";
 import { formatDuration, sleep, sleepWithCountdown } from "./time";
 
 export type RetryOptions = {
@@ -39,6 +39,7 @@ export type RequestOptions = {
   parseAs?: "json" | "text" | "buffer";
 };
 
+// 500 chars keeps error bodies readable in logs without overwhelming them; KSeF error JSON is typically < 200 chars.
 const maxErrorBodyLength = 500;
 
 const normalizeBaseUrl = (baseUrl: string): string =>
@@ -72,6 +73,30 @@ const extractHttpStatus = (message: string): number | null => {
 
 const isRetryableStatus = (status: number): boolean =>
   status === 429 || status >= 500;
+
+// SHA-256 produces 32 bytes → exactly 44 base64 characters with standard padding.
+const PIN_REGEX = /^[A-Za-z0-9+/]{43}=$/;
+
+export const validateTlsOptions = async (
+  security: SecurityOptions,
+): Promise<void> => {
+  for (const pin of security.pins) {
+    if (!PIN_REGEX.test(pin)) {
+      throw new ConfigError(
+        `security.tls.pins: "${pin}" is not a valid base64 SHA-256 pin (expected 44-char base64 string)`,
+      );
+    }
+  }
+  if (security.caPath) {
+    try {
+      await fs.access(security.caPath);
+    } catch {
+      throw new ConfigError(
+        `security.tls.caPath: file not found or not readable: ${security.caPath}`,
+      );
+    }
+  }
+};
 
 const createDispatcher = async (security: SecurityOptions): Promise<Agent> => {
   const ca = security.caPath

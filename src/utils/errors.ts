@@ -1,3 +1,10 @@
+// Matches key=value or key: value pairs for known secret field names.
+// Quoted values ("..." / '...') or unquoted tokens are redacted.
+// The trailing "(?:\s+[^\s,;#&]+)?" allows consuming a two-word value.
+// This is needed because bearerTokenPattern runs first and replaces
+// "Bearer abc123" → "Bearer [REDACTED]"; without the trailing clause,
+// secretKeyPattern would only eat "Bearer" and leave " [REDACTED]" floating.
+// KSeF API token values do not contain spaces, so the clause is safe in practice.
 const secretKeyPattern =
   /(\b(?:access[_-]?token|api[_-]?key|authorization|passwd|password|refresh[_-]?token|secret|sig(?:nature)?|token)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;#&]+(?:\s+[^\s,;#&]+)?)/gi;
 
@@ -43,6 +50,11 @@ const sanitizeGenericErrorMessage = (message: string): string =>
       .replace(secretKeyPattern, "$1[REDACTED]"),
   );
 
+// Two-pass sanitization:
+// 1. sanitizeHttpErrorMessage strips the HTTP response body (everything between
+//    the status line and requestId) so it never reaches the generic patterns.
+// 2. sanitizeGenericErrorMessage handles residual secret patterns in non-HTTP
+//    messages (SMTP auth errors, keychain errors, etc.) and truncates long strings.
 export const sanitizeErrorMessage = (message: string): string => {
   const networkFailurePrefix = "Network failure: ";
   if (message.startsWith(networkFailurePrefix)) {

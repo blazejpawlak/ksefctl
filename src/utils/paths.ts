@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -44,4 +45,24 @@ export const ensureDir = async (
   mode = 0o700,
 ): Promise<void> => {
   await fs.mkdir(dirPath, { recursive: true, mode });
+};
+
+export const atomicWriteFile = async (
+  filePath: string,
+  data: string | Buffer,
+): Promise<void> => {
+  const dir = path.dirname(filePath);
+  await ensureDir(dir);
+  // Unique temp name per PID + UUID: prevents stale-.tmp failures from prior
+  // crashes and closes the predictable-filename DoS foothold on shared dirs.
+  const tempPath = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try {
+    await fs.writeFile(tempPath, data, { mode: 0o600 });
+    await fs.chmod(tempPath, 0o600);
+    await fs.rename(tempPath, filePath);
+    await fs.chmod(filePath, 0o600);
+  } catch (error) {
+    await fs.unlink(tempPath).catch(() => undefined);
+    throw error;
+  }
 };
