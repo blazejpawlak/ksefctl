@@ -86,6 +86,9 @@ export const handleFirstRun = async (
     }
   } else {
     completionStatus = "unavailable";
+    completionMessage =
+      "Shell completion is supported for bash, zsh, and fish. " +
+      "Run `ksefctl system completion <shell>` for manual setup.";
   }
 
   const initNow = await promptYesNo("Bootstrap and initialize now? (y/N): ");

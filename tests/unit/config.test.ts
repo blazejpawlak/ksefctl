@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { loadConfig, sanitizeConfig } from "../../src/config/loadConfig";
 import { AppConfigSchema } from "../../src/config/schema";
+import { ConfigError } from "../../src/utils/errors";
 
 describe("config schema", () => {
   it("validates a minimal config", () => {
@@ -149,6 +150,29 @@ describe("config schema", () => {
     expect(loaded.storage.root).toBe(path.join(tmpDir, "storage"));
   });
 
+  it("throws ConfigError when TLS pin is invalid", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-config-"));
+    const configPath = path.join(tmpDir, "config.yaml");
+    const yaml = YAML.stringify({
+      environment: "test",
+      auth: { method: "ksefToken", keychainServiceName: "ksefctl" },
+      organizations: [{ nip: "1234567890" }],
+      pollingIntervalSeconds: 300,
+      storage: { root: "/tmp/ksef" },
+      notifications: { macosNotification: false, email: { enabled: false } },
+      logging: { level: "info", file: "/tmp/ksef/logs/app.log", pretty: false },
+      operational: {
+        maxConcurrency: 2,
+        timeoutSeconds: 60,
+        pollIntervalSeconds: 10,
+      },
+      security: { tls: { enablePinning: true, pins: ["invalidpin123"], pinningHosts: [] } },
+      sync: { subjectTypes: ["Subject1"], includeMetadataHeader: true },
+    });
+    await fs.writeFile(configPath, yaml, "utf-8");
+    await expect(loadConfig(configPath)).rejects.toBeInstanceOf(ConfigError);
+  });
+
   it("redacts sensitive fields", () => {
     const sanitized = sanitizeConfig(
       AppConfigSchema.parse({
@@ -194,7 +218,15 @@ describe("config schema", () => {
       }),
     );
 
+    // keychainServiceName is a label, not a secret — must be shown as-is
     const auth = sanitized.auth as Record<string, unknown>;
-    expect(auth.keychainServiceName).toBe("***");
+    expect(auth.keychainServiceName).toBe("ksefctl");
+    // SMTP credentials must still be redacted
+    const smtp = (
+      (sanitized.notifications as Record<string, unknown>)
+        .email as Record<string, unknown>
+    ).smtp as Record<string, unknown>;
+    expect(smtp.user).toBe("***");
+    expect(smtp.pass).toBe("***");
   });
 });

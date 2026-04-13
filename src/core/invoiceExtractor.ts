@@ -23,14 +23,17 @@ export type InvoiceFileMetadata = {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+// 5 MB — generous upper bound for a single XML invoice file (real KSeF invoices are typically < 100 KB).
 export const maxInvoiceNumberXmlBytes = 5_000_000;
+// 180 chars — keeps generated filesystem paths within the 255-byte filename limit on Linux/macOS.
 export const maxInvoiceFileBaseLength = 180;
-export const maxZipEntries = 2000;
-export const maxZipEntryBytes = 20_000_000;
-export const maxZipTotalBytes = 200_000_000;
-export const maxInvoicePdfXmlBytes = 5_000_000;
-export const maxDecryptedPackageBytes = 200_000_000;
-export const maxExtractedTextValueLength = 4096;
+// ZIP-bomb mitigations: keep limits well above any realistic KSeF export package to avoid DoS.
+export const maxZipEntries = 2000; // KSeF docs show batches of up to 1000 invoices per package.
+export const maxZipEntryBytes = 20_000_000; // 20 MB per entry; real invoices are < 1 MB.
+export const maxZipTotalBytes = 200_000_000; // 200 MB total uncompressed; matches decrypted limit.
+export const maxInvoicePdfXmlBytes = 5_000_000; // 5 MB — same cap as the raw XML file.
+export const maxDecryptedPackageBytes = 200_000_000; // 200 MB decrypted limit guards against zip-bombs.
+export const maxExtractedTextValueLength = 4096; // Caps individual XML text values to prevent oversized log lines.
 
 const invoiceNumberKeys = new Set(["p_2", "nrfaktury", "numerfaktury"]);
 const sellerNamePaths = [

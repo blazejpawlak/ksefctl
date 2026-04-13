@@ -17,15 +17,13 @@ import {
 import { SqliteStore } from "../../src/db/sqlite";
 import { encryptAes256Cbc, sha256Base64 } from "../../src/utils/crypto";
 
-const { testKey, testIv } = vi.hoisted(() => ({
-  testKey: Buffer.alloc(32, 1),
-  testIv: Buffer.alloc(16, 2),
-}));
+const testKey = Buffer.alloc(32, 1);
+const testIv = Buffer.alloc(16, 2);
 
 vi.mock("../../src/core/encryption", () => ({
   createEncryptionData: vi.fn().mockResolvedValue({
-    key: testKey,
-    iv: testIv,
+    key: Buffer.alloc(32, 1),
+    iv: Buffer.alloc(16, 2),
     encryptionInfo: {
       encryptedSymmetricKey: "enc",
       initializationVector: "iv",
@@ -211,7 +209,7 @@ describe("SyncService", () => {
       },
     });
 
-    const service = new SyncService(client, auth, config, logger, store);
+    const service = new SyncService({ client, auth, config, logger, store });
     const runPromise = service.runOnce();
 
     await vi.waitFor(() => {
@@ -278,7 +276,7 @@ describe("SyncService", () => {
       },
     });
 
-    const service = new SyncService(client, auth, config, logger, store);
+    const service = new SyncService({ client, auth, config, logger, store });
     const runPromise = service.runOnce();
 
     await vi.waitFor(() => {
@@ -349,7 +347,7 @@ describe("SyncService", () => {
     });
     const logger = createLogger();
 
-    const service = new SyncService(client, auth, config, logger, store);
+    const service = new SyncService({ client, auth, config, logger, store });
     await service.runOnce(undefined, undefined, true);
 
     expect(getAccessToken).toHaveBeenCalledTimes(2);
@@ -401,7 +399,7 @@ describe("SyncService", () => {
     const logger = createLogger();
     const auth = createAuth();
 
-    const service = new SyncService(client, auth, config, logger, store);
+    const service = new SyncService({ client, auth, config, logger, store });
     await service.runOnce();
 
     const continuation = await store.withDb((db) =>
@@ -434,7 +432,7 @@ describe("SyncService", () => {
     const logger = createLogger();
     const auth = createAuth();
 
-    const service = new SyncService(client, auth, config, logger, store);
+    const service = new SyncService({ client, auth, config, logger, store });
     await service.runOnce("KSEF-INV-1");
 
     const invoiceDir = path.join(
@@ -481,7 +479,7 @@ describe("SyncService", () => {
     const logger = createLogger();
     const auth = createAuth();
 
-    const service = new SyncService(client, auth, config, logger, store);
+    const service = new SyncService({ client, auth, config, logger, store });
     await service.runOnce("KSEF-INV-1", undefined, false, true);
 
     const invoiceDir = path.join(
@@ -538,7 +536,7 @@ describe("SyncService", () => {
     const logger = createLogger();
     const auth = createAuth();
 
-    const service = new SyncService(client, auth, config, logger, store);
+    const service = new SyncService({ client, auth, config, logger, store });
     const result = await service.runOnce("KSEF-CONFIG-1");
 
     expect(result.items[0]?.path).toBe(path.join(outputPath, "2026", "02"));
@@ -584,7 +582,7 @@ describe("SyncService", () => {
     const logger = createLogger();
     const auth = createAuth();
 
-    const service = new SyncService(client, auth, config, logger, store);
+    const service = new SyncService({ client, auth, config, logger, store });
     const result = await service.runOnce(
       "KSEF-CLI-1",
       "1234567890",
@@ -694,7 +692,7 @@ describe("SyncService", () => {
     const logger = createLogger();
     const auth = createAuth();
 
-    const service = new SyncService(client, auth, config, logger, store);
+    const service = new SyncService({ client, auth, config, logger, store });
     await service.runOnce(undefined, undefined, false, true);
 
     const invoiceDir = path.join(
@@ -741,7 +739,7 @@ describe("SyncService", () => {
     const logger = createLogger();
     const auth = createAuth();
 
-    const service = new SyncService(client, auth, config, logger, store);
+    const service = new SyncService({ client, auth, config, logger, store });
     const result = await service.runOnce("KSEF-INV-1", "1234567890");
 
     expect(downloadInvoiceXml).toHaveBeenCalledTimes(1);
@@ -791,7 +789,7 @@ describe("SyncService", () => {
     const logger = createLogger();
     const auth = createAuth();
 
-    const service = new SyncService(client, auth, config, logger, store);
+    const service = new SyncService({ client, auth, config, logger, store });
     const result = await service.runOnce("KSEF-INV-1");
 
     expect(result.items).toEqual([
@@ -875,7 +873,7 @@ describe("SyncService", () => {
     const logger = createLogger();
     const auth = createAuth();
 
-    const service = new SyncService(client, auth, config, logger, store);
+    const service = new SyncService({ client, auth, config, logger, store });
     const result = await service.runOnce();
 
     expect(result.items).toEqual([
@@ -958,7 +956,7 @@ describe("SyncService", () => {
         if (
           typeof filePath === "string" &&
           filePath.includes("KSEF-BAD") &&
-          filePath.endsWith(".xml.tmp")
+          filePath.endsWith(".tmp")
         ) {
           throw new Error(
             "HTTP 500 GET /download: token=secret response body (requestId=req-1)",
@@ -967,7 +965,7 @@ describe("SyncService", () => {
         return originalWriteFile(...args);
       });
 
-    const service = new SyncService(client, auth, config, logger, store);
+    const service = new SyncService({ client, auth, config, logger, store });
     const firstRun = await service.runOnce();
     const failedInvoice = await store.withDb((db) =>
       getInvoice(db, "1234567890", "KSEF-BAD"),
@@ -1019,7 +1017,7 @@ describe("SyncService", () => {
     const logger = createLogger();
     const auth = createAuth();
 
-    const service = new SyncService(client, auth, config, logger, store);
+    const service = new SyncService({ client, auth, config, logger, store });
 
     await expect(service.runOnce()).rejects.toThrow(
       "HTTP 500 POST /invoices/exports: raw upstream response (requestId=req-2)",
@@ -1102,7 +1100,7 @@ describe("SyncService", () => {
     const logger = createLogger();
     const auth = createAuth();
 
-    const service = new SyncService(client, auth, config, logger, store);
+    const service = new SyncService({ client, auth, config, logger, store });
     const result = await service.runOnce(undefined, undefined, true);
     const request = exportInvoices.mock.calls[0]?.[1] as
       | { filters?: { dateRange?: { from?: string; to?: string } } }
@@ -1171,7 +1169,7 @@ describe("SyncService", () => {
     const logger = createLogger();
     const auth = createAuth();
 
-    const service = new SyncService(client, auth, config, logger, store);
+    const service = new SyncService({ client, auth, config, logger, store });
     await service.runOnce(undefined, undefined, true);
     const request = exportInvoices.mock.calls[0]?.[1] as
       | { filters?: { dateRange?: { from?: string; to?: string } } }
@@ -1255,7 +1253,7 @@ describe("SyncService", () => {
     const logger = createLogger();
     const auth = createAuth();
 
-    const service = new SyncService(client, auth, config, logger, store);
+    const service = new SyncService({ client, auth, config, logger, store });
     const result = await service.runOnce();
 
     expect(result.downloaded).toBe(1);

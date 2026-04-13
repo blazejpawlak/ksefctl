@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { ensureStorageDirs } from "../core/storage";
 import {
+  atomicWriteFile,
   defaultConfigPath,
   defaultDataRoot,
   defaultLogPath,
@@ -128,6 +129,6 @@ export const initConfig = async (
   };
 
   const yaml = YAML.stringify(template);
-  await fs.writeFile(configPath, yaml, { encoding: "utf-8", mode: 0o600 });
+  await atomicWriteFile(configPath, yaml);
   return configPath;
 };

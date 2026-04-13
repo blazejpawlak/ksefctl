@@ -204,13 +204,13 @@ describe("integration sync", () => {
 
     try {
       const ctx = await createContext(configPath);
-      const sync = new SyncService(
-        ctx.client,
-        ctx.auth,
-        ctx.config,
-        ctx.logger,
-        ctx.store,
-      );
+      const sync = new SyncService({
+        client: ctx.client,
+        auth: ctx.auth,
+        config: ctx.config,
+        logger: ctx.logger,
+        store: ctx.store,
+      });
       const result = await sync.runOnce();
 
       expect(result.downloaded).toBe(1);
@@ -268,13 +268,13 @@ describe("integration sync", () => {
 
     try {
       const ctx = await createContext(configPath);
-      const sync = new SyncService(
-        ctx.client,
-        ctx.auth,
-        ctx.config,
-        ctx.logger,
-        ctx.store,
-      );
+      const sync = new SyncService({
+        client: ctx.client,
+        auth: ctx.auth,
+        config: ctx.config,
+        logger: ctx.logger,
+        store: ctx.store,
+      });
       const result = await sync.runOnce(undefined, undefined, false, true);
 
       expect(result.downloaded).toBe(1);
