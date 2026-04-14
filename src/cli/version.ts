@@ -14,16 +14,33 @@ export const resolveLocalstoragePath = (): string =>
 
 const execFileAsync = promisify(execFile);
 
+const PackageVersionPathCandidates = [
+  path.join(__dirname, "..", "..", "package.json"),
+  path.join(__dirname, "..", "package.json"),
+];
+
 export const formatVersionOutput = (version: string, commit: string): string =>
   `${version} (${commit})`;
 
 export const readPackageVersion = async (): Promise<string> => {
-  packageVersionPromise ??= fs
-    .readFile(path.join(__dirname, "..", "package.json"), "utf-8")
-    .then((raw) => {
-      const parsed = JSON.parse(raw) as { version?: string };
-      return parsed.version ?? "unknown";
-    });
+  packageVersionPromise ??= (async () => {
+    for (const packageVersionPath of PackageVersionPathCandidates) {
+      try {
+        const raw = await fs.readFile(packageVersionPath, "utf-8");
+        const parsed = JSON.parse(raw) as { version?: unknown };
+        if (
+          typeof parsed.version === "string" &&
+          parsed.version.trim().length > 0
+        ) {
+          return parsed.version;
+        }
+      } catch {
+        // Try the next candidate path.
+      }
+    }
+
+    return "unknown";
+  })();
 
   return packageVersionPromise;
 };
