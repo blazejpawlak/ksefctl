@@ -49,7 +49,7 @@ export function registerSync(program: Command): void {
       "--output-path <path>",
       "override invoice output directory (requires --nip when multiple orgs configured)",
     )
-    .option("--watch", "run continuously until interrupted")
+    .option("--watch", "run continuously in the foreground, polling every pollingIntervalSeconds (default: 300 s); for background/unattended use run system service install instead")
     .option("--json", "output results as JSON")
     .action(async (options: SyncOptions) => {
       let logFile: string | null = null;
