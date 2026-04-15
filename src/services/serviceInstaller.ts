@@ -19,7 +19,8 @@ const execFileSafe = async (command: string, args: string[]): Promise<void> => {
       message.includes("No such process") ||
       message.includes("not loaded") ||
       message.includes("not-found") ||
-      message.includes("Unit")
+      message.includes("Unit") ||
+      message.includes("Boot-out failed")
     ) {
       return;
     }
