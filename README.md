@@ -116,7 +116,7 @@ Progress messages go to stderr; use `-v`/`--verbose` for detailed logs. If an in
 | `--redownload-all` | Reset cursors to `sync.initialSyncFrom` (or `2026-02-01`) and re-download all invoices. Mutually exclusive with `--redownload`. |
 | `--flat-sync` | Store invoices in monthly folders (`invoices/<NIP>/YYYY/MM/`) using `Seller - InvoiceNumber` filenames. Colliding filenames get ` - <ksefNumber>` appended. |
 | `--output-path <path>` | Override the invoice output root for this run. Requires `-n`/`--nip` when multiple orgs are configured. |
-| `--watch` | Run continuously, polling every `pollingIntervalSeconds` (default: 300 s). Cannot be combined with `--redownload` or `--redownload-all`. |
+| `--watch` | Run in the **foreground** continuously, polling every `pollingIntervalSeconds` (default: 300 s). The process occupies the terminal and must be kept alive manually (e.g. in a `tmux` session). Cannot be combined with `--redownload` or `--redownload-all`. For unattended background operation, use `ksefctl system service install` instead — it registers a launchd agent (macOS) or systemd unit (Linux) that starts automatically and restarts on failure. Windows is not supported. |
 | `--json` | Output results as JSON instead of formatted text. |
 
 Config equivalents:
