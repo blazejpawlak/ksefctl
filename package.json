@@ -34,7 +34,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "postinstall": "node scripts/prepare-ksef-pdf-generator.mjs",
-    "solution": "npm ci && npm run lint:fix && npm run build && npm run test && npm run test:integration && npm link",
+    "solution": "npm ci && npm run lint:fix && npm run build && npm run test && npm run test:integration && npm link --force",
     "test": "NODE_OPTIONS= vitest run",
     "test:integration": "NODE_OPTIONS= NODE_NO_WARNINGS=1 vitest run --config vitest.integration.config.ts"
   },
