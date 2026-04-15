@@ -50,7 +50,7 @@ describe("ServiceInstaller", () => {
     vi.restoreAllMocks();
   });
 
-  maybeIt("writes launchd plist with daemon output paths", async () => {
+  maybeIt("writes launchd plist with sync --watch output paths", async () => {
     // Arrange
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-service-"));
     const homeDir = path.join(tmpDir, "home");
@@ -78,7 +78,8 @@ describe("ServiceInstaller", () => {
     // Assert
     const outPath = path.join(storageRoot, "logs", "ksefctl.out.log");
     const errPath = path.join(storageRoot, "logs", "ksefctl.err.log");
-    expect(plist).toContain("<string>daemon</string>");
+    expect(plist).toContain("<string>sync</string>");
+    expect(plist).toContain("<string>--watch</string>");
     expect(plist).toContain(
       `<key>StandardOutPath</key><string>${outPath}</string>`,
     );

@@ -304,7 +304,7 @@ describe("SyncService", () => {
     });
   });
 
-  it("force-redownload-all applies to all configured NIPs when nip is not provided", async () => {
+  it("redownload-all applies to all configured NIPs when nip is not provided", async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const initialSyncFrom = "2026-02-01T00:00:00.000Z";
@@ -714,7 +714,7 @@ describe("SyncService", () => {
     ).resolves.toContain("XML/1");
   });
 
-  it("directly downloads force-redownload invoices when a nip filter is set", async () => {
+  it("directly downloads redownload invoices when a nip filter is set", async () => {
     const now = new Date("2026-02-15T08:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);

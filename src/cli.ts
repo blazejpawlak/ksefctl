@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { registerDaemon } from "./cli/commands/daemon";
 import {
   formatCliError,
@@ -14,11 +14,6 @@ import { registerSystemPin } from "./cli/commands/systemPin";
 import { registerSystemSecret } from "./cli/commands/systemSecret";
 import { registerSystemService } from "./cli/commands/systemService";
 import { registerSystemVerify } from "./cli/commands/systemVerify";
-import { registerVersion } from "./cli/commands/version";
-import {
-  collectLeafCommands,
-  formatCommandHelp,
-} from "./cli/commandTree";
 import {
   buildCompletionSpec,
   installCompletion,
@@ -40,9 +35,11 @@ program
   .option("-c, --config <path>", "path to config file")
   .option("-v, --verbose", "enable verbose logging")
   .option("-V, --version", "output application version")
-  .option("--no-first-run", "disable first-run prompts");
+  .addOption(new Option("--no-first-run", "disable first-run prompts").hideHelp());
 
-const system = program.command("system").description("System commands");
+const system = program
+  .command("system")
+  .description("Setup, credentials, and service management");
 
 registerSystemInit(system, program);
 registerSystemVerify(system, program);
@@ -54,24 +51,13 @@ registerSystemCompletion(system, program);
 registerSync(program);
 registerDaemon(program);
 registerStatus(program);
-registerVersion(program);
 
 program.addHelpText("after", () => {
-  const leafCommands = collectLeafCommands(program).filter(
-    (command) => command !== program,
-  );
-  const entries = leafCommands
-    .map((command) => formatCommandHelp(command))
-    .filter((entry) => entry.length > 0);
-  const commandOptions =
-    entries.length === 0
-      ? ""
-      : `\nCommand-specific options:\n  (Global options apply to all commands.)\n${entries.join("\n")}`;
   const completionNote =
     "\nShell completion:\n  ksefctl system completion <bash|zsh|fish>";
   const firstRunNote =
-    "\nFirst run:\n  Prompts to install completion and initialize when the data root is missing (disable with --no-first-run or KSEFCTL_NO_FIRST_RUN=1).";
-  return `${commandOptions}${completionNote}${firstRunNote}`;
+    "\nFirst run:\n  Prompts to install completion and initialize when the data root is missing.";
+  return `${completionNote}${firstRunNote}`;
 });
 
 const parseConfigOverride = (args: string[]): string | undefined => {

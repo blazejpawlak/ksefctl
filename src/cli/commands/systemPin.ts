@@ -5,10 +5,8 @@ import { printHeader, printKeyValues } from "../ui";
 import { runCommand } from "./runCommand";
 
 export function registerSystemPin(system: Command): void {
-  const systemPin = system.command("pin").description("TLS pin utilities");
-
-  systemPin
-    .command("fetch <host>")
+  system
+    .command("pin <host>")
     .description("Fetch the SPKI SHA-256 TLS pin for a host")
     .option("-p, --port <port>", "TLS port (default: 443)")
     .action(

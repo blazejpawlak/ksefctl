@@ -13,7 +13,7 @@ export function registerSystemCompletion(
 ): void {
   system
     .command("completion")
-    .description("Print shell completion script (used for auto-install)")
+    .description("Generate shell completion script")
     .argument("<shell>", "shell type (bash|zsh|fish)")
     .action((shell: string) => {
       const normalized = shell.trim().toLowerCase();

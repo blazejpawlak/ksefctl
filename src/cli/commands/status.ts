@@ -7,7 +7,6 @@ import { runCommand, type RootOptions } from "./runCommand";
 
 type StatusOptions = {
   json?: boolean;
-  verbose?: boolean;
 };
 
 export function registerStatus(program: Command): void {
@@ -15,12 +14,10 @@ export function registerStatus(program: Command): void {
     .command("status")
     .description("Show last sync status")
     .option("--json", "output JSON")
-    .option("-v, --verbose", "enable verbose logging")
     .action(
       runCommand(async (options: StatusOptions) => {
         const rootOpts = program.opts<RootOptions>();
-        const verbose = options.verbose ?? rootOpts.verbose;
-        const { config } = rootOpts;
+        const { config, verbose } = rootOpts;
         await ensureInitialized(config);
         const ctx = await createContext(config, { verbose });
         const statusService = new StatusService(ctx.store);

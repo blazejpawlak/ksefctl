@@ -157,7 +157,8 @@ export const buildLaunchdPlist = (
     <array>
       <string>${nodePathValue}</string>
       <string>${cliPathValue}</string>
-      <string>daemon</string>
+      <string>sync</string>
+      <string>--watch</string>
       <string>--config</string>
       <string>${configPathValue}</string>
     </array>
@@ -331,7 +332,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart="${nodePathValue}" "${cliPathValue}" daemon --config "${configPathValue}"
+ExecStart="${nodePathValue}" "${cliPathValue}" sync --watch --config "${configPathValue}"
 WorkingDirectory="${storageRootValue}"
 Restart=on-failure
 RestartSec=5

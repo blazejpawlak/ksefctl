@@ -5,27 +5,17 @@ import { ensureInitialized } from "../bootstrap";
 import { createContext } from "../context";
 import { runCommand, type RootOptions } from "./runCommand";
 
-type ConfigShowOptions = {
-  verbose?: boolean;
-};
-
 export function registerSystemConfig(
   system: Command,
   program: Command,
 ): void {
-  const systemConfig = system
+  system
     .command("config")
-    .description("Config commands");
-
-  systemConfig
-    .command("show")
     .description("Show sanitized effective config")
-    .option("-v, --verbose", "enable verbose logging")
     .action(
-      runCommand(async (options: ConfigShowOptions) => {
+      runCommand(async () => {
         const rootOpts = program.opts<RootOptions>();
-        const verbose = options.verbose ?? rootOpts.verbose;
-        const { config } = rootOpts;
+        const { config, verbose } = rootOpts;
         await ensureInitialized(config);
         const ctx = await createContext(config, { verbose });
         const sanitized = sanitizeConfig(ctx.config);

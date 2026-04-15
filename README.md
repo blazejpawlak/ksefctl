@@ -8,7 +8,7 @@ CLI background service for KSeF API 2.0 inbox synchronization (macOS + Linux). N
 - Incrementally downloads incoming invoices using export packages and HWM.
 - Stores invoices idempotently with a local SQLite state DB (sql.js).
 - Sends macOS Notification Center alerts and optional SMTP email summaries.
-- Runs once or as a foreground daemon; provides launchd and systemd installers.
+- Runs once or continuously (`sync --watch`); provides launchd and systemd installers.
 
 ## Features
 
@@ -73,28 +73,26 @@ The environment prompt shows full names with the API URLs for clarity.
 
 ## Commands
 
-- `ksefctl sync [--nip <nip>] [--force-redownload-all] [--flat-sync] [--output-path <path>]` – run sync.
-- `ksefctl sync --nip <nip> --force-redownload <ksefNumber>` – re-download a single invoice (`--nip` is required with `--force-redownload`).
-- `ksefctl daemon` – run continuously in foreground.
+- `ksefctl sync [-n <nip>] [--redownload-all] [--flat-sync] [--output-path <path>] [--json]` – run sync.
+- `ksefctl sync -n <nip> --redownload <ksefNumber>` – re-download a single invoice (`-n`/`--nip` is required with `--redownload`).
+- `ksefctl sync --watch` – run continuously in foreground.
 - `ksefctl status [--json]` – show last sync status.
-- `ksefctl version` – show current version and latest short commit.
 - `ksefctl system init [--force] [--yes]` – create config template and storage directories.
-- `ksefctl system verify [--nip <nip>]` – validate authentication against the configured environment.
+- `ksefctl system verify [-n <nip>]` – validate authentication against the configured environment.
 - `ksefctl system service install` – install + enable launchd/systemd.
 - `ksefctl system service uninstall` – remove launchd/systemd.
-- `ksefctl system config show` – show sanitized config.
-- `ksefctl system secret set [--nip <nip>] [--token-stdin]` – store KSeF token in keychain.
+- `ksefctl system config` – show sanitized config.
+- `ksefctl system secret set [-n <nip>] [--token-stdin]` – store KSeF token in keychain.
 - `ksefctl system secret show` – show which NIPs have keychain secrets.
-- `ksefctl system secret clear --nip <nip>` – remove keychain secret for a NIP.
-- `ksefctl system completion <bash|zsh|fish>` – print shell completion script.
-- `ksefctl system pin fetch <host> [-p <port>]` – print the SPKI SHA-256 TLS pin for a host (ready to paste into `security.tls.pins`).
+- `ksefctl system secret clear -n <nip>` – remove keychain secret for a NIP.
+- `ksefctl system completion <bash|zsh|fish>` – generate shell completion script.
+- `ksefctl system pin <host> [-p <port>]` – print the SPKI SHA-256 TLS pin for a host (ready to paste into `security.tls.pins`).
 
 Global options:
 
 - `-c, --config <path>` – override config path.
-- `-v, --verbose` – enable detailed logs for supported commands.
+- `-v, --verbose` – enable detailed logs.
 - `-V, --version` – print the application version and latest short commit.
-- `--no-first-run` – disable first-run prompts for the no-args path.
 
 All commands except `system init` require a config file and keychain tokens for each configured NIP.
 
@@ -104,13 +102,15 @@ All commands except `system init` require a config file and keychain tokens for 
 
 `system verify` performs the authentication flow only; it does not download invoices.
 
-Sync prints short progress messages on stderr; use `-v/--verbose` for detailed logs.
+Sync prints short progress messages on stderr; use `-v`/`--verbose` for detailed logs.
 
 If an invoice directory is missing on disk, sync will re-download it even if the DB marks it as downloaded.
-`--force-redownload <ksefNumber>` re-downloads a single invoice. Requires `--nip`.
-`--force-redownload-all` resets cursors to `sync.initialSyncFrom` (or `2026-02-01`) and re-downloads all available invoices for all configured NIPs (or only the chosen one when `--nip` is provided).
+`--redownload <ksefNumber>` re-downloads a single invoice. Requires `--nip`/`-n`.
+`--redownload-all` resets cursors to `sync.initialSyncFrom` (or `2026-02-01`) and re-downloads all available invoices for all configured NIPs (or only the chosen one when `--nip` is provided).
 `--flat-sync` keeps the default sync logic but stores fetched invoices in monthly folders (`invoices/<NIP>/YYYY/MM/`) using `Seller - InvoiceNumber` filenames. When a filename collides, ksefctl appends the KSeF number only for the conflicting invoice.
 `--output-path` overrides the invoice output root for the selected NIP or a single-organization run. When multiple organizations are configured, combine it with `--nip`.
+`--watch` runs sync in a continuous loop, polling every `pollingIntervalSeconds` (config default: 300 s). Cannot be combined with `--redownload` or `--redownload-all`.
+`--json` outputs results as JSON instead of formatted text.
 
 Config equivalents:
 
@@ -159,7 +159,7 @@ ksefctl sync --nip 1234567890
 Re-download a specific invoice by KSeF number (`--nip` is required):
 
 ```bash
-ksefctl sync --nip 1234567890 --force-redownload 1234567890-20260101-ABC123
+ksefctl sync --nip 1234567890 --redownload 1234567890-20260101-ABC123
 ```
 
 Run a sync cycle with flat monthly storage:
@@ -215,10 +215,10 @@ In that setup:
 - NIP `9876543210` writes to `/srv/ksef/org-b/...`
 - `ksefctl sync --nip 9876543210 --output-path ~/Exports/manual-run` overrides the config path just for that run
 
-Run foreground daemon:
+Run continuously in foreground:
 
 ```bash
-ksefctl daemon
+ksefctl sync --watch
 ```
 
 Enable SMTP notifications:
@@ -314,7 +314,7 @@ Key config fields:
 
 Minimal config example: `docs/minimal-config.yaml`
 
-Run `ksefctl system config show` after `system init` to see the resolved configuration.
+Run `ksefctl system config` after `system init` to see the resolved configuration.
 
 ### Config defaults
 
@@ -491,7 +491,7 @@ security:
 To obtain the pin value for a host:
 
 ```bash
-ksefctl system pin fetch api.ksef.mf.gov.pl
+ksefctl system pin api.ksef.mf.gov.pl
 ```
 
 This prints the SHA-256 hash of the server certificate's raw public key (as returned by Node.js `getPeerCertificate().pubkey`), formatted as base64, plus a ready-to-paste config snippet. Use this command rather than manual `openssl` pipelines, which produce a different (SPKI DER wrapper) hash.
@@ -503,7 +503,7 @@ If invoice package parts are served from a different host, add it to `pinningHos
 - Keychain service name: `ksefctl`
 - Account name defaults to `<environment>:nip:<nip>` (one entry per NIP)
 - Override via `auth.keychainServiceName`
-- Daemon mode is non-interactive; make sure tokens exist via `ksefctl system secret set`
+- Watch mode (`sync --watch`) is non-interactive; make sure tokens exist via `ksefctl system secret set`
 - `ksefctl system secret show` only reports presence, never the token value
 - Interactive commands will prompt for missing tokens and store them in keychain
 

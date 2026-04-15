@@ -9,23 +9,20 @@ import { formatCliError, type RootOptions } from "./runCommand";
 
 type VerifyOptions = {
   nip?: string;
-  verbose?: boolean;
 };
 
 export function registerSystemVerify(system: Command, program: Command): void {
   system
     .command("verify")
     .description("Validate authentication for configured environment")
-    .option("--nip <nip>", "validate a single NIP")
-    .option("-v, --verbose", "enable verbose logging")
+    .option("-n, --nip <nip>", "validate a single NIP")
     .action(async (options: VerifyOptions) => {
       const renderer = process.stderr.isTTY
         ? createProgressRenderer({ stream: process.stderr })
         : null;
       try {
         const rootOpts = program.opts<RootOptions>();
-        const verbose = options.verbose ?? rootOpts.verbose;
-        const { config } = rootOpts;
+        const { config, verbose } = rootOpts;
         await ensureInitialized(config);
         const progress = renderer
           ? (message: string) => renderer.update(message)

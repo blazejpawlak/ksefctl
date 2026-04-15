@@ -18,13 +18,13 @@ export function registerSystemSecret(
 ): void {
   const secret = system
     .command("secret")
-    .description("Keychain secret commands");
+    .description("Manage KSeF authentication tokens");
 
   secret
     .command("set")
     .description("Store KSeF token in keychain")
-    .option("--nip <nip>", "NIP (10 digits)")
-    .option("--token-stdin", "Read KSeF token from stdin")
+    .option("-n, --nip <nip>", "NIP (10 digits)")
+    .option("--token-stdin", "read KSeF token from stdin")
     .action(
       runCommand(async (options: SecretSetOptions) => {
         const { config } = program.opts<RootOptions>();
@@ -59,7 +59,7 @@ export function registerSystemSecret(
   secret
     .command("clear")
     .description("Remove keychain secret for a NIP")
-    .requiredOption("--nip <nip>", "NIP (10 digits)")
+    .requiredOption("-n, --nip <nip>", "NIP (10 digits)")
     .action(
       runCommand(async (options: SecretClearOptions) => {
         const { config } = program.opts<RootOptions>();

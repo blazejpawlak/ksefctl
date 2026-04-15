@@ -6,10 +6,6 @@ import { createContext } from "../context";
 import { printHeader, printKeyValues } from "../ui";
 import { runCommand, type RootOptions } from "./runCommand";
 
-type ServiceInstallOptions = {
-  verbose?: boolean;
-};
-
 export function registerSystemService(
   system: Command,
   program: Command,
@@ -21,12 +17,10 @@ export function registerSystemService(
   systemService
     .command("install")
     .description("Install and enable launchd/systemd service")
-    .option("-v, --verbose", "enable verbose logging")
     .action(
-      runCommand(async (options: ServiceInstallOptions) => {
+      runCommand(async () => {
         const rootOpts = program.opts<RootOptions>();
-        const verbose = options.verbose ?? rootOpts.verbose;
-        const { config } = rootOpts;
+        const { config, verbose } = rootOpts;
         await ensureInitialized(config);
         const ctx = await createContext(config, { verbose });
         const installer = new ServiceInstaller();

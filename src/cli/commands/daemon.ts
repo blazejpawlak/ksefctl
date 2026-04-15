@@ -1,5 +1,5 @@
-import type { Command } from "commander";
 import type { Logger } from "pino";
+import { Command } from "commander";
 import { StatusService } from "../../core/statusService";
 import { SyncService } from "../../core/syncService";
 import { Notifier } from "../../notifications/notifier";
@@ -16,19 +16,14 @@ import {
   type RootOptions,
 } from "./runCommand";
 
-type DaemonOptions = {
-  verbose?: boolean;
-};
-
 export function registerDaemon(program: Command): void {
-  program
-    .command("daemon")
-    .description("Run continuous foreground sync")
-    .option("-v, --verbose", "enable verbose logging")
-    .action(async (options: DaemonOptions) => {
+  const daemonCmd = new Command("daemon");
+  daemonCmd
+    .description("Deprecated: use sync --watch instead")
+    .addHelpText("before", "Deprecated: this command is an alias for sync --watch.\n")
+    .action(async () => {
       const rootOpts = program.opts<RootOptions>();
-      const verbose = options.verbose ?? rootOpts.verbose;
-      const { config } = rootOpts;
+      const { config, verbose } = rootOpts;
       let daemonLogFile: string | null = null;
       let daemonLogger: Logger | null = null;
       const renderer =
@@ -52,13 +47,13 @@ export function registerDaemon(program: Command): void {
           throw new ConfigError("No organizations configured");
         }
         const intervalMs = ctx.config.pollingIntervalSeconds * 1000;
-        printHeader("Daemon");
+        printHeader("Sync");
         printKeyValues([
-          ["Status", "Running"],
-          ["Environment", ctx.config.environment],
-          ["NIPs", nips.join(", ")],
-          ["LogFile", ctx.config.logging.file],
-          ["Interval", formatDuration(intervalMs)],
+          ["mode", "watch"],
+          ["environment", ctx.config.environment],
+          ["nips", nips.join(", ")],
+          ["logFile", ctx.config.logging.file],
+          ["interval", formatDuration(intervalMs)],
         ]);
 
         const sync = new SyncService({
@@ -91,19 +86,19 @@ export function registerDaemon(program: Command): void {
           const durationMs = Date.now() - startedAt;
           const status = await statusService.getStatus();
           const invoicesToPay = result ? getInvoicesToPay(result.items) : [];
-          printHeader("Daemon Iteration");
+          printHeader(`Sync iteration ${iteration}`);
           const summaryEntries: [string, string | number | null][] = [
-            ["Status", errorMessage ? "Failed" : "Completed"],
-            ["Downloaded", result?.downloaded ?? 0],
-            ["Skipped", result?.skipped ?? 0],
-            ["Failed", result?.failed ?? (errorMessage ? 1 : 0)],
-            ["ToPay", invoicesToPay.length],
-            ["Duration", formatDuration(durationMs)],
-            ["LastSyncAt", status.lastSyncAt ?? "-"],
-            ["NextRunIn", formatDuration(intervalMs)],
+            ["status", errorMessage ? "failed" : "completed"],
+            ["downloaded", result?.downloaded ?? 0],
+            ["skipped", result?.skipped ?? 0],
+            ["failed", result?.failed ?? (errorMessage ? 1 : 0)],
+            ["toPay", invoicesToPay.length],
+            ["duration", formatDuration(durationMs)],
+            ["lastSyncAt", status.lastSyncAt ?? "-"],
+            ["nextRunIn", formatDuration(intervalMs)],
           ];
           if (errorMessage) {
-            summaryEntries.push(["Error", errorMessage]);
+            summaryEntries.push(["error", errorMessage]);
           }
           printKeyValues(summaryEntries);
           if (invoicesToPay.length > 0) {
@@ -133,4 +128,6 @@ export function registerDaemon(program: Command): void {
         process.exitCode = exitCodeFromError(error);
       }
     });
+
+  program.addCommand(daemonCmd, { hidden: true });
 }
