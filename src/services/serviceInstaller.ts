@@ -269,6 +269,8 @@ export class ServiceInstaller {
     const plist = buildLaunchdPlist(options, nodeOptionsValue);
 
     await writeRegularFile(plistPath, plist);
+    // Bootout any existing registration before re-bootstrapping (idempotent install).
+    await execFileSafe("launchctl", ["bootout", domain, plistPath]);
     await execFileAsync("launchctl", ["bootstrap", domain, plistPath]);
     await execFileAsync("launchctl", [
       "enable",
@@ -349,6 +351,8 @@ WantedBy=${target}
 
     if (isRoot) {
       await execFileAsync("systemctl", ["daemon-reload"]);
+      // Stop any running instance before re-enabling (idempotent install).
+      await execFileSafe("systemctl", ["disable", "--now", `${serviceName}.service`]);
       await execFileAsync("systemctl", [
         "enable",
         "--now",
@@ -356,6 +360,8 @@ WantedBy=${target}
       ]);
     } else {
       await execFileAsync("systemctl", ["--user", "daemon-reload"]);
+      // Stop any running instance before re-enabling (idempotent install).
+      await execFileSafe("systemctl", ["--user", "disable", "--now", `${serviceName}.service`]);
       await execFileAsync("systemctl", [
         "--user",
         "enable",
