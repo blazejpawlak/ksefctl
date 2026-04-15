@@ -96,21 +96,28 @@ Global options:
 
 All commands except `system init` require a config file and keychain tokens for each configured NIP.
 
-`system init --force` will remove the config file and keychain tokens for all configured NIPs.
+### system init
 
-`system init` requires an interactive terminal for the full interactive bootstrap (NIP entry, token prompts). When run without a TTY (e.g. in CI or a pipe), it writes the config template and creates storage directories without prompting, then exits with a hint to run the full interactive flow manually. Use `--yes` with `--force` to skip the confirmation prompt.
+- Requires an interactive terminal for the full bootstrap (NIP entry, token prompts).
+- Without a TTY (CI/pipe): writes the config template and creates storage directories, then exits with a hint to run interactively.
+- `--force` removes the config file and keychain tokens for all NIPs and re-runs bootstrap. Use `--yes` to skip the confirmation prompt.
 
-`system verify` performs the authentication flow only; it does not download invoices.
+### system verify
 
-Sync prints short progress messages on stderr; use `-v`/`--verbose` for detailed logs.
+Performs the authentication flow only — does not download invoices.
 
-If an invoice directory is missing on disk, sync will re-download it even if the DB marks it as downloaded.
-`--redownload <ksefNumber>` re-downloads a single invoice. Requires `--nip`/`-n`.
-`--redownload-all` resets cursors to `sync.initialSyncFrom` (or `2026-02-01`) and re-downloads all available invoices for all configured NIPs (or only the chosen one when `--nip` is provided).
-`--flat-sync` keeps the default sync logic but stores fetched invoices in monthly folders (`invoices/<NIP>/YYYY/MM/`) using `Seller - InvoiceNumber` filenames. When a filename collides, ksefctl appends the KSeF number only for the conflicting invoice.
-`--output-path` overrides the invoice output root for the selected NIP or a single-organization run. When multiple organizations are configured, combine it with `--nip`.
-`--watch` runs sync in a continuous loop, polling every `pollingIntervalSeconds` (config default: 300 s). Cannot be combined with `--redownload` or `--redownload-all`.
-`--json` outputs results as JSON instead of formatted text.
+### sync
+
+Progress messages go to stderr; use `-v`/`--verbose` for detailed logs. If an invoice directory is missing on disk, sync re-downloads it even if the DB marks it as already downloaded.
+
+| Flag | Description |
+|---|---|
+| `--redownload <ksefNumber>` | Re-download a single invoice. Requires `-n`/`--nip`. |
+| `--redownload-all` | Reset cursors to `sync.initialSyncFrom` (or `2026-02-01`) and re-download all invoices. Mutually exclusive with `--redownload`. |
+| `--flat-sync` | Store invoices in monthly folders (`invoices/<NIP>/YYYY/MM/`) using `Seller - InvoiceNumber` filenames. Colliding filenames get ` - <ksefNumber>` appended. |
+| `--output-path <path>` | Override the invoice output root for this run. Requires `-n`/`--nip` when multiple orgs are configured. |
+| `--watch` | Run continuously, polling every `pollingIntervalSeconds` (default: 300 s). Cannot be combined with `--redownload` or `--redownload-all`. |
+| `--json` | Output results as JSON instead of formatted text. |
 
 Config equivalents:
 
