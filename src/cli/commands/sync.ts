@@ -1,7 +1,7 @@
 import type { Command } from "commander";
 import type { Logger } from "pino";
-import path from "node:path";
 import { Option } from "commander";
+import path from "node:path";
 import { StatusService } from "../../core/statusService";
 import { SyncService } from "../../core/syncService";
 import { Notifier } from "../../notifications/notifier";
