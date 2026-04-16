@@ -12,7 +12,7 @@ import {
 import { PdfService } from "../services/pdfService";
 import { pLimit } from "../utils/concurrency";
 import { sanitizeErrorMessage } from "../utils/errors";
-import { sleep, sleepWithCountdown } from "../utils/time";
+import { formatDuration, sleep, sleepWithCountdown } from "../utils/time";
 import { selectCertificateByUsage } from "./encryption";
 import {
   maxInvoiceNumberXmlBytes,
@@ -210,7 +210,18 @@ export class SyncService {
         nipResult.items.push(forced);
       }
 
-      for (const subjectType of this.config.sync.subjectTypes) {
+      const exportCooldownMs =
+        Math.max(0, this.config.operational.exportCooldownSeconds ?? 0) * 1000;
+      for (let i = 0; i < this.config.sync.subjectTypes.length; i++) {
+        const subjectType = this.config.sync.subjectTypes[i]!;
+        if (i > 0 && exportCooldownMs > 0) {
+          await this.sleepWithProgress(
+            `Progress: waiting ${formatDuration(exportCooldownMs)} before next subject type`,
+            exportCooldownMs,
+            (remaining) =>
+              `Progress: waiting ${formatDuration(remaining)} before next subject type`,
+          );
+        }
         this.logger.debug(
           { nip, subjectType },
           "Requesting export for subject type",
