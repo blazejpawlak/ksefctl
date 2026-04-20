@@ -93,9 +93,19 @@ const createConfig = (): AppConfig => ({
     subjectTypes: ["Subject1"],
     includeMetadataHeader: true,
     generatePdf: false,
+    flatSync: false,
     maxConcurrentNips: 1,
   },
 });
+
+const nullFields = {
+  sellerName: null,
+  buyerName: null,
+  invoiceNumber: null,
+  amount: null,
+  currency: null,
+  pdfPath: null,
+};
 
 const createResult = (): SyncResult => ({
   downloaded: 1,
@@ -108,6 +118,7 @@ const createResult = (): SyncResult => ({
       path: "/tmp/invoice-1",
       dueDate: "2026-03-24",
       needsPaymentNotification: true,
+      ...nullFields,
     },
   ],
 });
@@ -182,6 +193,7 @@ describe("Notifier", () => {
           path: "/tmp/invoice-1",
           dueDate: "2026-03-24",
           needsPaymentNotification: false,
+          ...nullFields,
         },
       ],
     };
@@ -193,6 +205,81 @@ describe("Notifier", () => {
       hasInvoiceNotification(db, "1234567890", "KSEF-1", "unpaid_due"),
     );
     expect(notified).toBe(false);
+  });
+
+  it("routes invoices to SMTP profiles by NIP", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-notifier-"));
+    const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
+    const config: AppConfig = {
+      ...createConfig(),
+      notifications: {
+        macosNotification: false,
+        email: {
+          enabled: true,
+          smtpProfiles: [
+            {
+              label: "profile-a",
+              host: "smtp-a.example.com",
+              port: 587,
+              user: "a@example.com",
+              pass: "secret-a",
+              from: "from-a@example.com",
+              to: ["to-a@example.com"],
+              secure: false,
+              tlsRejectUnauthorized: true,
+              nips: ["1234567890"],
+            },
+            {
+              label: "profile-b",
+              host: "smtp-b.example.com",
+              port: 587,
+              user: "b@example.com",
+              pass: "secret-b",
+              from: "from-b@example.com",
+              to: ["to-b@example.com"],
+              secure: false,
+              tlsRejectUnauthorized: true,
+              nips: ["7393955632"],
+            },
+          ],
+        },
+      },
+    };
+    const notifier = new Notifier(config, createLogger());
+    const result: SyncResult = {
+      downloaded: 2,
+      skipped: 0,
+      failed: 0,
+      items: [
+        {
+          nip: "1234567890",
+          ksefNumber: "KSEF-1",
+          path: "/tmp/invoice-1",
+          dueDate: "2026-03-24",
+          needsPaymentNotification: true,
+          ...nullFields,
+        },
+        {
+          nip: "7393955632",
+          ksefNumber: "KSEF-2",
+          path: "/tmp/invoice-2",
+          dueDate: "2026-03-25",
+          needsPaymentNotification: true,
+          ...nullFields,
+        },
+      ],
+    };
+
+    await notifier.notifyUnpaidInvoices(result, store);
+
+    // Two separate emails — one per profile
+    expect(createTransportMock).toHaveBeenCalledTimes(2);
+    expect(sendMailMock).toHaveBeenCalledTimes(2);
+    const hosts = (createTransportMock.mock.calls as [{ host: string }][]).map(
+      (call) => call[0].host,
+    );
+    expect(hosts).toContain("smtp-a.example.com");
+    expect(hosts).toContain("smtp-b.example.com");
   });
 
   it("uses a summary-style subject for multiple invoices", async () => {
@@ -211,6 +298,7 @@ describe("Notifier", () => {
           path: "/tmp/invoice-2",
           dueDate: "2026-03-25",
           needsPaymentNotification: true,
+          ...nullFields,
         },
       ],
     };

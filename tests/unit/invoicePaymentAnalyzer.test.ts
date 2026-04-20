@@ -33,6 +33,8 @@ describe("invoicePaymentAnalyzer", () => {
       invoiceType: "payable",
       paymentStatus: "unpaid",
       dueDate: "2026-03-24",
+      amount: null,
+      currency: null,
     });
   });
 
@@ -171,6 +173,8 @@ describe("invoicePaymentAnalyzer", () => {
       invoiceType: "receivable",
       paymentStatus: "unpaid",
       dueDate: null,
+      amount: null,
+      currency: null,
     });
   });
 
@@ -181,15 +185,19 @@ describe("invoicePaymentAnalyzer", () => {
       invoiceType: "receivable",
       paymentStatus: "unpaid",
       dueDate: null,
+      amount: null,
+      currency: null,
     });
   });
 
   it("recognizes notification eligibility only for payable unpaid invoices with due date", () => {
+    const base = { amount: null, currency: null };
     expect(
       isEligibleForNotification({
         invoiceType: "payable",
         paymentStatus: "unpaid",
         dueDate: "2026-03-24",
+        ...base,
       }),
     ).toBe(true);
 
@@ -198,6 +206,7 @@ describe("invoicePaymentAnalyzer", () => {
         invoiceType: "payable",
         paymentStatus: "paid",
         dueDate: "2026-03-24",
+        ...base,
       }),
     ).toBe(false);
 
@@ -206,6 +215,7 @@ describe("invoicePaymentAnalyzer", () => {
         invoiceType: "receivable",
         paymentStatus: "unpaid",
         dueDate: "2026-03-24",
+        ...base,
       }),
     ).toBe(false);
 
@@ -214,6 +224,7 @@ describe("invoicePaymentAnalyzer", () => {
         invoiceType: "payable",
         paymentStatus: "unpaid",
         dueDate: null,
+        ...base,
       }),
     ).toBe(false);
   });

@@ -89,6 +89,20 @@ export const initConfig = async (
           secure: false,
           tlsRejectUnauthorized: true,
         },
+        smtpProfiles: [
+          {
+            label: "example-profile",
+            host: "smtp.example.com",
+            port: 587,
+            user: "user@example.com",
+            pass: "CHANGE_ME",
+            from: "ksefctl@example.com",
+            to: ["you@example.com"],
+            secure: false,
+            tlsRejectUnauthorized: true,
+            nips: [],
+          },
+        ],
       },
     },
     logging: {

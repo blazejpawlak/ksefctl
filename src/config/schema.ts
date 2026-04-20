@@ -40,12 +40,18 @@ const SmtpSchema = z.object({
   tlsRejectUnauthorized: z.boolean().default(true),
 });
 
+const SmtpProfileSchema = SmtpSchema.extend({
+  label: z.string().min(1),
+  nips: z.array(z.string().regex(/^\d{10}$/)).default([]),
+});
+
 const NotificationSchema = z.object({
   macosNotification: z.boolean().default(true),
   email: z
     .object({
       enabled: z.boolean().default(false),
       smtp: SmtpSchema.optional(),
+      smtpProfiles: z.array(SmtpProfileSchema).optional(),
     })
     .default({ enabled: false }),
 });

@@ -8,6 +8,8 @@ export type InvoicePaymentInfo = {
   invoiceType: InvoiceType;
   paymentStatus: PaymentStatus;
   dueDate: string | null;
+  amount: string | null;
+  currency: string | null;
 };
 
 const maxXmlBytes = 5_000_000;
@@ -17,6 +19,8 @@ const emptyPaymentInfo: InvoicePaymentInfo = {
   invoiceType: "receivable",
   paymentStatus: "unpaid",
   dueDate: null,
+  amount: null,
+  currency: null,
 };
 
 const stripDoctype = (xml: string): string =>
@@ -166,6 +170,18 @@ const parseInvoiceXml = (xml: string): unknown => {
   }
 };
 
+const extractGrossAmount = (invoice: unknown): string | null => {
+  const fa = getChild(invoice, "Fa");
+  if (!fa) return null;
+  return normalizeText(extractTextValue(getChild(fa, "P_15")));
+};
+
+const extractCurrency = (invoice: unknown): string | null => {
+  const fa = getChild(invoice, "Fa");
+  if (!fa) return null;
+  return normalizeText(extractTextValue(getChild(fa, "Waluta")));
+};
+
 export const analyzeInvoicePayment = (
   xml: string,
   subjectNip: string,
@@ -191,6 +207,8 @@ export const analyzeInvoicePayment = (
     invoiceType,
     paymentStatus: extractPaymentStatus(invoice),
     dueDate: extractDueDate(invoice),
+    amount: extractGrossAmount(invoice),
+    currency: extractCurrency(invoice),
   };
 };
 

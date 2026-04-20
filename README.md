@@ -238,10 +238,10 @@ notifications:
       host: smtp.example.com
       port: 587
       user: user@example.com
-      pass: ${SMTP_PASS}
+      pass: secret
       from: ksefctl@example.com
-    to:
-      - you@example.com
+      to:
+        - you@example.com
 ```
 
 ## Shell completion
@@ -312,7 +312,7 @@ Key config fields:
 - `organizations`: list of NIPs to sync
 - `pollingIntervalSeconds`
 - `storage.root`
-- `notifications` (macos + email)
+- `notifications` (macOS + email with optional `smtpProfiles` for per-NIP routing)
 - `logging` (level, file, pretty)
 - `operational` (retry, timeouts, poll, exportCooldownSeconds, allowInsecureHttp)
 - `security.tls` (pinning)
@@ -386,8 +386,8 @@ Token generation is described in `tokeny-ksef.md` and requires a one-time XAdES 
 | Variable | Effect |
 |---|---|
 | `KSEFCTL_CONFIG` | Override config file path (lower precedence than `--config`) |
-| `KSEFCTL_SMTP_USER` | Override `notifications.email.smtp.user` |
-| `KSEFCTL_SMTP_PASS` | Override `notifications.email.smtp.pass` |
+| `KSEFCTL_SMTP_USER` | Override `notifications.email.smtp.user` (default SMTP only, not profiles) |
+| `KSEFCTL_SMTP_PASS` | Override `notifications.email.smtp.pass` (default SMTP only, not profiles) |
 | `KSEFCTL_NO_FIRST_RUN=1` | Disable first-run prompts |
 
 Config path resolution order: `--config` CLI flag → `KSEFCTL_CONFIG` → platform default.
@@ -452,7 +452,62 @@ If `organizations[].outputPath` is set, or `--output-path` is passed on the CLI,
 ## Notifications
 
 - macOS Notification Center via `node-notifier`.
-- SMTP summaries via `nodemailer` (one email per sync cycle).
+- SMTP email notifications via `nodemailer`.
+
+### Email notification content
+
+Each notification email includes the following details for every unpaid invoice:
+
+- **Organization** — the NIP being synced, with the friendly `label` from config when set (e.g. `Acme Sp. z o.o. (NIP 5541346379)`)
+- **Seller** — company name of the invoice issuer, extracted from the invoice XML (`Podmiot1`)
+- **Buyer** — company name of the recipient, extracted from the invoice XML (`Podmiot2`)
+- **Invoice number** — human-readable invoice number from the XML
+- **Amount** — gross amount and currency from the XML (`Fa/P_15`, `Fa/Waluta`)
+- **Due date**
+- **KSeF number**
+- **Folder** — local path where the invoice was stored
+- **PDF attachment** — the generated PDF is attached when available (`sync.generatePdf: true`)
+
+### Email routing
+
+By default all notifications go through the single `smtp` configuration. Use `smtpProfiles` to route different NIPs through different SMTP accounts:
+
+```yaml
+notifications:
+  email:
+    enabled: true
+    smtp:                        # fallback for NIPs not matched by any profile
+      host: smtp.example.com
+      port: 587
+      user: user@example.com
+      pass: secret
+      from: ksefctl@example.com
+      to:
+        - you@example.com
+    smtpProfiles:
+      - label: company-a
+        host: smtp-a.example.com
+        port: 587
+        user: user@smtp-a.example.com
+        pass: secret-a
+        from: ksefctl@company-a.example.com
+        to:
+          - accounting@company-a.example.com
+        nips:
+          - "5541346379"
+      - label: company-b
+        host: smtp-b.example.com
+        port: 587
+        user: user@smtp-b.example.com
+        pass: secret-b
+        from: ksefctl@company-b.example.com
+        to:
+          - team@company-b.example.com
+        nips:
+          - "1234567890"
+```
+
+Each invoice is matched against profiles in order; the first profile whose `nips` list contains the invoice's NIP is used. Invoices not matched by any profile fall back to the top-level `smtp` config. If neither matches, a warning is logged and no email is sent for that invoice. Multiple profiles may trigger separate emails in the same sync cycle.
 
 ## Services
 

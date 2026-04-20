@@ -5,6 +5,15 @@ import {
   getInvoicesToPay,
 } from "../../src/cli/paymentSummary";
 
+const nullFields = {
+  sellerName: null,
+  buyerName: null,
+  invoiceNumber: null,
+  amount: null,
+  currency: null,
+  pdfPath: null,
+};
+
 describe("paymentSummary", () => {
   it("filters only invoices that need payment notification", () => {
     expect(
@@ -15,6 +24,7 @@ describe("paymentSummary", () => {
           path: "/tmp/a",
           dueDate: "2026-03-24",
           needsPaymentNotification: true,
+          ...nullFields,
         },
         {
           nip: "1234567890",
@@ -22,6 +32,7 @@ describe("paymentSummary", () => {
           path: "/tmp/b",
           dueDate: null,
           needsPaymentNotification: false,
+          ...nullFields,
         },
       ]),
     ).toEqual([
@@ -31,6 +42,7 @@ describe("paymentSummary", () => {
         path: "/tmp/a",
         dueDate: "2026-03-24",
         needsPaymentNotification: true,
+        ...nullFields,
       },
     ]);
   });
@@ -43,6 +55,7 @@ describe("paymentSummary", () => {
         path: "/tmp/a",
         dueDate: "2026-03-24",
         needsPaymentNotification: true,
+        ...nullFields,
       }),
     ).toBe("NIP 1234567890 | due 2026-03-24 | KSeF KSEF-1 | -> /tmp/a");
   });
@@ -56,6 +69,7 @@ describe("paymentSummary", () => {
           path: "/tmp/a\r",
           dueDate: "2026-03-24",
           needsPaymentNotification: true,
+          ...nullFields,
         },
       ]),
     ).toEqual(["NIP 1234567890 | due 2026-03-24 | KSeF KSEF-1 | -> /tmp/a"]);

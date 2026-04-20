@@ -167,34 +167,35 @@ export async function maybeWritePdf(
   ksefNumber: string,
   nip: string,
   fileBaseName: string,
-): Promise<void> {
+): Promise<string | null> {
   const { config, logger, pdfService } = deps;
-  if (!config.sync.generatePdf) return;
+  if (!config.sync.generatePdf) return null;
   if (Buffer.byteLength(xmlText, "utf-8") > maxInvoicePdfXmlBytes) {
     logger.warn(
       { nip, ksefNumber, maxBytes: maxInvoicePdfXmlBytes },
       "Invoice XML too large for PDF generation",
     );
-    return;
+    return null;
   }
   try {
     const pdfResult = await pdfService.generateInvoicePdf(xmlText, ksefNumber);
     if (pdfResult.status === "ok") {
-      await atomicWriteFile(
-        path.join(invoiceDir, `${fileBaseName}.pdf`),
-        pdfResult.buffer,
-      );
+      const pdfPath = path.join(invoiceDir, `${fileBaseName}.pdf`);
+      await atomicWriteFile(pdfPath, pdfResult.buffer);
+      return pdfPath;
     } else {
       logger.warn(
         { err: pdfResult.message, reason: pdfResult.reason, nip, ksefNumber },
         "Failed to generate invoice PDF",
       );
+      return null;
     }
   } catch (error) {
     logger.warn(
       { err: (error as Error).message, nip, ksefNumber },
       "Failed to generate invoice PDF",
     );
+    return null;
   }
 }
 
@@ -246,7 +247,7 @@ export async function writeInvoice(
     ),
   );
 
-  await maybeWritePdf(
+  const pdfPath = await maybeWritePdf(
     { config, logger, pdfService },
     storageTarget.invoiceDir,
     xmlText,
@@ -268,7 +269,7 @@ export async function writeInvoice(
     }),
   );
 
-  return createSyncItem(nip, ksefNumber, storageTarget.invoiceDir, xmlText);
+  return createSyncItem(nip, ksefNumber, storageTarget.invoiceDir, xmlText, pdfPath);
 }
 
 export async function resolveAndWrite(

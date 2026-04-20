@@ -182,6 +182,17 @@ export const sanitizeConfig = (config: AppConfig): Record<string, unknown> => {
     apply(smtp, "from");
     apply(smtp, "to");
   }
+  const smtpProfiles = email?.smtpProfiles as
+    | Record<string, unknown>[]
+    | undefined;
+  if (Array.isArray(smtpProfiles)) {
+    for (const profile of smtpProfiles) {
+      apply(profile, "user");
+      apply(profile, "pass");
+      apply(profile, "from");
+      apply(profile, "to");
+    }
+  }
 
   return redacted;
 };

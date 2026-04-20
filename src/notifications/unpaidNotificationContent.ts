@@ -24,6 +24,8 @@ export type EmailNotificationContent = {
   body: string;
 };
 
+export type OrgLabels = Map<string, string | undefined>;
+
 export const formatMacNotificationContent = (
   items: SyncItem[],
 ): MacNotificationContent => {
@@ -51,16 +53,37 @@ export const formatMacNotificationContent = (
   };
 };
 
-const formatEmailItem = (item: SyncItem, index: number): string[] => [
-  `${index}. ${formatNip(item.nip)}`,
-  `   ${formatDueDate(item.dueDate)}`,
-  `   ${formatKsefNumber(item.ksefNumber)}`,
-  `   ${formatFolder(item.path)}`,
-];
+const formatEmailItem = (
+  item: SyncItem,
+  index: number,
+  orgLabels?: OrgLabels,
+): string[] => {
+  const label = orgLabels?.get(item.nip);
+  const orgLine = label
+    ? `${index}. ${sanitizeText(label)} (${formatNip(item.nip)})`
+    : `${index}. ${formatNip(item.nip)}`;
+
+  const lines = [orgLine];
+  if (item.sellerName) lines.push(`   Seller: ${sanitizeText(item.sellerName)}`);
+  if (item.buyerName) lines.push(`   Buyer: ${sanitizeText(item.buyerName)}`);
+  if (item.invoiceNumber)
+    lines.push(`   Invoice: ${sanitizeText(item.invoiceNumber)}`);
+  if (item.amount) {
+    const amountLine = item.currency
+      ? `   Amount: ${sanitizeText(item.amount)} ${sanitizeText(item.currency)}`
+      : `   Amount: ${sanitizeText(item.amount)}`;
+    lines.push(amountLine);
+  }
+  lines.push(`   ${formatDueDate(item.dueDate)}`);
+  lines.push(`   ${formatKsefNumber(item.ksefNumber)}`);
+  lines.push(`   ${formatFolder(item.path)}`);
+  return lines;
+};
 
 export const formatEmailNotificationContent = (
   items: SyncItem[],
   generatedAt: string,
+  orgLabels?: OrgLabels,
 ): EmailNotificationContent => {
   const invoiceLabel =
     items.length === 1 ? "invoice requires" : "invoices require";
@@ -70,7 +93,7 @@ export const formatEmailNotificationContent = (
       `The following ${invoiceLabel} payment.`,
       "",
       ...items.flatMap((item, index) => [
-        ...formatEmailItem(item, index + 1),
+        ...formatEmailItem(item, index + 1, orgLabels),
         "",
       ]),
       `Generated at: ${generatedAt}`,

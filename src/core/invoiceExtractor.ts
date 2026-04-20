@@ -12,6 +12,12 @@ export type SyncItem = {
   path: string;
   dueDate: string | null;
   needsPaymentNotification: boolean;
+  sellerName: string | null;
+  buyerName: string | null;
+  invoiceNumber: string | null;
+  amount: string | null;
+  currency: string | null;
+  pdfPath: string | null;
 };
 
 export type InvoiceFileMetadata = {
@@ -41,6 +47,12 @@ const sellerNamePaths = [
   ["Podmiot1", "DaneIdentyfikacyjne", "PelnaNazwa"],
   ["Podmiot1", "DaneIdentyfikacyjne", "NazwaPelna"],
   ["Podmiot1", "DaneIdentyfikacyjne", "SkroconaNazwa"],
+];
+const buyerNamePaths = [
+  ["Podmiot2", "DaneIdentyfikacyjne", "Nazwa"],
+  ["Podmiot2", "DaneIdentyfikacyjne", "PelnaNazwa"],
+  ["Podmiot2", "DaneIdentyfikacyjne", "NazwaPelna"],
+  ["Podmiot2", "DaneIdentyfikacyjne", "SkroconaNazwa"],
 ];
 
 // ─── XML helpers ──────────────────────────────────────────────────────────────
@@ -146,6 +158,18 @@ export const extractSellerName = (xml: string): string | null => {
   return null;
 };
 
+export const extractBuyerName = (xml: string): string | null => {
+  if (Buffer.byteLength(xml, "utf-8") > maxInvoiceNumberXmlBytes) {
+    return null;
+  }
+  const invoice = getInvoiceNode(parseInvoiceXml(xml));
+  for (const buyerNamePath of buyerNamePaths) {
+    const buyerName = getNestedText(invoice, buyerNamePath);
+    if (buyerName) return buyerName;
+  }
+  return null;
+};
+
 // ─── File helpers ─────────────────────────────────────────────────────────────
 
 export const sanitizeFileName = (value: string): string => {
@@ -225,6 +249,7 @@ export const createSyncItem = (
   ksefNumber: string,
   filePath: string,
   xmlText: string,
+  pdfPath: string | null = null,
 ): SyncItem => {
   const paymentInfo = analyzeInvoicePayment(xmlText, nip);
   return {
@@ -233,5 +258,11 @@ export const createSyncItem = (
     path: filePath,
     dueDate: paymentInfo.dueDate,
     needsPaymentNotification: isEligibleForNotification(paymentInfo),
+    sellerName: extractSellerName(xmlText),
+    buyerName: extractBuyerName(xmlText),
+    invoiceNumber: extractInvoiceNumber(xmlText),
+    amount: paymentInfo.amount,
+    currency: paymentInfo.currency,
+    pdfPath,
   };
 };
