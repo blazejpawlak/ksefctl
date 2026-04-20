@@ -1,11 +1,11 @@
 {
   "name": "@blazejpawlak/ksefctl",
-  "version": "2026.04.20",
+  "version": "2026.4.20",
   "description": "CLI background service for KSeF inbox synchronization",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/blazejpawlak/ksefctl.git"
+    "url": "git+https://github.com/blazejpawlak/ksefctl.git"
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
