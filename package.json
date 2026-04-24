@@ -1,6 +1,6 @@
 {
   "name": "@blazejpawlak/ksefctl",
-  "version": "2026.4.24",
+  "version": "2026.4.24.1",
   "description": "CLI background service for KSeF inbox synchronization",
   "license": "Apache-2.0",
   "repository": {
