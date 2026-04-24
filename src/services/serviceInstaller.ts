@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { KSEFCTL_SERVICE_MODE } from "../cli/serviceMode";
 import { buildNodeOptionsWithLocalstorage } from "../utils/nodeOptions";
 import { APP_NAME, defaultDataRoot, ensureDir } from "../utils/paths";
 
@@ -31,6 +32,7 @@ const execFileSafe = async (command: string, args: string[]): Promise<void> => {
 export type ServiceInstallOptions = {
   configPath: string;
   storageRoot: string;
+  lifecycleLogPath: string;
   nodePath: string;
   cliPath: string;
 };
@@ -142,9 +144,7 @@ export const buildLaunchdPlist = (
   const cliPathValue = escapeXml(options.cliPath);
   const configPathValue = escapeXml(options.configPath);
   const storageRootValue = escapeXml(options.storageRoot);
-  const stdoutPath = escapeXml(
-    path.join(options.storageRoot, "logs", `${serviceName}.out.log`),
-  );
+  const stdoutPath = escapeXml(options.lifecycleLogPath);
   const stderrPath = escapeXml(
     path.join(options.storageRoot, "logs", `${serviceName}.err.log`),
   );
@@ -171,6 +171,7 @@ export const buildLaunchdPlist = (
     <key>Umask</key><integer>63</integer>
     <key>EnvironmentVariables</key>
     <dict>
+      <key>${KSEFCTL_SERVICE_MODE}</key><string>1</string>
       <key>NODE_ENV</key><string>production</string>${nodeOptionsEntry}
     </dict>
   </dict>
@@ -339,6 +340,7 @@ ExecStart="${nodePathValue}" "${cliPathValue}" sync --watch --config "${configPa
 WorkingDirectory="${storageRootValue}"
 Restart=on-failure
 RestartSec=5
+Environment=${KSEFCTL_SERVICE_MODE}=1
 Environment=NODE_ENV=production
 ${nodeOptionsLine}NoNewPrivileges=true
 PrivateTmp=true
@@ -353,7 +355,11 @@ WantedBy=${target}
     if (isRoot) {
       await execFileAsync("systemctl", ["daemon-reload"]);
       // Stop any running instance before re-enabling (idempotent install).
-      await execFileSafe("systemctl", ["disable", "--now", `${serviceName}.service`]);
+      await execFileSafe("systemctl", [
+        "disable",
+        "--now",
+        `${serviceName}.service`,
+      ]);
       await execFileAsync("systemctl", [
         "enable",
         "--now",
@@ -362,7 +368,12 @@ WantedBy=${target}
     } else {
       await execFileAsync("systemctl", ["--user", "daemon-reload"]);
       // Stop any running instance before re-enabling (idempotent install).
-      await execFileSafe("systemctl", ["--user", "disable", "--now", `${serviceName}.service`]);
+      await execFileSafe("systemctl", [
+        "--user",
+        "disable",
+        "--now",
+        `${serviceName}.service`,
+      ]);
       await execFileAsync("systemctl", [
         "--user",
         "enable",

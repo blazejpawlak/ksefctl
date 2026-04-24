@@ -23,7 +23,14 @@ CREATE TABLE IF NOT EXISTS sync_state (
   last_sync_at TEXT,
   last_success_at TEXT,
   last_error TEXT,
-  last_downloaded_count INTEGER
+  last_downloaded_count INTEGER,
+  last_lifecycle_action TEXT,
+  last_lifecycle_stage TEXT,
+  last_lifecycle_origin TEXT,
+  last_lifecycle_at TEXT,
+  last_lifecycle_by TEXT,
+  last_lifecycle_initiator_source TEXT,
+  last_lifecycle_reason TEXT
 );
 
 CREATE TABLE IF NOT EXISTS continuation_points (
@@ -102,6 +109,30 @@ const migrateLegacyTables = (db: Database): void => {
        SELECT 'legacy', subject_type, cursor FROM continuation_points_legacy;`,
     );
     db.exec("DROP TABLE continuation_points_legacy;");
+  }
+
+  if (!hasColumn(db, "sync_state", "last_lifecycle_action")) {
+    db.exec("ALTER TABLE sync_state ADD COLUMN last_lifecycle_action TEXT;");
+  }
+  if (!hasColumn(db, "sync_state", "last_lifecycle_stage")) {
+    db.exec("ALTER TABLE sync_state ADD COLUMN last_lifecycle_stage TEXT;");
+  }
+  if (!hasColumn(db, "sync_state", "last_lifecycle_origin")) {
+    db.exec("ALTER TABLE sync_state ADD COLUMN last_lifecycle_origin TEXT;");
+  }
+  if (!hasColumn(db, "sync_state", "last_lifecycle_at")) {
+    db.exec("ALTER TABLE sync_state ADD COLUMN last_lifecycle_at TEXT;");
+  }
+  if (!hasColumn(db, "sync_state", "last_lifecycle_by")) {
+    db.exec("ALTER TABLE sync_state ADD COLUMN last_lifecycle_by TEXT;");
+  }
+  if (!hasColumn(db, "sync_state", "last_lifecycle_initiator_source")) {
+    db.exec(
+      "ALTER TABLE sync_state ADD COLUMN last_lifecycle_initiator_source TEXT;",
+    );
+  }
+  if (!hasColumn(db, "sync_state", "last_lifecycle_reason")) {
+    db.exec("ALTER TABLE sync_state ADD COLUMN last_lifecycle_reason TEXT;");
   }
 };
 

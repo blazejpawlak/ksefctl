@@ -8,6 +8,7 @@ import { SqliteStore } from "../db/sqlite";
 import { ConfigError } from "../utils/errors";
 import { HttpClient, validateTlsOptions } from "../utils/http";
 import { createLogger } from "../utils/logger";
+import { isManagedServiceMode } from "./serviceMode";
 
 type ContextOptions = {
   verbose?: boolean;
@@ -28,11 +29,12 @@ export const createContext = async (
       : "debug"
     : config.logging.level;
   const hasProgress = Boolean(options?.progress);
+  const suppressConsole = (hasProgress && !verbose) || isManagedServiceMode();
   const logger = await createLogger({
     level,
     file: config.logging.file,
     pretty: verbose ? true : config.logging.pretty,
-    suppressConsole: hasProgress && !verbose,
+    suppressConsole,
   });
   const countdownIntervalSeconds =
     options?.countdownIntervalSeconds ?? (verbose ? 10 : 60);

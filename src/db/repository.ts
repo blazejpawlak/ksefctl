@@ -18,6 +18,16 @@ export type SyncState = {
   last_downloaded_count: number | null;
 };
 
+export type ServiceLifecycleState = {
+  last_lifecycle_action: string | null;
+  last_lifecycle_stage: string | null;
+  last_lifecycle_origin: string | null;
+  last_lifecycle_at: string | null;
+  last_lifecycle_by: string | null;
+  last_lifecycle_initiator_source: string | null;
+  last_lifecycle_reason: string | null;
+};
+
 export type InvoiceNotificationKind = "unpaid_due";
 
 export type InvoiceNotificationRecord = {
@@ -107,6 +117,73 @@ export const setSyncState = (db: Database, state: SyncState): void => {
   stmt.free();
 };
 
+export const getServiceLifecycleState = (
+  db: Database,
+): ServiceLifecycleState => {
+  const stmt = db.prepare(
+    `SELECT
+       last_lifecycle_action,
+       last_lifecycle_stage,
+       last_lifecycle_origin,
+       last_lifecycle_at,
+       last_lifecycle_by,
+       last_lifecycle_initiator_source,
+       last_lifecycle_reason
+     FROM sync_state
+     WHERE id = 1`,
+  );
+  const row = stmt.step()
+    ? (stmt.getAsObject() as ServiceLifecycleState)
+    : {
+        last_lifecycle_action: null,
+        last_lifecycle_stage: null,
+        last_lifecycle_origin: null,
+        last_lifecycle_at: null,
+        last_lifecycle_by: null,
+        last_lifecycle_initiator_source: null,
+        last_lifecycle_reason: null,
+      };
+  stmt.free();
+  return row;
+};
+
+export const setServiceLifecycleState = (
+  db: Database,
+  state: ServiceLifecycleState,
+): void => {
+  const stmt = db.prepare(
+    `INSERT INTO sync_state (
+       id,
+       last_lifecycle_action,
+       last_lifecycle_stage,
+       last_lifecycle_origin,
+       last_lifecycle_at,
+       last_lifecycle_by,
+       last_lifecycle_initiator_source,
+       last_lifecycle_reason
+     )
+     VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       last_lifecycle_action=excluded.last_lifecycle_action,
+       last_lifecycle_stage=excluded.last_lifecycle_stage,
+       last_lifecycle_origin=excluded.last_lifecycle_origin,
+       last_lifecycle_at=excluded.last_lifecycle_at,
+       last_lifecycle_by=excluded.last_lifecycle_by,
+       last_lifecycle_initiator_source=excluded.last_lifecycle_initiator_source,
+       last_lifecycle_reason=excluded.last_lifecycle_reason`,
+  );
+  stmt.run([
+    state.last_lifecycle_action,
+    state.last_lifecycle_stage,
+    state.last_lifecycle_origin,
+    state.last_lifecycle_at,
+    state.last_lifecycle_by,
+    state.last_lifecycle_initiator_source,
+    state.last_lifecycle_reason,
+  ]);
+  stmt.free();
+};
+
 export const getContinuationPoint = (
   db: Database,
   nip: string,
@@ -190,8 +267,8 @@ export const listInvoicesMissingNotification = (
        ON n.nip = i.nip
       AND n.ksef_number = i.ksef_number
       AND n.notification_kind = ?
-     WHERE i.status = "downloaded"
-       AND i.file_path <> ""
+     WHERE i.status = 'downloaded'
+       AND i.file_path <> ''
        AND n.nip IS NULL`,
   );
   stmt.bind([notificationKind]);

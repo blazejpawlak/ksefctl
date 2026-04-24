@@ -70,13 +70,14 @@ describe("ServiceInstaller", () => {
     const plistPath = await installer.install({
       configPath: "/tmp/ksefctl.yml",
       storageRoot,
+      lifecycleLogPath: path.join(storageRoot, "logs", "ksefctl.log"),
       nodePath: "/usr/local/bin/node",
       cliPath: "/usr/local/bin/ksefctl",
     });
     const plist = await fs.readFile(plistPath, "utf-8");
 
     // Assert
-    const outPath = path.join(storageRoot, "logs", "ksefctl.out.log");
+    const outPath = path.join(storageRoot, "logs", "ksefctl.log");
     const errPath = path.join(storageRoot, "logs", "ksefctl.err.log");
     expect(plist).toContain("<string>sync</string>");
     expect(plist).toContain("<string>--watch</string>");
@@ -85,6 +86,9 @@ describe("ServiceInstaller", () => {
     );
     expect(plist).toContain(
       `<key>StandardErrorPath</key><string>${errPath}</string>`,
+    );
+    expect(plist).toContain(
+      "<key>KSEFCTL_SERVICE_MODE</key><string>1</string>",
     );
     expect(plist).toContain(
       "<key>NODE_OPTIONS</key><string>--localstorage-file &quot;/tmp/local storage.json&quot;</string>",
@@ -100,6 +104,7 @@ describe("ServiceInstaller", () => {
         {
           configPath: "/tmp/ksefctl&.yml",
           storageRoot,
+          lifecycleLogPath: "/tmp/storage & logs/logs/ksefctl.log",
           nodePath: "/usr/local/bin/node&",
           cliPath: "/usr/local/bin/ksefctl<",
         },
@@ -160,6 +165,7 @@ describe("ServiceInstaller", () => {
         installer.install({
           configPath,
           storageRoot,
+          lifecycleLogPath: path.join(storageRoot, "logs", "ksefctl.log"),
           nodePath,
           cliPath,
         }),
@@ -190,6 +196,7 @@ describe("ServiceInstaller", () => {
         installer.install({
           configPath,
           storageRoot,
+          lifecycleLogPath: path.join(storageRoot, "logs", "ksefctl.log"),
           nodePath,
           cliPath,
         }),
@@ -218,6 +225,7 @@ describe("ServiceInstaller", () => {
       installer.install({
         configPath: "/tmp/ksefctl.yml",
         storageRoot,
+        lifecycleLogPath: path.join(storageRoot, "logs", "ksefctl.log"),
         nodePath: "/usr/local/bin/node",
         cliPath: "/usr/local/bin/ksefctl",
       }),

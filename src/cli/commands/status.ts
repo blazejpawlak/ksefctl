@@ -2,6 +2,7 @@ import type { Command } from "commander";
 import { StatusService } from "../../core/statusService";
 import { ensureInitialized } from "../bootstrap";
 import { createContext } from "../context";
+import { getLifecycleStatusEntries } from "../lifecycleStatus";
 import { printHeader, printKeyValues } from "../ui";
 import { runCommand, type RootOptions } from "./runCommand";
 
@@ -39,6 +40,7 @@ export function registerStatus(program: Command): void {
           ["lastSuccessAt", payload.lastSuccessAt],
           ["lastError", payload.lastError],
           ["lastDownloadedCount", payload.lastDownloadedCount],
+          ...getLifecycleStatusEntries(payload),
         ]);
       }),
     );

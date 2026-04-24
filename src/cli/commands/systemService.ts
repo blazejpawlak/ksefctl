@@ -1,18 +1,26 @@
 import type { Command } from "commander";
 import { execFile, spawn } from "node:child_process";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { StatusService } from "../../core/statusService";
 import { ServiceInstaller } from "../../services/serviceInstaller";
 import { APP_NAME } from "../../utils/paths";
+import { logServiceLifecycle } from "../../utils/serviceLifecycle";
 import { ensureInitialized } from "../bootstrap";
 import { createContext } from "../context";
+import {
+  getLifecycleEventEntries,
+  getLifecycleStatusEntries,
+} from "../lifecycleStatus";
+import { resolveServiceLogPaths } from "../serviceLogPaths";
 import { printHeader, printKeyValues } from "../ui";
 import { runCommand, type RootOptions } from "./runCommand";
 
 const execFileAsync = promisify(execFile);
 const serviceLabel = `com.${APP_NAME}`;
 const unitName = `${APP_NAME}.service`;
+const serviceManager = process.platform === "darwin" ? "launchd" : "systemd";
 
 const parseLaunchdProp = (output: string, key: string): string | null => {
   const m = new RegExp(`"${key}"\\s*=\\s*(\\S+?);`).exec(output);
@@ -38,22 +46,44 @@ async function queryOsServiceState(): Promise<OsServiceState> {
 
   if (process.platform === "darwin") {
     try {
-      const { stdout } = await execFileAsync("launchctl", ["list", serviceLabel]);
+      const { stdout } = await execFileAsync("launchctl", [
+        "list",
+        serviceLabel,
+      ]);
       const pid = parseLaunchdProp(stdout, "PID");
       const lastExitStatus = parseLaunchdProp(stdout, "LastExitStatus");
       return {
         running: pid !== null,
         pid,
         state: pid !== null ? "running" : "stopped",
-        exitCode: lastExitStatus !== null && lastExitStatus !== "0" ? lastExitStatus : null,
+        exitCode:
+          lastExitStatus !== null && lastExitStatus !== "0"
+            ? lastExitStatus
+            : null,
       };
     } catch {
-      return { running: false, pid: null, state: "not installed", exitCode: null };
+      return {
+        running: false,
+        pid: null,
+        state: "not installed",
+        exitCode: null,
+      };
     }
   } else {
     const args = isRoot
-      ? ["show", unitName, "--property=ActiveState,SubState,MainPID,ExecMainStatus", "--no-pager"]
-      : ["--user", "show", unitName, "--property=ActiveState,SubState,MainPID,ExecMainStatus", "--no-pager"];
+      ? [
+          "show",
+          unitName,
+          "--property=ActiveState,SubState,MainPID,ExecMainStatus",
+          "--no-pager",
+        ]
+      : [
+          "--user",
+          "show",
+          unitName,
+          "--property=ActiveState,SubState,MainPID,ExecMainStatus",
+          "--no-pager",
+        ];
     try {
       const { stdout } = await execFileAsync("systemctl", args);
       const activeState = parseSystemdProp(stdout, "ActiveState") ?? "unknown";
@@ -64,10 +94,16 @@ async function queryOsServiceState(): Promise<OsServiceState> {
         running: activeState === "active" && subState === "running",
         pid: mainPid && mainPid !== "0" ? mainPid : null,
         state: `${activeState}/${subState}`,
-        exitCode: execMainStatus && execMainStatus !== "0" ? execMainStatus : null,
+        exitCode:
+          execMainStatus && execMainStatus !== "0" ? execMainStatus : null,
       };
     } catch {
-      return { running: false, pid: null, state: "not installed", exitCode: null };
+      return {
+        running: false,
+        pid: null,
+        state: "not installed",
+        exitCode: null,
+      };
     }
   }
 }
@@ -77,7 +113,11 @@ async function restartOsService(): Promise<void> {
   const isRoot = uid === 0;
   if (process.platform === "darwin") {
     const domain = isRoot ? "system" : `gui/${uid}`;
-    await execFileAsync("launchctl", ["kickstart", "-k", `${domain}/${serviceLabel}`]);
+    await execFileAsync("launchctl", [
+      "kickstart",
+      "-k",
+      `${domain}/${serviceLabel}`,
+    ]);
   } else {
     if (isRoot) {
       await execFileAsync("systemctl", ["restart", unitName]);
@@ -89,10 +129,16 @@ async function restartOsService(): Promise<void> {
 
 type LogsOptions = { follow?: boolean; lines?: string; error?: boolean };
 
-export function registerSystemService(
-  system: Command,
-  program: Command,
-): void {
+const toExistingPath = async (filePath: string): Promise<string | null> => {
+  try {
+    await fs.access(filePath);
+    return filePath;
+  } catch {
+    return null;
+  }
+};
+
+export function registerSystemService(system: Command, program: Command): void {
   const systemService = system
     .command("service")
     .description("Service management commands");
@@ -106,16 +152,37 @@ export function registerSystemService(
         const { config, verbose } = rootOpts;
         await ensureInitialized(config);
         const ctx = await createContext(config, { verbose });
+        const statusService = new StatusService(ctx.store);
+        const initiatedEvent = logServiceLifecycle(ctx.logger, {
+          action: "start",
+          stage: "initiated",
+          origin: "cli",
+          reason: "service-install",
+          context: { serviceManager },
+        });
+        await statusService.recordLifecycle(initiatedEvent);
         const installer = new ServiceInstaller();
         const cliArg = process.argv[1];
         const pathInstalled = await installer.install({
           configPath: ctx.configPath,
           storageRoot: ctx.config.storage.root,
+          lifecycleLogPath: ctx.config.logging.file,
           nodePath: process.execPath,
           cliPath: cliArg ? path.resolve(cliArg) : process.execPath,
         });
+        const completedEvent = logServiceLifecycle(ctx.logger, {
+          action: "start",
+          stage: "completed",
+          origin: "cli",
+          reason: "service-install",
+          context: { serviceManager, servicePath: pathInstalled },
+        });
+        await statusService.recordLifecycle(completedEvent);
         printHeader("System Service Install");
-        printKeyValues([["servicePath", pathInstalled]]);
+        printKeyValues([
+          ["servicePath", pathInstalled],
+          ...getLifecycleEventEntries(completedEvent),
+        ]);
       }),
     );
 
@@ -124,12 +191,34 @@ export function registerSystemService(
     .description("Remove launchd/systemd service")
     .action(
       runCommand(async () => {
-        const { config } = program.opts<RootOptions>();
+        const rootOpts = program.opts<RootOptions>();
+        const { config, verbose } = rootOpts;
         await ensureInitialized(config);
+        const ctx = await createContext(config, { verbose });
+        const statusService = new StatusService(ctx.store);
+        const initiatedEvent = logServiceLifecycle(ctx.logger, {
+          action: "stop",
+          stage: "initiated",
+          origin: "cli",
+          reason: "service-uninstall",
+          context: { serviceManager },
+        });
+        await statusService.recordLifecycle(initiatedEvent);
         const installer = new ServiceInstaller();
         const pathRemoved = await installer.uninstall();
+        const completedEvent = logServiceLifecycle(ctx.logger, {
+          action: "stop",
+          stage: "completed",
+          origin: "cli",
+          reason: "service-uninstall",
+          context: { serviceManager, servicePath: pathRemoved },
+        });
+        await statusService.recordLifecycle(completedEvent);
         printHeader("System Service Uninstall");
-        printKeyValues([["servicePath", pathRemoved]]);
+        printKeyValues([
+          ["servicePath", pathRemoved],
+          ...getLifecycleEventEntries(completedEvent),
+        ]);
       }),
     );
 
@@ -161,6 +250,7 @@ export function registerSystemService(
         if (syncStatus.lastError) {
           entries.push(["lastError", syncStatus.lastError]);
         }
+        entries.push(...getLifecycleStatusEntries(syncStatus));
         printKeyValues(entries);
       }),
     );
@@ -170,9 +260,33 @@ export function registerSystemService(
     .description("Restart the background service")
     .action(
       runCommand(async () => {
+        const rootOpts = program.opts<RootOptions>();
+        const { config, verbose } = rootOpts;
+        await ensureInitialized(config);
+        const ctx = await createContext(config, { verbose });
+        const statusService = new StatusService(ctx.store);
+        const initiatedEvent = logServiceLifecycle(ctx.logger, {
+          action: "restart",
+          stage: "initiated",
+          origin: "cli",
+          reason: "service-restart",
+          context: { serviceManager },
+        });
+        await statusService.recordLifecycle(initiatedEvent);
         await restartOsService();
+        const completedEvent = logServiceLifecycle(ctx.logger, {
+          action: "restart",
+          stage: "completed",
+          origin: "cli",
+          reason: "service-restart",
+          context: { serviceManager },
+        });
+        await statusService.recordLifecycle(completedEvent);
         printHeader("System Service Restart");
-        printKeyValues([["status", "restarted"]]);
+        printKeyValues([
+          ["status", "restarted"],
+          ...getLifecycleEventEntries(completedEvent),
+        ]);
       }),
     );
 
@@ -188,15 +302,26 @@ export function registerSystemService(
         const { config, verbose } = rootOpts;
         await ensureInitialized(config);
         const ctx = await createContext(config, { verbose });
-        const logFile = opts.error ? `${APP_NAME}.err.log` : `${APP_NAME}.out.log`;
-        const logPath = path.join(ctx.config.storage.root, "logs", logFile);
+        const requestedPaths = resolveServiceLogPaths({
+          appName: APP_NAME,
+          storageRoot: ctx.config.storage.root,
+          lifecycleLogPath: ctx.config.logging.file,
+          error: opts.error,
+        });
+        const existingPaths = (
+          await Promise.all(requestedPaths.map(toExistingPath))
+        ).filter((filePath): filePath is string => filePath !== null);
+        if (existingPaths.length === 0) {
+          throw new Error("No service log files found");
+        }
         const tailArgs = ["-n", opts.lines ?? "50"];
         if (opts.follow) tailArgs.push("-f");
-        tailArgs.push(logPath);
+        tailArgs.push(...existingPaths);
         await new Promise<void>((resolve, reject) => {
           const child = spawn("tail", tailArgs, { stdio: "inherit" });
           child.on("close", (code) => {
-            if (code !== null && code !== 0) reject(new Error(`tail exited with code ${code}`));
+            if (code !== null && code !== 0)
+              reject(new Error(`tail exited with code ${code}`));
             else resolve();
           });
           child.on("error", reject);

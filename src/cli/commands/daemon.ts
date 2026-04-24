@@ -4,9 +4,14 @@ import { StatusService } from "../../core/statusService";
 import { SyncService } from "../../core/syncService";
 import { Notifier } from "../../notifications/notifier";
 import { ConfigError, exitCodeFromError } from "../../utils/errors";
+import {
+  installServiceStopSignalLogging,
+  logServiceLifecycle,
+} from "../../utils/serviceLifecycle";
 import { formatDuration, sleep, sleepWithCountdown } from "../../utils/time";
 import { ensureInitialized } from "../bootstrap";
 import { createContext } from "../context";
+import { getLifecycleEventEntries } from "../lifecycleStatus";
 import { formatInvoicesToPay, getInvoicesToPay } from "../paymentSummary";
 import { createProgressRenderer } from "../progress";
 import { printHeader, printKeyValues, printList } from "../ui";
@@ -20,12 +25,16 @@ export function registerDaemon(program: Command): void {
   const daemonCmd = new Command("daemon");
   daemonCmd
     .description("Deprecated: use sync --watch instead")
-    .addHelpText("before", "Deprecated: this command is an alias for sync --watch.\n")
+    .addHelpText(
+      "before",
+      "Deprecated: this command is an alias for sync --watch.\n",
+    )
     .action(async () => {
       const rootOpts = program.opts<RootOptions>();
       const { config, verbose } = rootOpts;
       let daemonLogFile: string | null = null;
       let daemonLogger: Logger | null = null;
+      let cleanupServiceStopLogging: (() => void) | null = null;
       const renderer =
         !verbose && process.stderr.isTTY
           ? createProgressRenderer({ stream: process.stderr })
@@ -47,6 +56,16 @@ export function registerDaemon(program: Command): void {
           throw new ConfigError("No organizations configured");
         }
         const intervalMs = ctx.config.pollingIntervalSeconds * 1000;
+        const statusService = new StatusService(ctx.store);
+        cleanupServiceStopLogging = installServiceStopSignalLogging(ctx.logger);
+        const startupEvent = logServiceLifecycle(ctx.logger, {
+          action: "start",
+          stage: "completed",
+          origin: "service",
+          reason: "daemon-alias-entered",
+          context: { serviceMode: "daemon" },
+        });
+        await statusService.recordLifecycle(startupEvent);
         printHeader("Sync");
         printKeyValues([
           ["mode", "watch"],
@@ -54,6 +73,7 @@ export function registerDaemon(program: Command): void {
           ["nips", nips.join(", ")],
           ["logFile", ctx.config.logging.file],
           ["interval", formatDuration(intervalMs)],
+          ...getLifecycleEventEntries(startupEvent),
         ]);
 
         const sync = new SyncService({
@@ -66,7 +86,6 @@ export function registerDaemon(program: Command): void {
           countdownIntervalSeconds: ctx.countdownIntervalSeconds,
         });
         const notifier = new Notifier(ctx.config, ctx.logger);
-        const statusService = new StatusService(ctx.store);
         let iteration = 0;
 
         while (true) {
@@ -122,6 +141,7 @@ export function registerDaemon(program: Command): void {
           }
         }
       } catch (error) {
+        cleanupServiceStopLogging?.();
         renderer?.done();
         const logHint = logUnexpectedError(error, daemonLogger, daemonLogFile);
         console.error(`${formatCliError(error)}${logHint}`);

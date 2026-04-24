@@ -7,15 +7,24 @@ import { SyncService } from "../../core/syncService";
 import { Notifier } from "../../notifications/notifier";
 import { ConfigError, exitCodeFromError } from "../../utils/errors";
 import { expandHome } from "../../utils/paths";
+import {
+  installServiceStopSignalLogging,
+  logServiceLifecycle,
+} from "../../utils/serviceLifecycle";
 import { formatDuration, sleep, sleepWithCountdown } from "../../utils/time";
 import { ensureInitialized } from "../bootstrap";
 import { sanitizeForTerminal } from "../commandTree";
 import { createContext } from "../context";
 import { isValidNip } from "../keychain";
+import { getLifecycleEventEntries } from "../lifecycleStatus";
 import { formatInvoicesToPay, getInvoicesToPay } from "../paymentSummary";
 import { createProgressRenderer } from "../progress";
 import { printHeader, printKeyValues, printList } from "../ui";
-import { formatCliError, logUnexpectedError, type RootOptions } from "./runCommand";
+import {
+  formatCliError,
+  logUnexpectedError,
+  type RootOptions,
+} from "./runCommand";
 
 type SyncOptions = {
   nip?: string;
@@ -39,21 +48,31 @@ export function registerSync(program: Command): void {
     .description("Download invoices from KSeF")
     .option("-n, --nip <nip>", "sync a single NIP")
     .addOption(
-      new Option("--redownload <ksefNumber>", "re-download a specific invoice (requires --nip)").conflicts("redownloadAll"),
+      new Option(
+        "--redownload <ksefNumber>",
+        "re-download a specific invoice (requires --nip)",
+      ).conflicts("redownloadAll"),
     )
     .addOption(
-      new Option("--redownload-all", "re-download all invoices in sync window").conflicts("redownload"),
+      new Option(
+        "--redownload-all",
+        "re-download all invoices in sync window",
+      ).conflicts("redownload"),
     )
     .option("--flat-sync", "store invoices in flat monthly folders (YYYY/MM)")
     .option(
       "--output-path <path>",
       "override invoice output directory (requires --nip when multiple orgs configured)",
     )
-    .option("--watch", "run continuously in the foreground, polling every pollingIntervalSeconds (default: 300 s); for background/unattended use run system service install instead")
+    .option(
+      "--watch",
+      "run continuously in the foreground, polling every pollingIntervalSeconds (default: 300 s); for background/unattended use run system service install instead",
+    )
     .option("--json", "output results as JSON")
     .action(async (options: SyncOptions) => {
       let logFile: string | null = null;
       let cmdLogger: Logger | null = null;
+      let cleanupServiceStopLogging: (() => void) | null = null;
       const renderer = process.stderr.isTTY
         ? createProgressRenderer({ stream: process.stderr })
         : null;
@@ -79,7 +98,9 @@ export function registerSync(program: Command): void {
           throw new ConfigError("No organizations configured");
         }
         if (options.redownload && nips.length > 1) {
-          throw new ConfigError("Use --nip with --redownload when multiple organizations are configured");
+          throw new ConfigError(
+            "Use --nip with --redownload when multiple organizations are configured",
+          );
         }
         if (options.outputPath && nips.length > 1) {
           throw new ConfigError(
@@ -87,7 +108,9 @@ export function registerSync(program: Command): void {
           );
         }
         if (options.watch && (options.redownload || options.redownloadAll)) {
-          throw new ConfigError("--redownload flags cannot be used with --watch");
+          throw new ConfigError(
+            "--redownload flags cannot be used with --watch",
+          );
         }
         const outputPath = resolveCliOutputPath(options.outputPath);
         logFile = ctx.config.logging.file;
@@ -104,10 +127,21 @@ export function registerSync(program: Command): void {
           countdownIntervalSeconds: ctx.countdownIntervalSeconds,
         });
         const notifier = new Notifier(ctx.config, ctx.logger);
+        const statusService = new StatusService(ctx.store);
 
         if (options.watch) {
+          cleanupServiceStopLogging = installServiceStopSignalLogging(
+            ctx.logger,
+          );
+          const startupEvent = logServiceLifecycle(ctx.logger, {
+            action: "start",
+            stage: "completed",
+            origin: "service",
+            reason: "watch-mode-entered",
+            context: { serviceMode: "watch" },
+          });
+          await statusService.recordLifecycle(startupEvent);
           const intervalMs = ctx.config.pollingIntervalSeconds * 1000;
-          const statusService = new StatusService(ctx.store);
           printHeader("Sync");
           printKeyValues([
             ["mode", "watch"],
@@ -115,13 +149,15 @@ export function registerSync(program: Command): void {
             ["nips", nips.join(", ")],
             ["logFile", ctx.config.logging.file],
             ["interval", formatDuration(intervalMs)],
+            ...getLifecycleEventEntries(startupEvent),
           ]);
 
           let iteration = 0;
           while (true) {
             iteration += 1;
             const startedAt = Date.now();
-            let result: Awaited<ReturnType<SyncService["runOnce"]>> | null = null;
+            let result: Awaited<ReturnType<SyncService["runOnce"]>> | null =
+              null;
             let errorMessage: string | null = null;
             try {
               progress?.(`Progress: sync cycle ${iteration} started`);
@@ -157,20 +193,25 @@ export function registerSync(program: Command): void {
             }
             printKeyValues(summaryEntries);
             if (invoicesToPay.length > 0) {
-              printList("Invoices to pay:", formatInvoicesToPay(result?.items ?? []));
+              printList(
+                "Invoices to pay:",
+                formatInvoicesToPay(result?.items ?? []),
+              );
             }
             if (options.json) {
-              console.log(JSON.stringify({
-                iteration,
-                status: errorMessage ? "failed" : "completed",
-                downloaded: result?.downloaded ?? 0,
-                skipped: result?.skipped ?? 0,
-                failed: result?.failed ?? (errorMessage ? 1 : 0),
-                toPay: invoicesToPay.length,
-                durationMs,
-                lastSyncAt: status.lastSyncAt ?? null,
-                error: errorMessage ?? undefined,
-              }));
+              console.log(
+                JSON.stringify({
+                  iteration,
+                  status: errorMessage ? "failed" : "completed",
+                  downloaded: result?.downloaded ?? 0,
+                  skipped: result?.skipped ?? 0,
+                  failed: result?.failed ?? (errorMessage ? 1 : 0),
+                  toPay: invoicesToPay.length,
+                  durationMs,
+                  lastSyncAt: status.lastSyncAt ?? null,
+                  error: errorMessage ?? undefined,
+                }),
+              );
             }
             if (progress) {
               progress(`Progress: next run in ${formatDuration(intervalMs)}`);
@@ -178,7 +219,9 @@ export function registerSync(program: Command): void {
                 intervalMs,
                 ctx.countdownIntervalSeconds,
                 (remaining) =>
-                  progress(`Progress: next run in ${formatDuration(remaining)}`),
+                  progress(
+                    `Progress: next run in ${formatDuration(remaining)}`,
+                  ),
               );
               renderer?.done();
             } else {
@@ -208,16 +251,18 @@ export function registerSync(program: Command): void {
           const invoicesToPay = getInvoicesToPay(result.items);
           renderer?.done();
           if (options.json) {
-            console.log(JSON.stringify({
-              status: "completed",
-              environment: ctx.config.environment,
-              nips,
-              downloaded: result.downloaded,
-              skipped: result.skipped,
-              failed: result.failed,
-              toPay: invoicesToPay.length,
-              items: result.items,
-            }));
+            console.log(
+              JSON.stringify({
+                status: "completed",
+                environment: ctx.config.environment,
+                nips,
+                downloaded: result.downloaded,
+                skipped: result.skipped,
+                failed: result.failed,
+                toPay: invoicesToPay.length,
+                items: result.items,
+              }),
+            );
           } else {
             printKeyValues([
               ["status", "completed"],
@@ -246,6 +291,7 @@ export function registerSync(program: Command): void {
           await notifier.notifyUnpaidInvoices(result, ctx.store);
         }
       } catch (error) {
+        cleanupServiceStopLogging?.();
         const message = formatCliError(error);
         renderer?.done();
         const logHint = logUnexpectedError(error, cmdLogger, logFile);
