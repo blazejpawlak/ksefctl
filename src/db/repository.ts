@@ -27,6 +27,12 @@ export type InvoiceNotificationRecord = {
   notified_at: string;
 };
 
+export type InvoiceNotificationCandidate = {
+  nip: string;
+  ksef_number: string;
+  file_path: string;
+};
+
 export const getInvoice = (
   db: Database,
   nip: string,
@@ -171,4 +177,29 @@ export const markInvoiceNotification = (
     record.notified_at,
   ]);
   stmt.free();
+};
+
+export const listInvoicesMissingNotification = (
+  db: Database,
+  notificationKind: InvoiceNotificationKind,
+): InvoiceNotificationCandidate[] => {
+  const stmt = db.prepare(
+    `SELECT i.nip, i.ksef_number, i.file_path
+     FROM invoices i
+     LEFT JOIN invoice_notifications n
+       ON n.nip = i.nip
+      AND n.ksef_number = i.ksef_number
+      AND n.notification_kind = ?
+     WHERE i.status = "downloaded"
+       AND i.file_path <> ""
+       AND n.nip IS NULL`,
+  );
+  stmt.bind([notificationKind]);
+
+  const records: InvoiceNotificationCandidate[] = [];
+  while (stmt.step()) {
+    records.push(stmt.getAsObject() as InvoiceNotificationCandidate);
+  }
+  stmt.free();
+  return records;
 };

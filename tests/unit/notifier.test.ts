@@ -8,6 +8,7 @@ import path from "node:path";
 import {
   hasInvoiceNotification,
   markInvoiceNotification,
+  upsertInvoice,
 } from "../../src/db/repository";
 import { SqliteStore } from "../../src/db/sqlite";
 import { Notifier } from "../../src/notifications/notifier";
@@ -122,6 +123,36 @@ const createResult = (): SyncResult => ({
     },
   ],
 });
+
+const createPayableXml = (dueDate = "2026-03-24"): string => `
+<Faktura>
+  <Podmiot1>
+    <DaneIdentyfikacyjne>
+      <NIP>5542936663</NIP>
+      <Nazwa>Seller Sp. z o.o.</Nazwa>
+    </DaneIdentyfikacyjne>
+  </Podmiot1>
+  <Podmiot2>
+    <DaneIdentyfikacyjne>
+      <NIP>1234567890</NIP>
+      <Nazwa>Buyer Sp. z o.o.</Nazwa>
+    </DaneIdentyfikacyjne>
+  </Podmiot2>
+  <Fa>
+    <P_2>FVS/1/2026</P_2>
+    <P_15>1033.20</P_15>
+    <Waluta>PLN</Waluta>
+    <Platnosc>
+      <TerminPlatnosci>
+        <Termin>${dueDate}</Termin>
+      </TerminPlatnosci>
+      <Rozliczenie>
+        <DoZaplaty>1033.20</DoZaplaty>
+      </Rozliczenie>
+    </Platnosc>
+  </Fa>
+</Faktura>
+`;
 
 describe("Notifier", () => {
   beforeEach(() => {
@@ -308,5 +339,42 @@ describe("Notifier", () => {
     expect(sendMailMock.mock.calls[0]?.[0]).toMatchObject({
       subject: "KSeFctl: 2 invoices require payment",
     });
+  });
+
+  it("sends catch-up notification for downloaded unpaid invoice missing in current result", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-notifier-"));
+    const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
+    const invoiceDir = path.join(tmpDir, "invoices", "KSEF-CATCHUP-1");
+    await fs.mkdir(invoiceDir, { recursive: true });
+    await fs.writeFile(path.join(invoiceDir, "invoice.xml"), createPayableXml());
+
+    await store.withDb((db) => {
+      upsertInvoice(db, {
+        nip: "1234567890",
+        ksef_number: "KSEF-CATCHUP-1",
+        file_path: invoiceDir,
+        hash: null,
+        status: "downloaded",
+        downloaded_at: "2026-04-15T20:27:55.637Z",
+        received_at: "2026-04-15T20:27:55.637Z",
+        error: null,
+      });
+    });
+
+    const notifier = new Notifier(createConfig(), createLogger());
+    const emptyResult: SyncResult = {
+      downloaded: 0,
+      skipped: 1,
+      failed: 0,
+      items: [],
+    };
+
+    await notifier.notifyUnpaidInvoices(emptyResult, store);
+
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+    const notified = await store.withDb((db) =>
+      hasInvoiceNotification(db, "1234567890", "KSEF-CATCHUP-1", "unpaid_due"),
+    );
+    expect(notified).toBe(true);
   });
 });

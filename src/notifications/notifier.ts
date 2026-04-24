@@ -1,5 +1,6 @@
 import type { AppConfig } from "../config/schema";
 import type { SyncItem, SyncResult } from "../core/syncService";
+import type { InvoiceNotificationCandidate } from "../db/repository";
 import type { SqliteStore } from "../db/sqlite";
 import type { Logger } from "pino";
 import type { Database } from "sql.js";
@@ -7,8 +8,10 @@ import notifier from "node-notifier";
 import nodemailer from "nodemailer";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { createSyncItem } from "../core/invoiceExtractor";
 import {
   hasInvoiceNotification,
+  listInvoicesMissingNotification,
   markInvoiceNotification,
 } from "../db/repository";
 import {
@@ -39,7 +42,7 @@ export class Notifier {
     store: SqliteStore,
   ): Promise<void> {
     await store.withDb(async (db) => {
-      const pendingItems = this.getPendingUnpaidItems(result.items, db);
+      const pendingItems = await this.getPendingUnpaidItems(result.items, db);
       if (pendingItems.length === 0) return;
 
       const summary: UnpaidNotificationSummary = { items: pendingItems };
@@ -59,19 +62,81 @@ export class Notifier {
     });
   }
 
-  private getPendingUnpaidItems(items: SyncItem[], db: Database): SyncItem[] {
-    const unpaidItems = items.filter((item) => item.needsPaymentNotification);
-    if (unpaidItems.length === 0) return [];
+  private getItemKey(item: Pick<SyncItem, "nip" | "ksefNumber">): string {
+    return `${item.nip}:${item.ksefNumber}`;
+  }
 
-    return unpaidItems.filter(
-      (item) =>
-        !hasInvoiceNotification(
-          db,
-          item.nip,
-          item.ksefNumber,
-          unpaidDueNotificationKind,
-        ),
+  private async getCatchUpUnpaidItems(db: Database): Promise<SyncItem[]> {
+    const candidates = listInvoicesMissingNotification(db, unpaidDueNotificationKind);
+    if (candidates.length === 0) return [];
+
+    const items = await Promise.all(
+      candidates.map((candidate) => this.readCatchUpItem(candidate)),
     );
+    return items.filter((item): item is SyncItem => item !== null);
+  }
+
+  private async readCatchUpItem(
+    candidate: InvoiceNotificationCandidate,
+  ): Promise<SyncItem | null> {
+    try {
+      const names = await fs.readdir(candidate.file_path);
+      const xmlName = names.find((name) => name.endsWith(".xml"));
+      if (!xmlName) return null;
+
+      const xmlPath = path.join(candidate.file_path, xmlName);
+      const xmlText = await fs.readFile(xmlPath, "utf-8");
+      const pdfName = names.find((name) => name.endsWith(".pdf"));
+      const pdfPath = pdfName ? path.join(candidate.file_path, pdfName) : null;
+
+      const item = createSyncItem(
+        candidate.nip,
+        candidate.ksef_number,
+        candidate.file_path,
+        xmlText,
+        pdfPath,
+      );
+      return item.needsPaymentNotification ? item : null;
+    } catch (error) {
+      this.logger.debug(
+        {
+          nip: candidate.nip,
+          ksefNumber: candidate.ksef_number,
+          err: (error as Error).message,
+        },
+        "Skipping unreadable invoice during notification catch-up",
+      );
+      return null;
+    }
+  }
+
+  private async getPendingUnpaidItems(
+    items: SyncItem[],
+    db: Database,
+  ): Promise<SyncItem[]> {
+    const pendingFromResult = items
+      .filter((item) => item.needsPaymentNotification)
+      .filter(
+        (item) =>
+          !hasInvoiceNotification(
+            db,
+            item.nip,
+            item.ksefNumber,
+            unpaidDueNotificationKind,
+          ),
+      );
+
+    const catchUpItems = await this.getCatchUpUnpaidItems(db);
+    if (pendingFromResult.length === 0 && catchUpItems.length === 0) return [];
+
+    const combined = new Map<string, SyncItem>();
+    for (const item of pendingFromResult) {
+      combined.set(this.getItemKey(item), item);
+    }
+    for (const item of catchUpItems) {
+      combined.set(this.getItemKey(item), item);
+    }
+    return [...combined.values()];
   }
 
   private notifyMac(summary: UnpaidNotificationSummary): boolean {
