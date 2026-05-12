@@ -67,7 +67,10 @@ export class Notifier {
   }
 
   private async getCatchUpUnpaidItems(db: Database): Promise<SyncItem[]> {
-    const candidates = listInvoicesMissingNotification(db, unpaidDueNotificationKind);
+    const candidates = listInvoicesMissingNotification(
+      db,
+      unpaidDueNotificationKind,
+    );
     if (candidates.length === 0) return [];
 
     const items = await Promise.all(
@@ -222,6 +225,7 @@ export class Notifier {
         to: smtp.to.join(","),
         subject: content.subject,
         text: content.body,
+        html: content.html,
         attachments,
       });
       return true;

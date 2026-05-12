@@ -65,6 +65,10 @@ describe("unpaidNotificationContent", () => {
     expect(content.body).toContain("Due 2026-03-24");
     expect(content.body).toContain("KSeF 5261040337-20260325-7CC03A400054-53");
     expect(content.body).toContain("Folder: /tmp/invoice-1");
+    expect(content.html).toContain("KSeFctl Invoice Alert");
+    expect(content.html).toContain("1 invoice requires payment");
+    expect(content.html).toContain("Invoice details");
+    expect(content.html).toContain("2026-03-24");
   });
 
   it("shows org label when provided", () => {
@@ -97,5 +101,60 @@ describe("unpaidNotificationContent", () => {
     expect(content.body).toContain("Buyer: Our Company S.A.");
     expect(content.body).toContain("Invoice: FV/2026/04/0042");
     expect(content.body).toContain("Amount: 1230.00 PLN");
+    expect(content.html).toContain("Example Supplier Sp. z o.o.");
+    expect(content.html).toContain("1230.00 PLN");
+  });
+
+  it("formats multi-invoice email content as a dashboard table", () => {
+    const content = formatEmailNotificationContent(
+      [
+        {
+          ...singleItem[0]!,
+          sellerName: "Example Supplier Sp. z o.o.",
+          invoiceNumber: "FV/2026/04/0042",
+          amount: "1230.00",
+          currency: "PLN",
+        },
+        {
+          nip: "7393955632",
+          ksefNumber: "KSEF-2",
+          path: "/tmp/invoice-2",
+          dueDate: "2026-03-25",
+          needsPaymentNotification: true,
+          sellerName: "Second Supplier S.A.",
+          buyerName: "Our Company S.A.",
+          invoiceNumber: "FV/2026/04/0043",
+          amount: "70.50",
+          currency: "PLN",
+          pdfPath: "/tmp/Faktura-2.pdf",
+        },
+      ],
+      "2026-03-31T00:00:00.000Z",
+    );
+
+    expect(content.subject).toBe("KSeFctl: 2 invoices require payment");
+    expect(content.html).toContain("2 invoices require payment");
+    expect(content.html).toContain("Total amount");
+    expect(content.html).toContain("1300.50 PLN");
+    expect(content.html).toContain("Invoices requiring payment");
+    expect(content.html).toContain("Second Supplier S.A.");
+    expect(content.html).toContain("Faktura-2.pdf");
+  });
+
+  it("escapes HTML values in email content", () => {
+    const content = formatEmailNotificationContent(
+      [
+        {
+          ...singleItem[0]!,
+          sellerName: "<script>alert('x')</script>",
+        },
+      ],
+      "2026-03-31T00:00:00.000Z",
+    );
+
+    expect(content.html).toContain(
+      "&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;",
+    );
+    expect(content.html).not.toContain("<script>alert");
   });
 });

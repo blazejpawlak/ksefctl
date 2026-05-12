@@ -13,11 +13,10 @@ import {
 import { SqliteStore } from "../../src/db/sqlite";
 import { Notifier } from "../../src/notifications/notifier";
 
- 
 var notifyMock: ReturnType<typeof vi.fn>;
- 
+
 var sendMailMock: ReturnType<typeof vi.fn>;
- 
+
 var createTransportMock: ReturnType<typeof vi.fn>;
 
 vi.mock("node-notifier", () => {
@@ -177,11 +176,13 @@ describe("Notifier", () => {
       subject: "KSeFctl: 1 invoice requires payment",
     });
     const sentMessage = sendMailMock.mock.calls[0]?.[0] as
-      | { text?: string }
+      | { html?: string; text?: string }
       | undefined;
     expect(String(sentMessage?.text)).toContain(
       "The following invoice requires payment.",
     );
+    expect(String(sentMessage?.html)).toContain("KSeFctl Invoice Alert");
+    expect(String(sentMessage?.html)).toContain("Invoice details");
     expect(String(sentMessage?.text)).toContain("2026-03-24");
     expect(String(sentMessage?.text)).toContain("Folder: /tmp/invoice-1");
 
@@ -346,7 +347,10 @@ describe("Notifier", () => {
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const invoiceDir = path.join(tmpDir, "invoices", "KSEF-CATCHUP-1");
     await fs.mkdir(invoiceDir, { recursive: true });
-    await fs.writeFile(path.join(invoiceDir, "invoice.xml"), createPayableXml());
+    await fs.writeFile(
+      path.join(invoiceDir, "invoice.xml"),
+      createPayableXml(),
+    );
 
     await store.withDb((db) => {
       upsertInvoice(db, {
