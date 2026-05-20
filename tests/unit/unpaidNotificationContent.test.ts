@@ -69,6 +69,15 @@ describe("unpaidNotificationContent", () => {
     expect(content.html).toContain("1 invoice requires payment");
     expect(content.html).toContain("Invoice details");
     expect(content.html).toContain("2026-03-24");
+    expect(content.html).toContain(
+      "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">",
+    );
+    expect(content.html).toContain("@media only screen and (max-width: 600px)");
+    expect(content.html).toContain("class=\"summary-card-cell\"");
+    expect(content.html).toContain("class=\"detail-label\"");
+    expect(content.html).toContain("class=\"detail-value\"");
+    expect(content.html).toContain("overflow-wrap:anywhere");
+    expect(content.html).not.toContain("width=\"720\"");
   });
 
   it("shows org label when provided", () => {

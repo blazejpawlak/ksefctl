@@ -148,30 +148,53 @@ const styles = {
   container:
     "width:100%;max-width:720px;background-color:#ffffff;border:1px solid #d9e2ec;border-radius:16px;overflow:hidden;",
   header:
-    "padding:24px 28px;background-color:#0f172a;color:#ffffff;font-family:Arial,Helvetica,sans-serif;",
-  title: "margin:0;font-size:22px;line-height:28px;font-weight:700;",
-  subtitle: "margin:6px 0 0;color:#cbd5e1;font-size:14px;line-height:20px;",
-  body: "padding:28px;font-family:Arial,Helvetica,sans-serif;color:#1f2937;",
+    "padding:28px 32px;background-color:#0f172a;color:#ffffff;font-family:Arial,Helvetica,sans-serif;",
+  title: "margin:0;font-size:24px;line-height:30px;font-weight:700;",
+  subtitle: "margin:8px 0 0;color:#cbd5e1;font-size:15px;line-height:22px;",
+  body: "padding:32px;font-family:Arial,Helvetica,sans-serif;color:#1f2937;",
   card: "padding:16px;border:1px solid #d9e2ec;border-radius:12px;background-color:#f8fafc;",
   label:
     "font-size:12px;line-height:16px;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;font-weight:700;",
   value:
-    "padding-top:6px;font-size:18px;line-height:24px;color:#0f172a;font-weight:700;",
+    "padding-top:6px;font-size:19px;line-height:26px;color:#0f172a;font-weight:700;overflow-wrap:anywhere;word-break:break-word;",
   sectionTitle:
-    "padding-top:26px;padding-bottom:10px;font-size:16px;line-height:22px;color:#0f172a;font-weight:700;",
+    "padding-top:28px;padding-bottom:12px;font-size:18px;line-height:24px;color:#0f172a;font-weight:700;",
   th: "padding:10px 12px;background-color:#e2e8f0;color:#334155;font-size:12px;line-height:16px;text-align:left;border-bottom:1px solid #cbd5e1;",
-  td: "padding:11px 12px;color:#1f2937;font-size:13px;line-height:18px;border-bottom:1px solid #e2e8f0;vertical-align:top;",
+  td: "padding:13px 14px;color:#1f2937;font-size:15px;line-height:22px;border-bottom:1px solid #e2e8f0;vertical-align:top;overflow-wrap:anywhere;word-break:break-word;",
   muted: "color:#64748b;",
   footer:
-    "padding:18px 28px;background-color:#f8fafc;color:#64748b;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;",
+    "padding:18px 32px;background-color:#f8fafc;color:#64748b;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;overflow-wrap:anywhere;word-break:break-word;",
 };
 
+const responsiveCss = `
+  @media only screen and (max-width: 600px) {
+    body, table, td, p, div { -webkit-text-size-adjust: 100% !important; }
+    .email-shell { padding: 12px 8px !important; }
+    .email-container { width: 100% !important; max-width: 100% !important; border-radius: 14px !important; }
+    .email-header { padding: 22px 20px !important; }
+    .email-title { font-size: 26px !important; line-height: 32px !important; }
+    .email-subtitle { font-size: 16px !important; line-height: 23px !important; }
+    .email-body { padding: 20px !important; }
+    .summary-card-cell { display: block !important; width: 100% !important; padding: 0 0 10px 0 !important; }
+    .summary-card { padding: 16px !important; }
+    .summary-label { font-size: 12px !important; line-height: 16px !important; }
+    .summary-value { font-size: 22px !important; line-height: 29px !important; }
+    .section-title { padding-top: 22px !important; font-size: 20px !important; line-height: 27px !important; }
+    .details-row { display: block !important; border-bottom: 1px solid #e2e8f0 !important; }
+    .detail-label, .detail-value { display: block !important; width: auto !important; border-bottom: 0 !important; padding: 12px 14px 0 14px !important; font-size: 15px !important; line-height: 21px !important; }
+    .detail-value { padding: 4px 14px 13px 14px !important; font-size: 17px !important; line-height: 24px !important; }
+    .invoice-table th, .invoice-table td { font-size: 14px !important; line-height: 20px !important; padding: 10px 8px !important; }
+    .attachment-name { font-size: 16px !important; line-height: 23px !important; }
+    .email-footer { padding: 16px 20px !important; font-size: 13px !important; line-height: 20px !important; }
+  }
+`;
+
 const renderSummaryCard = (label: string, value: string): string => `
-  <td width="33.33%" style="padding-right:10px;">
+  <td class="summary-card-cell" width="33.33%" style="padding-right:10px;">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-      <tr><td style="${styles.card}">
-        <div style="${styles.label}">${escapeHtml(label)}</div>
-        <div style="${styles.value}">${escapeHtml(value)}</div>
+      <tr><td class="summary-card" style="${styles.card}">
+        <div class="summary-label" style="${styles.label}">${escapeHtml(label)}</div>
+        <div class="summary-value" style="${styles.value}">${escapeHtml(value)}</div>
       </td></tr>
     </table>
   </td>`;
@@ -204,14 +227,14 @@ const renderDetailsTable = (item: SyncItem, orgLabels?: OrgLabels): string => {
   ];
 
   return `
-    <div style="${styles.sectionTitle}">Invoice details</div>
+    <div class="section-title" style="${styles.sectionTitle}">Invoice details</div>
     <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border:1px solid #d9e2ec;border-radius:12px;overflow:hidden;">
       ${rows
         .map(
           ([label, value]) => `
-            <tr>
-              <td width="30%" style="${styles.td}${styles.muted}">${escapeHtml(label)}</td>
-              <td style="${styles.td}">${value}</td>
+            <tr class="details-row">
+              <td class="detail-label" width="30%" style="${styles.td}${styles.muted}">${escapeHtml(label)}</td>
+              <td class="detail-value" style="${styles.td}">${value}</td>
             </tr>`,
         )
         .join("")}
@@ -233,8 +256,8 @@ const renderInvoiceRows = (items: SyncItem[]): string =>
     .join("");
 
 const renderInvoiceTable = (items: SyncItem[]): string => `
-  <div style="${styles.sectionTitle}">Invoices requiring payment</div>
-  <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border:1px solid #d9e2ec;border-radius:12px;overflow:hidden;">
+  <div class="section-title" style="${styles.sectionTitle}">Invoices requiring payment</div>
+  <table class="invoice-table" cellpadding="0" cellspacing="0" border="0" width="100%" style="border:1px solid #d9e2ec;border-radius:12px;overflow:hidden;">
     <tr>
       <th style="${styles.th}">#</th>
       <th style="${styles.th}">Seller</th>
@@ -252,13 +275,13 @@ const renderAttachments = (items: SyncItem[]): string => {
   if (attachmentNames.length === 0) return "";
 
   return `
-    <div style="${styles.sectionTitle}">Attachments</div>
+    <div class="section-title" style="${styles.sectionTitle}">Attachments</div>
     <table cellpadding="0" cellspacing="0" border="0" width="100%">
       ${attachmentNames
         .map(
           (name) => `
             <tr>
-              <td style="padding:8px 0;color:#1f2937;font-size:13px;line-height:18px;">📎 ${escapeHtml(name)}</td>
+              <td class="attachment-name" style="padding:8px 0;color:#1f2937;font-size:15px;line-height:22px;overflow-wrap:anywhere;word-break:break-word;">📎 ${escapeHtml(name)}</td>
             </tr>`,
         )
         .join("")}
@@ -281,26 +304,31 @@ const formatEmailHtml = (
 
   return `<!doctype html>
 <html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>${responsiveCss}</style>
+  </head>
   <body style="${styles.page}">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#f4f7fb">
       <tr>
-        <td align="center" style="padding:24px 12px;">
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="720" style="${styles.container}">
+        <td class="email-shell" align="center" style="padding:24px 12px;">
+          <table class="email-container" role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="${styles.container}">
             <tr>
-              <td style="${styles.header}">
-                <h1 style="${styles.title}">KSeFctl Invoice Alert</h1>
-                <p style="${styles.subtitle}">${invoiceLabel} payment</p>
+              <td class="email-header" style="${styles.header}">
+                <h1 class="email-title" style="${styles.title}">KSeFctl Invoice Alert</h1>
+                <p class="email-subtitle" style="${styles.subtitle}">${invoiceLabel} payment</p>
               </td>
             </tr>
             <tr>
-              <td style="${styles.body}">
+              <td class="email-body" style="${styles.body}">
                 ${renderSummaryCards(items)}
                 ${details}
                 ${renderAttachments(items)}
               </td>
             </tr>
             <tr>
-              <td style="${styles.footer}">Generated at: ${escapeHtml(generatedAt)}</td>
+              <td class="email-footer" style="${styles.footer}">Generated at: ${escapeHtml(generatedAt)}</td>
             </tr>
           </table>
         </td>
