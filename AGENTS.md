@@ -183,3 +183,4 @@ Testing:
 - Ensure `npm run build` passes for TypeScript changes.
 - Add or update tests for non-trivial logic changes.
 - Keep README and docs consistent with behavior changes.
+- This repository is hosted on GitHub.com; when using `gh`, set `GH_HOST=github.com` if the shell environment points to another GitHub host.
