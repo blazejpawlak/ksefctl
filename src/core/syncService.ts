@@ -1,22 +1,18 @@
 import type { SyncItem } from "./invoiceExtractor";
 import type { SyncSubjectRunnerDeps } from "./syncSubjectRunner";
+import type { ExplicitSyncWindow } from "./window";
 import type { KsefClient } from "../api/ksefClient";
 import type { AuthService, AuthTokens } from "../auth/authService";
 import type { AppConfig } from "../config/schema";
 import type { SqliteStore } from "../db/sqlite";
 import type { Logger } from "pino";
-import {
-  getSyncState,
-  setSyncState,
-} from "../db/repository";
+import { getSyncState, setSyncState } from "../db/repository";
 import { PdfService } from "../services/pdfService";
 import { pLimit } from "../utils/concurrency";
 import { sanitizeErrorMessage } from "../utils/errors";
 import { formatDuration, sleep, sleepWithCountdown } from "../utils/time";
 import { selectCertificateByUsage } from "./encryption";
-import {
-  maxInvoiceNumberXmlBytes,
-} from "./invoiceExtractor";
+import { maxInvoiceNumberXmlBytes } from "./invoiceExtractor";
 import { resolveInvoiceStorageTarget, writeInvoice } from "./invoiceWriter";
 import { ensureStorageDirs } from "./storage";
 import { syncSubjectType } from "./syncSubjectRunner";
@@ -155,6 +151,7 @@ export class SyncService {
     forceRedownloadAll = false,
     flatSync?: boolean,
     outputPath?: string,
+    explicitWindow?: ExplicitSyncWindow,
   ): Promise<SyncResult> {
     await ensureStorageDirs(this.config.storage.root);
     const nips = nipFilter
@@ -236,6 +233,7 @@ export class SyncService {
           forceRedownloadAll,
           effectiveFlatSync,
           outputPath,
+          explicitWindow,
         );
         nipResult.downloaded += subjectResult.downloaded;
         nipResult.skipped += subjectResult.skipped;

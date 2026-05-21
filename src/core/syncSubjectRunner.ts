@@ -1,6 +1,6 @@
 import type { StoredInvoiceMetadata } from "./invoiceWriter";
 import type { SyncResult } from "./syncService";
-import type { MetadataFile } from "./window";
+import type { ExplicitSyncWindow, MetadataFile } from "./window";
 import type { KsefClient } from "../api/ksefClient";
 import type { AppConfig, SubjectType } from "../config/schema";
 import type { SqliteStore } from "../db/sqlite";
@@ -23,14 +23,8 @@ import {
   maxZipEntryBytes,
   maxZipTotalBytes,
 } from "./invoiceExtractor";
-import {
-  downloadAndDecryptParts,
-  waitForExport,
-} from "./invoicePackageClient";
-import {
-  resolveInvoiceStorageTarget,
-  writeInvoice,
-} from "./invoiceWriter";
+import { downloadAndDecryptParts, waitForExport } from "./invoicePackageClient";
+import { resolveInvoiceStorageTarget, writeInvoice } from "./invoiceWriter";
 import {
   addUtcMonths,
   advanceWindow,
@@ -69,6 +63,7 @@ export async function syncSubjectType(
   forceRedownloadAll = false,
   flatSync = false,
   outputPath?: string,
+  explicitWindow?: ExplicitSyncWindow,
 ): Promise<SyncResult> {
   const {
     client,
@@ -84,34 +79,42 @@ export async function syncSubjectType(
   const now = new Date();
   const ksefStartDate = parseIsoDate(ksefStartDateIso, "KSeF start date");
   const defaultFrom = resolveDefaultStart(now);
-  const cursor = forceRedownloadAll
-    ? null
-    : await store.withDb((db) => getContinuationPoint(db, nip, subjectType));
-  const configuredStart = config.sync.initialSyncFrom
-    ? resolveConfiguredStart(config.sync.initialSyncFrom, ksefStartDate)
-    : forceRedownloadAll
-      ? ksefStartDate
-      : defaultFrom;
-  let windowStart = configuredStart;
-  if (cursor) {
-    const cursorDate = parseIsoDate(cursor, "continuation point");
-    if (cursorDate.getTime() < configuredStart.getTime()) {
-      const floorIso = configuredStart.toISOString();
-      await store.withDb((db) =>
-        setContinuationPoint(db, nip, subjectType, floorIso),
-      );
-      windowStart = configuredStart;
-    } else {
-      windowStart = cursorDate;
+
+  let windowStart: Date;
+  let windowEndCap: Date | undefined;
+  if (explicitWindow) {
+    windowStart = explicitWindow.from;
+    windowEndCap = explicitWindow.to;
+  } else {
+    const cursor = forceRedownloadAll
+      ? null
+      : await store.withDb((db) => getContinuationPoint(db, nip, subjectType));
+    const configuredStart = config.sync.initialSyncFrom
+      ? resolveConfiguredStart(config.sync.initialSyncFrom, ksefStartDate)
+      : forceRedownloadAll
+        ? ksefStartDate
+        : defaultFrom;
+    windowStart = configuredStart;
+    if (cursor) {
+      const cursorDate = parseIsoDate(cursor, "continuation point");
+      if (cursorDate.getTime() < configuredStart.getTime()) {
+        const floorIso = configuredStart.toISOString();
+        await store.withDb((db) =>
+          setContinuationPoint(db, nip, subjectType, floorIso),
+        );
+        windowStart = configuredStart;
+      } else {
+        windowStart = cursorDate;
+      }
     }
-  }
-  if (windowStart.getTime() > now.getTime()) {
-    windowStart = now;
-  }
-  if (forceRedownloadAll) {
-    await store.withDb((db) =>
-      setContinuationPoint(db, nip, subjectType, windowStart.toISOString()),
-    );
+    if (windowStart.getTime() > now.getTime()) {
+      windowStart = now;
+    }
+    if (forceRedownloadAll) {
+      await store.withDb((db) =>
+        setContinuationPoint(db, nip, subjectType, windowStart.toISOString()),
+      );
+    }
   }
 
   const summary: SyncResult = {
@@ -133,7 +136,8 @@ export async function syncSubjectType(
   };
   const writerDeps = { config, logger, store, pdfService };
 
-  while (windowStart.getTime() < now.getTime()) {
+  const upperBound = windowEndCap ?? now;
+  while (windowStart.getTime() < upperBound.getTime()) {
     if (windowIndex > 0 && exportCooldownMs > 0) {
       const baseMessage = `Progress: waiting ${formatDuration(exportCooldownMs)} before next export`;
       await sleepWithProgress(
@@ -144,10 +148,15 @@ export async function syncSubjectType(
       );
     }
     windowIndex += 1;
-    const windowEnd = minDate(addUtcMonths(windowStart, maxDateRangeMonths), now);
+    const windowEnd = windowEndCap
+      ? minDate(addUtcMonths(windowStart, maxDateRangeMonths), windowEndCap)
+      : minDate(addUtcMonths(windowStart, maxDateRangeMonths), now);
     const fromDate = windowStart.toISOString();
     const toDate = windowEnd.toISOString();
-    logger.debug({ nip, subjectType, fromDate, toDate }, "Resolved sync window");
+    logger.debug(
+      { nip, subjectType, fromDate, toDate },
+      "Resolved sync window",
+    );
     reportProgress(
       `Progress: ${nip} ${subjectType} window ${fromDate.slice(0, 10)} -> ${toDate.slice(0, 10)}`,
     );
@@ -366,9 +375,7 @@ export async function syncSubjectType(
         downloaded += 1;
         items.push(syncItem);
       } catch (error) {
-        const sanitizedMessage = sanitizeErrorMessage(
-          (error as Error).message,
-        );
+        const sanitizedMessage = sanitizeErrorMessage((error as Error).message);
         await store.withDb((db) =>
           upsertInvoice(db, {
             nip,
@@ -393,9 +400,11 @@ export async function syncSubjectType(
       `Progress: window complete (downloaded=${downloaded}, skipped=${skipped}, failed=${failed})`,
     );
 
-    await store.withDb((db) =>
-      setContinuationPoint(db, nip, subjectType, nextCursor),
-    );
+    if (!explicitWindow) {
+      await store.withDb((db) =>
+        setContinuationPoint(db, nip, subjectType, nextCursor),
+      );
+    }
 
     if (failed > 0) {
       return summary;

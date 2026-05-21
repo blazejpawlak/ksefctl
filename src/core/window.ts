@@ -74,6 +74,69 @@ export type SyncWindow = {
   cursor: string | null;
 };
 
+export type ExplicitSyncWindow = {
+  from: Date;
+  to: Date;
+};
+
+const cliDatePattern = /^(\d{2})-(\d{2})-(\d{4})$/;
+
+const parseCliDate = (
+  value: string,
+  label: string,
+  endOfDay: boolean,
+): Date => {
+  const match = cliDatePattern.exec(value);
+  if (!match) {
+    throw new ConfigError(`Invalid ${label}: ${value} (expected DD-MM-YYYY)`);
+  }
+
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  const parsed = new Date(
+    Date.UTC(
+      year,
+      month - 1,
+      day,
+      endOfDay ? 23 : 0,
+      endOfDay ? 59 : 0,
+      endOfDay ? 59 : 0,
+      endOfDay ? 999 : 0,
+    ),
+  );
+
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    throw new ConfigError(`Invalid ${label}: ${value}`);
+  }
+
+  return parsed;
+};
+
+export const parseCliTimeWindow = (value: string): ExplicitSyncWindow => {
+  const parts = value.split(":");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    throw new ConfigError(
+      `Invalid time window: ${value} (expected DD-MM-YYYY:DD-MM-YYYY)`,
+    );
+  }
+
+  const from = parseCliDate(parts[0], "time window start", false);
+  const to = parseCliDate(parts[1], "time window end", true);
+
+  if (from.getTime() > to.getTime()) {
+    throw new ConfigError(
+      "Invalid time window: start date must be before or equal to end date",
+    );
+  }
+
+  return { from, to };
+};
+
 export const computeSyncWindow = (
   now: Date,
   cursor: string | null,

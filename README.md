@@ -73,7 +73,7 @@ The environment prompt shows full names with the API URLs for clarity.
 
 ## Commands
 
-- `ksefctl sync [-n <nip>] [--redownload-all] [--flat-sync] [--output-path <path>] [--json]` – run sync.
+- `ksefctl sync [-n <nip>] [--redownload-all] [--flat-sync] [--time-window <from:to>] [--output-path <path>] [--json]` – run sync.
 - `ksefctl sync -n <nip> --redownload <ksefNumber>` – re-download a single invoice (`-n`/`--nip` is required with `--redownload`).
 - `ksefctl sync --watch` – run continuously in foreground.
 - `ksefctl status [--json]` – show last sync status.
@@ -110,14 +110,16 @@ Performs the authentication flow only — does not download invoices.
 
 Progress messages go to stderr; use `-v`/`--verbose` for detailed logs. If an invoice directory is missing on disk, sync re-downloads it even if the DB marks it as already downloaded.
 
-| Flag | Description |
-|---|---|
-| `--redownload <ksefNumber>` | Re-download a single invoice. Requires `-n`/`--nip`. |
-| `--redownload-all` | Reset cursors to `sync.initialSyncFrom` (or `2026-02-01`) and re-download all invoices. Mutually exclusive with `--redownload`. |
-| `--flat-sync` | Store invoices in monthly folders (`invoices/<NIP>/YYYY/MM/`) using `Seller - InvoiceNumber` filenames. Colliding filenames get ` - <ksefNumber>` appended. |
-| `--output-path <path>` | Override the invoice output root for this run. Requires `-n`/`--nip` when multiple orgs are configured. |
-| `--watch` | Run in the **foreground** continuously, polling every `pollingIntervalSeconds` (default: 300 s). The process occupies the terminal and must be kept alive manually (e.g. in a `tmux` session). Cannot be combined with `--redownload` or `--redownload-all`. For unattended background operation, use `ksefctl system service install` instead — it registers a launchd agent (macOS) or systemd unit (Linux) that starts automatically and restarts on failure. Windows is not supported. |
-| `--json` | Output results as JSON instead of formatted text. |
+| Flag                        | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `-n`, `--nip <nip>`         | Sync or re-download for a single NIP.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `--redownload <ksefNumber>` | Re-download a single invoice. Requires `-n`/`--nip`.                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `--redownload-all`          | Reset cursors to `sync.initialSyncFrom` (or `2026-02-01`) and re-download all invoices. Optionally filter by `--nip`. Mutually exclusive with `--redownload`.                                                                                                                                                                                                                                                                                                                                                |
+| `--flat-sync`               | Store invoices in monthly folders (`invoices/<NIP>/YYYY/MM/`) using `Seller - InvoiceNumber` filenames. Colliding filenames get ` - <ksefNumber>` appended.                                                                                                                                                                                                                                                                                                                                                  |
+| `--time-window <from:to>`   | Explicit date range as `DD-MM-YYYY:DD-MM-YYYY`. Overrides cursor/config-derived bounds. Requires `--redownload`, `--redownload-all`, or `--flat-sync`. Mutually exclusive with `--watch`.                                                                                                                                                                                                                                                                                                                    |
+| `--output-path <path>`      | Override the invoice output root for this run. Requires `-n`/`--nip` when multiple orgs are configured.                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `--watch`                   | Run in the **foreground** continuously, polling every `pollingIntervalSeconds` (default: 300 s). The process occupies the terminal and must be kept alive manually (e.g. in a `tmux` session). Cannot be combined with `--redownload`, `--redownload-all`, or `--time-window`. For unattended background operation, use `ksefctl system service install` instead — it registers a launchd agent (macOS) or systemd unit (Linux) that starts automatically and restarts on failure. Windows is not supported. |
+| `--json`                    | Output results as JSON instead of formatted text.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 Config equivalents:
 
@@ -173,6 +175,24 @@ Run a sync cycle with flat monthly storage:
 
 ```bash
 ksefctl sync --flat-sync
+```
+
+Re-download all invoices for a specific NIP within an explicit date range:
+
+```bash
+ksefctl sync --nip 1234567890 --redownload-all --time-window 01-02-2026:30-04-2026
+```
+
+Run a flat sync for Q1 2026:
+
+```bash
+ksefctl sync --flat-sync --time-window 01-01-2026:31-03-2026
+```
+
+Re-download a specific invoice and scan for additional invoices in a date window:
+
+```bash
+ksefctl sync --nip 1234567890 --redownload 1234567890-20260101-ABC123 --time-window 01-01-2026:28-02-2026
 ```
 
 Run a sync cycle for one NIP with a custom output root:
@@ -325,32 +345,32 @@ Run `ksefctl system config` after `system init` to see the resolved configuratio
 
 ### Config defaults
 
-| Field | Default |
-|---|---|
-| `environment` | `prod` |
-| `pollingIntervalSeconds` | `300` (5 min) |
-| `notifications.macosNotification` | `true` |
-| `notifications.email.enabled` | `false` |
-| `logging.level` | `info` |
-| `logging.pretty` | `false` |
-| `operational.maxConcurrency` | `2` |
-| `operational.timeoutSeconds` | `60` |
-| `operational.pollIntervalSeconds` | `10` |
-| `operational.authPollMaxAttempts` | `60` |
-| `operational.exportPollMaxAttempts` | `120` |
-| `operational.exportCooldownSeconds` | `2` |
-| `operational.allowInsecureHttp` | `false` |
-| `operational.retry.maxAttempts` | `5` |
-| `operational.retry.baseDelayMs` | `500` |
-| `operational.retry.maxDelayMs` | `10000` |
-| `operational.retry.jitter` | `0.2` |
-| `sync.subjectTypes` | all four subject types |
-| `sync.includeMetadataHeader` | `true` |
-| `sync.generatePdf` | `true` |
-| `sync.flatSync` | `false` |
-| `sync.maxConcurrentNips` | `1` |
-| `security.tls.enablePinning` | `false` |
-| `security.allowedHosts` | `[]` (API host allowed by default) |
+| Field                               | Default                            |
+| ----------------------------------- | ---------------------------------- |
+| `environment`                       | `prod`                             |
+| `pollingIntervalSeconds`            | `300` (5 min)                      |
+| `notifications.macosNotification`   | `true`                             |
+| `notifications.email.enabled`       | `false`                            |
+| `logging.level`                     | `info`                             |
+| `logging.pretty`                    | `false`                            |
+| `operational.maxConcurrency`        | `2`                                |
+| `operational.timeoutSeconds`        | `60`                               |
+| `operational.pollIntervalSeconds`   | `10`                               |
+| `operational.authPollMaxAttempts`   | `60`                               |
+| `operational.exportPollMaxAttempts` | `120`                              |
+| `operational.exportCooldownSeconds` | `2`                                |
+| `operational.allowInsecureHttp`     | `false`                            |
+| `operational.retry.maxAttempts`     | `5`                                |
+| `operational.retry.baseDelayMs`     | `500`                              |
+| `operational.retry.maxDelayMs`      | `10000`                            |
+| `operational.retry.jitter`          | `0.2`                              |
+| `sync.subjectTypes`                 | all four subject types             |
+| `sync.includeMetadataHeader`        | `true`                             |
+| `sync.generatePdf`                  | `true`                             |
+| `sync.flatSync`                     | `false`                            |
+| `sync.maxConcurrentNips`            | `1`                                |
+| `security.tls.enablePinning`        | `false`                            |
+| `security.allowedHosts`             | `[]` (API host allowed by default) |
 
 Use `ksefctl system secret set` to store a token in keychain; add the NIP to `organizations` in config.
 
@@ -383,12 +403,12 @@ Token generation is described in `tokeny-ksef.md` and requires a one-time XAdES 
 
 ### Environment variables
 
-| Variable | Effect |
-|---|---|
-| `KSEFCTL_CONFIG` | Override config file path (lower precedence than `--config`) |
-| `KSEFCTL_SMTP_USER` | Override `notifications.email.smtp.user` (default SMTP only, not profiles) |
-| `KSEFCTL_SMTP_PASS` | Override `notifications.email.smtp.pass` (default SMTP only, not profiles) |
-| `KSEFCTL_NO_FIRST_RUN=1` | Disable first-run prompts |
+| Variable                 | Effect                                                                     |
+| ------------------------ | -------------------------------------------------------------------------- |
+| `KSEFCTL_CONFIG`         | Override config file path (lower precedence than `--config`)               |
+| `KSEFCTL_SMTP_USER`      | Override `notifications.email.smtp.user` (default SMTP only, not profiles) |
+| `KSEFCTL_SMTP_PASS`      | Override `notifications.email.smtp.pass` (default SMTP only, not profiles) |
+| `KSEFCTL_NO_FIRST_RUN=1` | Disable first-run prompts                                                  |
 
 Config path resolution order: `--config` CLI flag → `KSEFCTL_CONFIG` → platform default.
 
@@ -405,6 +425,17 @@ Implementation follows `przyrostowe-pobieranie-faktur.md`:
 First-time sync default: `initialSyncFrom` is set to ~3 months ago to satisfy the KSeF date range limit. Override in config if needed.
 The CLI chunks older ranges into 3-month windows automatically.
 Sync never requests dates earlier than KSeF production start (`2026-02-01`). Old cursors are fast-forwarded to this floor.
+
+### Explicit time window (`--time-window`)
+
+When `--time-window DD-MM-YYYY:DD-MM-YYYY` is provided (requires `--redownload`, `--redownload-all`, or `--flat-sync`):
+
+- The date range overrides cursor and config-derived bounds entirely.
+- The range is still chunked into 3-month windows to satisfy the KSeF API limit.
+- Continuation points in the DB are **not** updated — the explicit window is a one-shot scan.
+- With `--redownload <ksefNumber>`: the specific invoice is downloaded first, then the export scan uses the explicit window.
+- With `--redownload-all`: cursors are reset to the `from` date, and the scan covers `from` → `to`.
+- With `--flat-sync`: the scan covers `from` → `to` using flat storage layout.
 
 PDF visualization is generated by default via `ksef-pdf-generator` and can be disabled with `sync.generatePdf: false`.
 
@@ -476,7 +507,7 @@ By default all notifications go through the single `smtp` configuration. Use `sm
 notifications:
   email:
     enabled: true
-    smtp:                        # fallback for NIPs not matched by any profile
+    smtp: # fallback for NIPs not matched by any profile
       host: smtp.example.com
       port: 587
       user: user@example.com

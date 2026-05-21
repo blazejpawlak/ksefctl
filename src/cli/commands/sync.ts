@@ -4,6 +4,7 @@ import { Option } from "commander";
 import path from "node:path";
 import { StatusService } from "../../core/statusService";
 import { SyncService } from "../../core/syncService";
+import { parseCliTimeWindow } from "../../core/window";
 import { Notifier } from "../../notifications/notifier";
 import { ConfigError, exitCodeFromError } from "../../utils/errors";
 import { expandHome } from "../../utils/paths";
@@ -31,6 +32,7 @@ type SyncOptions = {
   redownload?: string;
   redownloadAll?: boolean;
   flatSync?: boolean;
+  timeWindow?: string;
   outputPath?: string;
   watch?: boolean;
   json?: boolean;
@@ -46,7 +48,7 @@ export function registerSync(program: Command): void {
   program
     .command("sync")
     .description("Download invoices from KSeF")
-    .option("-n, --nip <nip>", "sync a single NIP")
+    .option("-n, --nip <nip>", "sync or re-download for a single NIP")
     .addOption(
       new Option(
         "--redownload <ksefNumber>",
@@ -56,10 +58,16 @@ export function registerSync(program: Command): void {
     .addOption(
       new Option(
         "--redownload-all",
-        "re-download all invoices in sync window",
+        "re-download all invoices in sync window (optionally filter by --nip)",
       ).conflicts("redownload"),
     )
     .option("--flat-sync", "store invoices in flat monthly folders (YYYY/MM)")
+    .addOption(
+      new Option(
+        "--time-window <from:to>",
+        "explicit date range as DD-MM-YYYY:DD-MM-YYYY (requires --redownload, --redownload-all, or --flat-sync)",
+      ).conflicts("watch"),
+    )
     .option(
       "--output-path <path>",
       "override invoice output directory (requires --nip when multiple orgs configured)",
@@ -112,6 +120,19 @@ export function registerSync(program: Command): void {
             "--redownload flags cannot be used with --watch",
           );
         }
+        if (
+          options.timeWindow &&
+          !options.redownload &&
+          !options.redownloadAll &&
+          !options.flatSync
+        ) {
+          throw new ConfigError(
+            "--time-window requires --redownload, --redownload-all, or --flat-sync",
+          );
+        }
+        const explicitWindow = options.timeWindow
+          ? parseCliTimeWindow(options.timeWindow)
+          : undefined;
         const outputPath = resolveCliOutputPath(options.outputPath);
         logFile = ctx.config.logging.file;
         cmdLogger = ctx.logger;
@@ -247,6 +268,7 @@ export function registerSync(program: Command): void {
             Boolean(options.redownloadAll),
             options.flatSync,
             outputPath,
+            explicitWindow,
           );
           const invoicesToPay = getInvoicesToPay(result.items);
           renderer?.done();
