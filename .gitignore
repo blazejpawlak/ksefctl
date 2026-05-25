@@ -5,5 +5,9 @@ dist/
 *.log
 coverage/
 tmp/
+.tmp/
+.opencode/
+.superset/
+:memory:
 *.sqlite
 *.db
