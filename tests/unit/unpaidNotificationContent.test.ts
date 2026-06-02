@@ -77,6 +77,7 @@ describe("unpaidNotificationContent", () => {
     expect(content.html).toContain("class=\"detail-label\"");
     expect(content.html).toContain("class=\"detail-value\"");
     expect(content.html).toContain("overflow-wrap:anywhere");
+    expect(content.html).toContain("max-width:1180px");
     expect(content.html).not.toContain("width=\"720\"");
   });
 
@@ -146,8 +147,11 @@ describe("unpaidNotificationContent", () => {
     expect(content.html).toContain("Total amount");
     expect(content.html).toContain("1300.50 PLN");
     expect(content.html).toContain("Invoices requiring payment");
+    expect(content.html).toContain("<th style=");
+    expect(content.html).toContain(">File</th>");
     expect(content.html).toContain("Second Supplier S.A.");
     expect(content.html).toContain("Faktura-2.pdf");
+    expect(content.html).toContain("href=\"cid:invoice-2@ksefctl.local\"");
   });
 
   it("escapes HTML values in email content", () => {

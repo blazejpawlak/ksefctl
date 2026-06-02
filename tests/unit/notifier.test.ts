@@ -192,6 +192,42 @@ describe("Notifier", () => {
     expect(notified).toBe(true);
   });
 
+  it("adds matching content IDs for PDF attachment links", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-notifier-"));
+    const pdfPath = path.join(tmpDir, "Faktura-1.pdf");
+    await fs.writeFile(pdfPath, "pdf");
+    const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
+    const notifier = new Notifier(createConfig(), createLogger());
+    const result: SyncResult = {
+      ...createResult(),
+      items: [
+        {
+          ...createResult().items[0]!,
+          pdfPath,
+        },
+      ],
+    };
+
+    await notifier.notifyUnpaidInvoices(result, store);
+
+    const sentMessage = sendMailMock.mock.calls[0]?.[0] as
+      | {
+          attachments?: { cid?: string; filename?: string; path?: string }[];
+          html?: string;
+        }
+      | undefined;
+    expect(sentMessage?.attachments).toEqual([
+      {
+        cid: "invoice-1@ksefctl.local",
+        filename: "Faktura-1.pdf",
+        path: pdfPath,
+      },
+    ]);
+    expect(String(sentMessage?.html)).toContain(
+      "href=\"cid:invoice-1@ksefctl.local\"",
+    );
+  });
+
   it("skips invoices that were already notified", async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-notifier-"));
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));

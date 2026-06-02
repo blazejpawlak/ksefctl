@@ -85,6 +85,8 @@ const formatEmailItem = (
   if (item.buyerName) lines.push(`   Buyer: ${sanitizeText(item.buyerName)}`);
   if (item.invoiceNumber)
     lines.push(`   Invoice: ${sanitizeText(item.invoiceNumber)}`);
+  if (item.pdfPath)
+    lines.push(`   File: ${sanitizeText(path.basename(item.pdfPath))}`);
   if (item.amount) {
     const amountLine = item.currency
       ? `   Amount: ${sanitizeText(item.amount)} ${sanitizeText(item.currency)}`
@@ -119,6 +121,20 @@ const getOrgLabel = (item: SyncItem, orgLabels?: OrgLabels): string =>
 const formatAttachmentName = (item: SyncItem): string | null =>
   item.pdfPath ? path.basename(item.pdfPath) : null;
 
+export const formatAttachmentCid = (
+  item: Pick<SyncItem, "pdfPath">,
+  index: number,
+): string | null =>
+  item.pdfPath ? `invoice-${index + 1}@ksefctl.local` : null;
+
+const formatAttachmentLink = (item: SyncItem, index: number): string => {
+  const name = formatAttachmentName(item);
+  const cid = formatAttachmentCid(item, index);
+  if (!name || !cid) return "&mdash;";
+
+  return `<a href="cid:${escapeHtml(cid)}" style="color:#0f172a;text-decoration:underline;overflow-wrap:anywhere;word-break:break-word;">${escapeHtml(name)}</a>`;
+};
+
 const sumInvoiceAmounts = (items: SyncItem[]): string => {
   const amounts = items.map((item) => Number.parseFloat(item.amount ?? ""));
   if (amounts.some((amount) => !Number.isFinite(amount))) return "See table";
@@ -146,7 +162,7 @@ const findEarliestDueDate = (items: SyncItem[]): string => {
 const styles = {
   page: "margin:0;padding:0;background-color:#f4f7fb;",
   container:
-    "width:100%;max-width:720px;background-color:#ffffff;border:1px solid #d9e2ec;border-radius:16px;overflow:hidden;",
+    "width:100%;max-width:1180px;background-color:#ffffff;border:1px solid #d9e2ec;border-radius:16px;overflow:hidden;",
   header:
     "padding:28px 32px;background-color:#0f172a;color:#ffffff;font-family:Arial,Helvetica,sans-serif;",
   title: "margin:0;font-size:24px;line-height:30px;font-weight:700;",
@@ -161,6 +177,8 @@ const styles = {
     "padding-top:28px;padding-bottom:12px;font-size:18px;line-height:24px;color:#0f172a;font-weight:700;",
   th: "padding:10px 12px;background-color:#e2e8f0;color:#334155;font-size:12px;line-height:16px;text-align:left;border-bottom:1px solid #cbd5e1;",
   td: "padding:13px 14px;color:#1f2937;font-size:15px;line-height:22px;border-bottom:1px solid #e2e8f0;vertical-align:top;overflow-wrap:anywhere;word-break:break-word;",
+  tdNowrap:
+    "padding:13px 14px;color:#1f2937;font-size:15px;line-height:22px;border-bottom:1px solid #e2e8f0;vertical-align:top;white-space:nowrap;",
   muted: "color:#64748b;",
   footer:
     "padding:18px 32px;background-color:#f8fafc;color:#64748b;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;overflow-wrap:anywhere;word-break:break-word;",
@@ -184,6 +202,7 @@ const responsiveCss = `
     .detail-label, .detail-value { display: block !important; width: auto !important; border-bottom: 0 !important; padding: 12px 14px 0 14px !important; font-size: 15px !important; line-height: 21px !important; }
     .detail-value { padding: 4px 14px 13px 14px !important; font-size: 17px !important; line-height: 24px !important; }
     .invoice-table th, .invoice-table td { font-size: 14px !important; line-height: 20px !important; padding: 10px 8px !important; }
+    .invoice-table .mobile-wrap { white-space: normal !important; overflow-wrap: anywhere !important; word-break: break-word !important; }
     .attachment-name { font-size: 16px !important; line-height: 23px !important; }
     .email-footer { padding: 16px 20px !important; font-size: 13px !important; line-height: 20px !important; }
   }
@@ -220,6 +239,7 @@ const renderDetailsTable = (item: SyncItem, orgLabels?: OrgLabels): string => {
     ["Buyer", escapeHtml(getOrgLabel(item, orgLabels))],
     ["NIP", escapeHtml(item.nip)],
     ["Invoice", escapeOptionalHtml(item.invoiceNumber)],
+    ["File", formatAttachmentLink(item, 0)],
     ["Amount", formatHtmlAmount(item)],
     ["Due date", escapeHtml(formatDueDateValue(item.dueDate))],
     ["KSeF", escapeHtml(item.ksefNumber)],
@@ -249,8 +269,9 @@ const renderInvoiceRows = (items: SyncItem[]): string =>
           <td style="${styles.td}">${index + 1}</td>
           <td style="${styles.td}">${escapeOptionalHtml(item.sellerName)}</td>
           <td style="${styles.td}">${escapeOptionalHtml(item.invoiceNumber)}</td>
-          <td style="${styles.td}">${escapeHtml(formatDueDateValue(item.dueDate))}</td>
-          <td style="${styles.td}">${formatHtmlAmount(item)}</td>
+          <td style="${styles.td}">${formatAttachmentLink(item, index)}</td>
+          <td class="mobile-wrap" style="${styles.tdNowrap}">${escapeHtml(formatDueDateValue(item.dueDate))}</td>
+          <td class="mobile-wrap" style="${styles.tdNowrap}">${formatHtmlAmount(item)}</td>
         </tr>`,
     )
     .join("");
@@ -262,6 +283,7 @@ const renderInvoiceTable = (items: SyncItem[]): string => `
       <th style="${styles.th}">#</th>
       <th style="${styles.th}">Seller</th>
       <th style="${styles.th}">Invoice</th>
+      <th style="${styles.th}">File</th>
       <th style="${styles.th}">Due date</th>
       <th style="${styles.th}">Amount</th>
     </tr>
@@ -269,19 +291,25 @@ const renderInvoiceTable = (items: SyncItem[]): string => `
   </table>`;
 
 const renderAttachments = (items: SyncItem[]): string => {
-  const attachmentNames = items
-    .map(formatAttachmentName)
-    .filter((name): name is string => name !== null);
-  if (attachmentNames.length === 0) return "";
+  const attachments = items
+    .map((item, index) => ({
+      cid: formatAttachmentCid(item, index),
+      name: formatAttachmentName(item),
+    }))
+    .filter(
+      (attachment): attachment is { cid: string; name: string } =>
+        attachment.cid !== null && attachment.name !== null,
+    );
+  if (attachments.length === 0) return "";
 
   return `
     <div class="section-title" style="${styles.sectionTitle}">Attachments</div>
     <table cellpadding="0" cellspacing="0" border="0" width="100%">
-      ${attachmentNames
+      ${attachments
         .map(
-          (name) => `
+          ({ cid, name }) => `
             <tr>
-              <td class="attachment-name" style="padding:8px 0;color:#1f2937;font-size:15px;line-height:22px;overflow-wrap:anywhere;word-break:break-word;">📎 ${escapeHtml(name)}</td>
+              <td class="attachment-name" style="padding:8px 0;color:#1f2937;font-size:15px;line-height:22px;overflow-wrap:anywhere;word-break:break-word;">📎 <a href="cid:${escapeHtml(cid)}" style="color:#0f172a;text-decoration:underline;">${escapeHtml(name)}</a></td>
             </tr>`,
         )
         .join("")}

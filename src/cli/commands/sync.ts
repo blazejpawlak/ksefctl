@@ -21,6 +21,7 @@ import { getLifecycleEventEntries } from "../lifecycleStatus";
 import { formatInvoicesToPay, getInvoicesToPay } from "../paymentSummary";
 import { createProgressRenderer } from "../progress";
 import { printHeader, printKeyValues, printList } from "../ui";
+import { readVersionOutput } from "../version";
 import {
   formatCliError,
   logUnexpectedError,
@@ -96,6 +97,7 @@ export function registerSync(program: Command): void {
           progress,
           countdownIntervalSeconds: verbose ? 10 : 60,
         });
+        const version = await readVersionOutput();
         if (options.nip && !isValidNip(options.nip)) {
           throw new ConfigError("Invalid NIP format (expected 10 digits)");
         }
@@ -166,6 +168,7 @@ export function registerSync(program: Command): void {
           printHeader("Sync");
           printKeyValues([
             ["mode", "watch"],
+            ["version", version],
             ["environment", ctx.config.environment],
             ["nips", nips.join(", ")],
             ["logFile", ctx.config.logging.file],
@@ -254,6 +257,7 @@ export function registerSync(program: Command): void {
           printHeader("Sync");
           printKeyValues([
             ["status", "starting"],
+            ["version", version],
             ["environment", ctx.config.environment],
             ["nips", nips.join(", ")],
             ["logFile", ctx.config.logging.file],
