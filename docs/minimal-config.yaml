@@ -16,6 +16,7 @@ logging:
   file: /path/to/storage/logs/ksefctl.log
 notifications:
   macosNotification: true
+  unpaidInvoiceCatchUp: false
   email:
     enabled: false
 operational:

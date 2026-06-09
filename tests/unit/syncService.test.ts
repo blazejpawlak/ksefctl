@@ -67,7 +67,11 @@ const createConfig = (overrides: ConfigOverrides = {}): AppConfig => {
     organizations: [{ nip: "1234567890" }],
     pollingIntervalSeconds: 300,
     storage: { root: "/tmp/ksef" },
-    notifications: { macosNotification: false, email: { enabled: false } },
+    notifications: {
+      macosNotification: false,
+      unpaidInvoiceCatchUp: false,
+      email: { enabled: false },
+    },
     logging: {
       level: "info",
       file: "/tmp/ksef/logs/app.log",

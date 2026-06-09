@@ -35,6 +35,35 @@ describe("config schema", () => {
 
     expect(config.environment).toBe("test");
     expect(config.sync.flatSync).toBe(true);
+    expect(config.notifications.unpaidInvoiceCatchUp).toBe(false);
+  });
+
+  it("accepts unpaid invoice catch-up opt-in", () => {
+    const config = AppConfigSchema.parse({
+      environment: "test",
+      auth: {
+        method: "ksefToken",
+        keychainServiceName: "ksefctl",
+      },
+      organizations: [{ nip: "1234567890" }],
+      pollingIntervalSeconds: 300,
+      storage: { root: "/tmp/ksef" },
+      notifications: {
+        macosNotification: false,
+        unpaidInvoiceCatchUp: true,
+        email: { enabled: false },
+      },
+      logging: { level: "info", file: "/tmp/ksef/logs/app.log", pretty: false },
+      operational: {
+        maxConcurrency: 2,
+        timeoutSeconds: 60,
+        pollIntervalSeconds: 10,
+      },
+      security: { tls: { enablePinning: false, pins: [], pinningHosts: [] } },
+      sync: { subjectTypes: ["Subject1"], includeMetadataHeader: true },
+    });
+
+    expect(config.notifications.unpaidInvoiceCatchUp).toBe(true);
   });
 
   it("accepts per-organization output paths", () => {
@@ -166,7 +195,9 @@ describe("config schema", () => {
         timeoutSeconds: 60,
         pollIntervalSeconds: 10,
       },
-      security: { tls: { enablePinning: true, pins: ["invalidpin123"], pinningHosts: [] } },
+      security: {
+        tls: { enablePinning: true, pins: ["invalidpin123"], pinningHosts: [] },
+      },
       sync: { subjectTypes: ["Subject1"], includeMetadataHeader: true },
     });
     await fs.writeFile(configPath, yaml, "utf-8");
@@ -223,8 +254,10 @@ describe("config schema", () => {
     expect(auth.keychainServiceName).toBe("ksefctl");
     // SMTP credentials must still be redacted
     const smtp = (
-      (sanitized.notifications as Record<string, unknown>)
-        .email as Record<string, unknown>
+      (sanitized.notifications as Record<string, unknown>).email as Record<
+        string,
+        unknown
+      >
     ).smtp as Record<string, unknown>;
     expect(smtp.user).toBe("***");
     expect(smtp.pass).toBe("***");

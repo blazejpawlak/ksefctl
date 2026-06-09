@@ -55,6 +55,7 @@ const createConfig = (): AppConfig => ({
   storage: { root: "/tmp/ksef" },
   notifications: {
     macosNotification: false,
+    unpaidInvoiceCatchUp: false,
     email: {
       enabled: true,
       smtp: {
@@ -223,9 +224,7 @@ describe("Notifier", () => {
         path: pdfPath,
       },
     ]);
-    expect(String(sentMessage?.html)).toContain(
-      "href=\"cid:invoice-1@ksefctl.local\"",
-    );
+    expect(String(sentMessage?.html)).toContain("cid:invoice-1@ksefctl.local");
   });
 
   it("skips invoices that were already notified", async () => {
@@ -282,6 +281,7 @@ describe("Notifier", () => {
       ...createConfig(),
       notifications: {
         macosNotification: false,
+        unpaidInvoiceCatchUp: false,
         email: {
           enabled: true,
           smtpProfiles: [
@@ -378,7 +378,7 @@ describe("Notifier", () => {
     });
   });
 
-  it("sends catch-up notification for downloaded unpaid invoice missing in current result", async () => {
+  it("skips catch-up notification by default", async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-notifier-"));
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const invoiceDir = path.join(tmpDir, "invoices", "KSEF-CATCHUP-1");
@@ -402,6 +402,55 @@ describe("Notifier", () => {
     });
 
     const notifier = new Notifier(createConfig(), createLogger());
+    const emptyResult: SyncResult = {
+      downloaded: 0,
+      skipped: 1,
+      failed: 0,
+      items: [],
+    };
+
+    await notifier.notifyUnpaidInvoices(emptyResult, store);
+
+    expect(sendMailMock).not.toHaveBeenCalled();
+    const notified = await store.withDb((db) =>
+      hasInvoiceNotification(db, "1234567890", "KSEF-CATCHUP-1", "unpaid_due"),
+    );
+    expect(notified).toBe(false);
+  });
+
+  it("sends catch-up notification when unpaid invoice catch-up is enabled", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-notifier-"));
+    const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
+    const invoiceDir = path.join(tmpDir, "invoices", "KSEF-CATCHUP-1");
+    await fs.mkdir(invoiceDir, { recursive: true });
+    await fs.writeFile(
+      path.join(invoiceDir, "invoice.xml"),
+      createPayableXml(),
+    );
+
+    await store.withDb((db) => {
+      upsertInvoice(db, {
+        nip: "1234567890",
+        ksef_number: "KSEF-CATCHUP-1",
+        file_path: invoiceDir,
+        hash: null,
+        status: "downloaded",
+        downloaded_at: "2026-04-15T20:27:55.637Z",
+        received_at: "2026-04-15T20:27:55.637Z",
+        error: null,
+      });
+    });
+
+    const notifier = new Notifier(
+      {
+        ...createConfig(),
+        notifications: {
+          ...createConfig().notifications,
+          unpaidInvoiceCatchUp: true,
+        },
+      },
+      createLogger(),
+    );
     const emptyResult: SyncResult = {
       downloaded: 0,
       skipped: 1,

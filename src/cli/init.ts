@@ -77,6 +77,7 @@ export const initConfig = async (
     },
     notifications: {
       macosNotification: true,
+      unpaidInvoiceCatchUp: false,
       email: {
         enabled: false,
         smtp: {

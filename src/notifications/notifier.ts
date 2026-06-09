@@ -130,7 +130,9 @@ export class Notifier {
           ),
       );
 
-    const catchUpItems = await this.getCatchUpUnpaidItems(db);
+    const catchUpItems = this.config.notifications.unpaidInvoiceCatchUp
+      ? await this.getCatchUpUnpaidItems(db)
+      : [];
     if (pendingFromResult.length === 0 && catchUpItems.length === 0) return [];
 
     const combined = new Map<string, SyncItem>();

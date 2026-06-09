@@ -47,6 +47,7 @@ const SmtpProfileSchema = SmtpSchema.extend({
 
 const NotificationSchema = z.object({
   macosNotification: z.boolean().default(true),
+  unpaidInvoiceCatchUp: z.boolean().default(false),
   email: z
     .object({
       enabled: z.boolean().default(false),
@@ -124,6 +125,7 @@ export const AppConfigSchema = z.object({
   }),
   notifications: NotificationSchema.default({
     macosNotification: true,
+    unpaidInvoiceCatchUp: false,
     email: { enabled: false },
   }),
   logging: LoggingSchema,

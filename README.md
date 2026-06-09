@@ -252,6 +252,7 @@ Enable SMTP notifications:
 
 ```yaml
 notifications:
+  unpaidInvoiceCatchUp: false # default: only notify invoices found in the current sync run
   email:
     enabled: true
     smtp:
@@ -332,7 +333,7 @@ Key config fields:
 - `organizations`: list of NIPs to sync
 - `pollingIntervalSeconds`
 - `storage.root`
-- `notifications` (macOS + email with optional `smtpProfiles` for per-NIP routing)
+- `notifications` (macOS + email with optional unpaid invoice catch-up and `smtpProfiles` for per-NIP routing)
 - `logging` (level, file, pretty)
 - `operational` (retry, timeouts, poll, exportCooldownSeconds, allowInsecureHttp)
 - `security.tls` (pinning)
@@ -345,32 +346,33 @@ Run `ksefctl system config` after `system init` to see the resolved configuratio
 
 ### Config defaults
 
-| Field                               | Default                            |
-| ----------------------------------- | ---------------------------------- |
-| `environment`                       | `prod`                             |
-| `pollingIntervalSeconds`            | `300` (5 min)                      |
-| `notifications.macosNotification`   | `true`                             |
-| `notifications.email.enabled`       | `false`                            |
-| `logging.level`                     | `info`                             |
-| `logging.pretty`                    | `false`                            |
-| `operational.maxConcurrency`        | `2`                                |
-| `operational.timeoutSeconds`        | `60`                               |
-| `operational.pollIntervalSeconds`   | `10`                               |
-| `operational.authPollMaxAttempts`   | `60`                               |
-| `operational.exportPollMaxAttempts` | `120`                              |
-| `operational.exportCooldownSeconds` | `2`                                |
-| `operational.allowInsecureHttp`     | `false`                            |
-| `operational.retry.maxAttempts`     | `5`                                |
-| `operational.retry.baseDelayMs`     | `500`                              |
-| `operational.retry.maxDelayMs`      | `10000`                            |
-| `operational.retry.jitter`          | `0.2`                              |
-| `sync.subjectTypes`                 | all four subject types             |
-| `sync.includeMetadataHeader`        | `true`                             |
-| `sync.generatePdf`                  | `true`                             |
-| `sync.flatSync`                     | `false`                            |
-| `sync.maxConcurrentNips`            | `1`                                |
-| `security.tls.enablePinning`        | `false`                            |
-| `security.allowedHosts`             | `[]` (API host allowed by default) |
+| Field                                | Default                            |
+| ------------------------------------ | ---------------------------------- |
+| `environment`                        | `prod`                             |
+| `pollingIntervalSeconds`             | `300` (5 min)                      |
+| `notifications.macosNotification`    | `true`                             |
+| `notifications.unpaidInvoiceCatchUp` | `false`                            |
+| `notifications.email.enabled`        | `false`                            |
+| `logging.level`                      | `info`                             |
+| `logging.pretty`                     | `false`                            |
+| `operational.maxConcurrency`         | `2`                                |
+| `operational.timeoutSeconds`         | `60`                               |
+| `operational.pollIntervalSeconds`    | `10`                               |
+| `operational.authPollMaxAttempts`    | `60`                               |
+| `operational.exportPollMaxAttempts`  | `120`                              |
+| `operational.exportCooldownSeconds`  | `2`                                |
+| `operational.allowInsecureHttp`      | `false`                            |
+| `operational.retry.maxAttempts`      | `5`                                |
+| `operational.retry.baseDelayMs`      | `500`                              |
+| `operational.retry.maxDelayMs`       | `10000`                            |
+| `operational.retry.jitter`           | `0.2`                              |
+| `sync.subjectTypes`                  | all four subject types             |
+| `sync.includeMetadataHeader`         | `true`                             |
+| `sync.generatePdf`                   | `true`                             |
+| `sync.flatSync`                      | `false`                            |
+| `sync.maxConcurrentNips`             | `1`                                |
+| `security.tls.enablePinning`         | `false`                            |
+| `security.allowedHosts`              | `[]` (API host allowed by default) |
 
 Use `ksefctl system secret set` to store a token in keychain; add the NIP to `organizations` in config.
 
@@ -500,6 +502,8 @@ Each notification email includes the following details for every unpaid invoice:
 - **PDF attachment** — the generated PDF is attached when available (`sync.generatePdf: true`)
 
 ### Email routing
+
+By default, unpaid invoice notifications are sent only for eligible invoices found in the current sync run. Set `notifications.unpaidInvoiceCatchUp: true` to also scan already-downloaded invoices that have not been marked as notified yet.
 
 By default all notifications go through the single `smtp` configuration. Use `smtpProfiles` to route different NIPs through different SMTP accounts:
 
