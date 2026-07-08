@@ -1,6 +1,6 @@
 {
   "name": "@blazejpawlak/ksefctl",
-  "version": "2026.6.9",
+  "version": "2026.7.8",
   "description": "CLI background service for KSeF inbox synchronization",
   "license": "Apache-2.0",
   "repository": {
@@ -39,7 +39,7 @@
     "test:integration": "NODE_OPTIONS= NODE_NO_WARNINGS=1 vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
-    "@akmf/ksef-fe-invoice-converter": "github:CIRFMF/ksef-pdf-generator#c99798ae6a6822091778cde01e5039a4bd8f1fd1",
+    "@akmf/ksef-fe-invoice-converter": "github:CIRFMF/ksef-pdf-generator#c0392137f7817ca7e532c1f2c71e47bcb896952d",
     "adm-zip": "^0.5.10",
     "cli-spinners": "^2.9.2",
     "commander": "^12.1.0",

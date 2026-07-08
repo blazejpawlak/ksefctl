@@ -40,6 +40,13 @@ export type InvoiceWriterDeps = {
   logger: Logger;
   store: SqliteStore;
   pdfService: PdfService;
+  pdfCircuitBreaker?: PdfGenerationCircuitBreaker;
+};
+
+export type PdfGenerationCircuitBreaker = {
+  consecutiveTimeouts: number;
+  maxConsecutiveTimeouts: number;
+  disabled: boolean;
 };
 
 // ---- private helpers ----
@@ -147,7 +154,11 @@ export async function resolveInvoiceStorageTarget(
     };
   }
   const invoiceDir = getFlatInvoiceDirForRoot(invoiceRoot, storageDate);
-  const preferredBase = resolveFlatInvoiceFileBase(xmlText, ksefNumber, metadata);
+  const preferredBase = resolveFlatInvoiceFileBase(
+    xmlText,
+    ksefNumber,
+    metadata,
+  );
   const fileBaseName = await resolveFlatFileBase(
     invoiceDir,
     preferredBase,
@@ -161,15 +172,19 @@ export async function resolveInvoiceStorageTarget(
 }
 
 export async function maybeWritePdf(
-  deps: Pick<InvoiceWriterDeps, "config" | "logger" | "pdfService">,
+  deps: Pick<
+    InvoiceWriterDeps,
+    "config" | "logger" | "pdfService" | "pdfCircuitBreaker"
+  >,
   invoiceDir: string,
   xmlText: string,
   ksefNumber: string,
   nip: string,
   fileBaseName: string,
 ): Promise<string | null> {
-  const { config, logger, pdfService } = deps;
+  const { config, logger, pdfService, pdfCircuitBreaker } = deps;
   if (!config.sync.generatePdf) return null;
+  if (pdfCircuitBreaker?.disabled) return null;
   if (Buffer.byteLength(xmlText, "utf-8") > maxInvoicePdfXmlBytes) {
     logger.warn(
       { nip, ksefNumber, maxBytes: maxInvoicePdfXmlBytes },
@@ -180,10 +195,34 @@ export async function maybeWritePdf(
   try {
     const pdfResult = await pdfService.generateInvoicePdf(xmlText, ksefNumber);
     if (pdfResult.status === "ok") {
+      if (pdfCircuitBreaker) pdfCircuitBreaker.consecutiveTimeouts = 0;
       const pdfPath = path.join(invoiceDir, `${fileBaseName}.pdf`);
       await atomicWriteFile(pdfPath, pdfResult.buffer);
       return pdfPath;
     } else {
+      if (pdfCircuitBreaker && pdfResult.reason === "timeout") {
+        pdfCircuitBreaker.consecutiveTimeouts += 1;
+        if (
+          pdfCircuitBreaker.consecutiveTimeouts >=
+          pdfCircuitBreaker.maxConsecutiveTimeouts
+        ) {
+          pdfCircuitBreaker.disabled = true;
+          logger.warn(
+            {
+              err: pdfResult.message,
+              reason: pdfResult.reason,
+              nip,
+              ksefNumber,
+              consecutiveTimeouts: pdfCircuitBreaker.consecutiveTimeouts,
+              maxConsecutiveTimeouts: pdfCircuitBreaker.maxConsecutiveTimeouts,
+            },
+            "PDF generation disabled after repeated timeouts",
+          );
+          return null;
+        }
+      } else if (pdfCircuitBreaker) {
+        pdfCircuitBreaker.consecutiveTimeouts = 0;
+      }
       logger.warn(
         { err: pdfResult.message, reason: pdfResult.reason, nip, ksefNumber },
         "Failed to generate invoice PDF",
@@ -269,7 +308,13 @@ export async function writeInvoice(
     }),
   );
 
-  return createSyncItem(nip, ksefNumber, storageTarget.invoiceDir, xmlText, pdfPath);
+  return createSyncItem(
+    nip,
+    ksefNumber,
+    storageTarget.invoiceDir,
+    xmlText,
+    pdfPath,
+  );
 }
 
 export async function resolveAndWrite(

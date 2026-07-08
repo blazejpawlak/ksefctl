@@ -80,6 +80,22 @@ describe("completion helpers", () => {
     );
   });
 
+  it("formats version output with PDF builder build info", () => {
+    expect(
+      formatVersionOutput("2026.02.21", "06fa00c", {
+        name: "@akmf/ksef-fe-invoice-converter",
+        version: "1.1.19",
+        source: "CIRFMF/ksef-pdf-generator",
+        commit: "c0392137f7817ca7e532c1f2c71e47bcb896952d",
+      }),
+    ).toBe(
+      [
+        "2026.02.21 (06fa00c)",
+        "pdf-builder: @akmf/ksef-fe-invoice-converter 1.1.19 (CIRFMF/ksef-pdf-generator@c0392137; check upstream releases for newer versions)",
+      ].join("\n"),
+    );
+  });
+
   it("installs bash completion and updates rc file", async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksefctl-comp-"));
     process.env.HOME = tmpDir;

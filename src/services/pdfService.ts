@@ -39,7 +39,8 @@ export type PdfGenerationFailureReason =
   | "missing-version"
   | "unsupported-schema"
   | "generator-unavailable"
-  | "generation-error";
+  | "generation-error"
+  | "timeout";
 
 export type PdfGenerationFailure = {
   status: "failed";
@@ -61,6 +62,7 @@ const isNodeRuntime = (): boolean =>
   typeof Buffer !== "undefined";
 
 const maxPdfXmlBytes = 5_000_000;
+const defaultPdfGenerationTimeoutMs = 30_000;
 
 const stripDoctype = (xml: string): string =>
   xml.replace(/<!DOCTYPE[\s\S]*?>/gi, "");
@@ -105,9 +107,27 @@ const pdfToBuffer = (pdf: PdfDocument): Promise<Buffer> =>
         reject(new Error("PDF document missing getBuffer"));
         return;
       }
-      pdf.getBuffer((buffer: PdfBuffer) => {
+
+      const getBuffer = pdf.getBuffer as unknown as {
+        length: number;
+        bind(
+          thisArg: PdfDocument,
+        ): () => PdfBuffer | Promise<PdfBuffer> | undefined;
+        call(thisArg: PdfDocument, callback: (buffer: PdfBuffer) => void): void;
+      };
+
+      if (getBuffer.length > 0) {
+        getBuffer.call(pdf, (buffer: PdfBuffer) => {
+          resolve(Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer));
+        });
+        return;
+      }
+
+      const getBufferAsync = getBuffer.bind(pdf);
+      void Promise.resolve(getBufferAsync()).then((buffer) => {
+        if (!buffer) return;
         resolve(Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer));
-      });
+      }, reject);
     } catch (error) {
       reject(
         error instanceof Error
@@ -116,6 +136,27 @@ const pdfToBuffer = (pdf: PdfDocument): Promise<Buffer> =>
       );
     }
   });
+
+const withTimeout = async <T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> => {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error(timeoutMessage)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+};
 
 const defaultGeneratorLoader: PdfGeneratorLoader = async () =>
   (await import("@akmf/ksef-fe-invoice-converter")) as PdfGeneratorModule;
@@ -142,9 +183,14 @@ const toError = (error: unknown): Error | undefined =>
 
 export class PdfService {
   private loader: PdfGeneratorLoader;
+  private timeoutMs: number;
 
-  constructor(options?: { loader?: PdfGeneratorLoader }) {
+  constructor(options?: { loader?: PdfGeneratorLoader; timeoutMs?: number }) {
     this.loader = options?.loader ?? defaultGeneratorLoader;
+    this.timeoutMs = Math.max(
+      1,
+      options?.timeoutMs ?? defaultPdfGenerationTimeoutMs,
+    );
   }
 
   async generateInvoicePdf(
@@ -247,14 +293,24 @@ export class PdfService {
     }
 
     try {
-      const buffer = await pdfToBuffer(pdf);
+      const buffer = await withTimeout(
+        pdfToBuffer(pdf),
+        this.timeoutMs,
+        `PDF generation timed out after ${this.timeoutMs} ms`,
+      );
       return { status: "ok", buffer };
     } catch (error) {
+      const typedError = toError(error);
+      const errorMessage =
+        typedError?.message ?? "Failed to render invoice PDF";
+      const isTimeout = errorMessage.startsWith(
+        "PDF generation timed out after ",
+      );
       return {
         status: "failed",
-        reason: "generation-error",
-        message: "Failed to render invoice PDF",
-        error: toError(error),
+        reason: isTimeout ? "timeout" : "generation-error",
+        message: isTimeout ? errorMessage : "Failed to render invoice PDF",
+        error: typedError,
       };
     }
   }

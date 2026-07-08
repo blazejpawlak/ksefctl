@@ -77,7 +77,7 @@ describe("ServiceInstaller", () => {
     const plist = await fs.readFile(plistPath, "utf-8");
 
     // Assert
-    const outPath = path.join(storageRoot, "logs", "ksefctl.log");
+    const outPath = path.join(storageRoot, "logs", "ksefctl.stdout.log");
     const errPath = path.join(storageRoot, "logs", "ksefctl.err.log");
     expect(plist).toContain("<string>sync</string>");
     expect(plist).toContain("<string>--watch</string>");

@@ -242,6 +242,7 @@ describe("SyncService", () => {
       downloaded: 0,
       skipped: 0,
       failed: 0,
+      pdfFailed: 0,
       items: [],
     });
   });
@@ -304,6 +305,7 @@ describe("SyncService", () => {
       downloaded: 0,
       skipped: 0,
       failed: 0,
+      pdfFailed: 0,
       items: [],
     });
   });
@@ -993,6 +995,7 @@ describe("SyncService", () => {
       downloaded: 0,
       skipped: 0,
       failed: 0,
+      pdfFailed: 0,
       items: [],
     });
   });

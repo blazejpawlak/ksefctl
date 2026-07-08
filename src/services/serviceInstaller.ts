@@ -45,6 +45,11 @@ export type LaunchdTarget = {
 
 const serviceName = APP_NAME;
 
+const resolveServiceOutputPath = (
+  storageRoot: string,
+  streamName: "stdout" | "err",
+): string => path.join(storageRoot, "logs", `${serviceName}.${streamName}.log`);
+
 const escapeXml = (value: string): string =>
   value
     .replace(/&/g, "&amp;")
@@ -144,9 +149,11 @@ export const buildLaunchdPlist = (
   const cliPathValue = escapeXml(options.cliPath);
   const configPathValue = escapeXml(options.configPath);
   const storageRootValue = escapeXml(options.storageRoot);
-  const stdoutPath = escapeXml(options.lifecycleLogPath);
+  const stdoutPath = escapeXml(
+    resolveServiceOutputPath(options.storageRoot, "stdout"),
+  );
   const stderrPath = escapeXml(
-    path.join(options.storageRoot, "logs", `${serviceName}.err.log`),
+    resolveServiceOutputPath(options.storageRoot, "err"),
   );
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -330,6 +337,12 @@ export class ServiceInstaller {
     const cliPathValue = escapeSystemdUnitValue(options.cliPath);
     const configPathValue = escapeSystemdUnitValue(options.configPath);
     const storageRootValue = escapeSystemdUnitValue(options.storageRoot);
+    const stdoutPathValue = escapeSystemdUnitValue(
+      resolveServiceOutputPath(options.storageRoot, "stdout"),
+    );
+    const stderrPathValue = escapeSystemdUnitValue(
+      resolveServiceOutputPath(options.storageRoot, "err"),
+    );
     const unit = `[Unit]
 Description=KSeFctl Service
 After=network.target
@@ -338,6 +351,8 @@ After=network.target
 Type=simple
 ExecStart="${nodePathValue}" "${cliPathValue}" sync --watch --config "${configPathValue}"
 WorkingDirectory="${storageRootValue}"
+StandardOutput=append:${stdoutPathValue}
+StandardError=append:${stderrPathValue}
 Restart=on-failure
 RestartSec=5
 Environment=${KSEFCTL_SERVICE_MODE}=1

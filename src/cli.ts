@@ -1,10 +1,7 @@
 #!/usr/bin/env node
 import { Command, Option } from "commander";
 import { registerDaemon } from "./cli/commands/daemon";
-import {
-  formatCliError,
-  logUnexpectedError,
-} from "./cli/commands/runCommand";
+import { formatCliError, logUnexpectedError } from "./cli/commands/runCommand";
 import { registerStatus } from "./cli/commands/status";
 import { registerSync } from "./cli/commands/sync";
 import { registerSystemCompletion } from "./cli/commands/systemCompletion";
@@ -12,7 +9,10 @@ import { registerSystemConfig } from "./cli/commands/systemConfig";
 import { registerSystemInit } from "./cli/commands/systemInit";
 import { registerSystemPin } from "./cli/commands/systemPin";
 import { registerSystemSecret } from "./cli/commands/systemSecret";
-import { registerSystemService } from "./cli/commands/systemService";
+import {
+  registerSystemService,
+  showServiceLogs,
+} from "./cli/commands/systemService";
 import { registerSystemVerify } from "./cli/commands/systemVerify";
 import {
   buildCompletionSpec,
@@ -22,7 +22,11 @@ import {
   renderZshCompletion,
 } from "./cli/completion";
 import { handleFirstRun, shouldRunFirstRun } from "./cli/firstRun";
-import { ensureLocalstorageNodeOption, formatVersionOutput, printVersion } from "./cli/version";
+import {
+  ensureLocalstorageNodeOption,
+  formatVersionOutput,
+  printVersion,
+} from "./cli/version";
 import { exitCodeFromError } from "./utils/errors";
 
 export { formatCliError, logUnexpectedError };
@@ -35,7 +39,9 @@ program
   .option("-c, --config <path>", "path to config file")
   .option("-v, --verbose", "enable verbose logging")
   .option("-V, --version", "output application version")
-  .addOption(new Option("--no-first-run", "disable first-run prompts").hideHelp());
+  .addOption(
+    new Option("--no-first-run", "disable first-run prompts").hideHelp(),
+  );
 
 const system = program
   .command("system")
@@ -135,7 +141,7 @@ const main = async () => {
       const firstRunFlag = parseFirstRunFlag(args);
       await handleFirstRun(program, { configPath, firstRunFlag });
       await ensureLocalstorageNodeOption();
-      program.outputHelp();
+      await showServiceLogs(configPath, { lines: "50" });
       return;
     }
     await ensureLocalstorageNodeOption();

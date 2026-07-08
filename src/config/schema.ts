@@ -62,7 +62,7 @@ const LoggingSchema = z.object({
     .enum(["fatal", "error", "warn", "info", "debug", "trace"])
     .default("info"),
   file: z.string().min(1),
-  pretty: z.boolean().default(false),
+  pretty: z.boolean().default(true),
 });
 
 const RetrySchema = z.object({
@@ -101,6 +101,8 @@ const SyncSchema = z.object({
     .default(["Subject1", "Subject2", "Subject3", "SubjectAuthorized"]),
   includeMetadataHeader: z.boolean().default(true),
   generatePdf: z.boolean().default(true),
+  pdfGenerationTimeoutMs: z.number().int().min(1_000).default(30_000),
+  pdfMaxConsecutiveTimeouts: z.number().int().min(1).default(3),
   flatSync: z.boolean().default(false),
   initialSyncFrom: z.string().datetime().optional(),
   maxConcurrentNips: z.number().int().min(1).default(1),

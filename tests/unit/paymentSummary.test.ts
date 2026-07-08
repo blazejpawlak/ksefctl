@@ -11,6 +11,7 @@ const nullFields = {
   invoiceNumber: null,
   amount: null,
   currency: null,
+  bankAccount: null,
   pdfPath: null,
 };
 

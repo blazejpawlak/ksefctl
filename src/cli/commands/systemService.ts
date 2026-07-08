@@ -1,10 +1,12 @@
 import type { Command } from "commander";
+import type { Writable } from "node:stream";
 import { execFile, spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { StatusService } from "../../core/statusService";
 import { ServiceInstaller } from "../../services/serviceInstaller";
+import { createPrettyLogStream } from "../../utils/logger";
 import { APP_NAME } from "../../utils/paths";
 import { logServiceLifecycle } from "../../utils/serviceLifecycle";
 import { ensureInitialized } from "../bootstrap";
@@ -136,6 +138,48 @@ const toExistingPath = async (filePath: string): Promise<string | null> => {
   } catch {
     return null;
   }
+};
+
+export const showServiceLogs = async (
+  configPathOverride: string | undefined,
+  opts: LogsOptions,
+): Promise<void> => {
+  await ensureInitialized(configPathOverride);
+  const ctx = await createContext(configPathOverride, { prettyConsole: true });
+  const requestedPaths = resolveServiceLogPaths({
+    appName: APP_NAME,
+    storageRoot: ctx.config.storage.root,
+    lifecycleLogPath: ctx.config.logging.file,
+    error: opts.error,
+  });
+  const existingPaths = (
+    await Promise.all(requestedPaths.map(toExistingPath))
+  ).filter((filePath): filePath is string => filePath !== null);
+  if (existingPaths.length === 0) {
+    throw new Error("No service log files found");
+  }
+
+  const tailArgs = ["-n", opts.lines ?? "50"];
+  if (opts.follow) tailArgs.push("-f");
+  tailArgs.push(...existingPaths);
+
+  await new Promise<void>((resolve, reject) => {
+    const prettyStream = createPrettyLogStream() as unknown as Writable;
+    const child = spawn("tail", tailArgs, {
+      stdio: ["ignore", "pipe", "inherit"],
+    });
+    child.stdout.pipe(prettyStream);
+    child.on("close", (code) => {
+      prettyStream.end();
+      if (code !== null && code !== 0)
+        reject(new Error(`tail exited with code ${code}`));
+      else resolve();
+    });
+    child.on("error", (error) => {
+      prettyStream.end();
+      reject(error);
+    });
+  });
 };
 
 export function registerSystemService(system: Command, program: Command): void {
@@ -299,33 +343,7 @@ export function registerSystemService(system: Command, program: Command): void {
     .action(
       runCommand(async (opts: LogsOptions) => {
         const rootOpts = program.opts<RootOptions>();
-        const { config, verbose } = rootOpts;
-        await ensureInitialized(config);
-        const ctx = await createContext(config, { verbose });
-        const requestedPaths = resolveServiceLogPaths({
-          appName: APP_NAME,
-          storageRoot: ctx.config.storage.root,
-          lifecycleLogPath: ctx.config.logging.file,
-          error: opts.error,
-        });
-        const existingPaths = (
-          await Promise.all(requestedPaths.map(toExistingPath))
-        ).filter((filePath): filePath is string => filePath !== null);
-        if (existingPaths.length === 0) {
-          throw new Error("No service log files found");
-        }
-        const tailArgs = ["-n", opts.lines ?? "50"];
-        if (opts.follow) tailArgs.push("-f");
-        tailArgs.push(...existingPaths);
-        await new Promise<void>((resolve, reject) => {
-          const child = spawn("tail", tailArgs, { stdio: "inherit" });
-          child.on("close", (code) => {
-            if (code !== null && code !== 0)
-              reject(new Error(`tail exited with code ${code}`));
-            else resolve();
-          });
-          child.on("error", reject);
-        });
+        await showServiceLogs(rootOpts.config, opts);
       }),
     );
 }

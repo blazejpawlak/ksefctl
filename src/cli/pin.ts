@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import net from "node:net";
 import tls from "node:tls";
 import { NetworkError } from "../utils/errors";
 
@@ -19,12 +20,13 @@ export const fetchTlsPin = async (
   options: FetchTlsPinOptions = {},
 ): Promise<TlsPinResult> => {
   const port = options.port ?? 443;
+  const servername = net.isIP(host) === 0 ? host : undefined;
   return new Promise((resolve, reject) => {
     const socket = tls.connect(
       {
         host,
         port,
-        servername: host,
+        servername,
         rejectUnauthorized: true,
         ca: options.ca,
       },

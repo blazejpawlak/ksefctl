@@ -10,6 +10,7 @@ const nullFields = {
   invoiceNumber: null,
   amount: null,
   currency: null,
+  bankAccount: null,
   pdfPath: null,
 };
 
@@ -101,6 +102,7 @@ describe("unpaidNotificationContent", () => {
         invoiceNumber: "FV/2026/04/0042",
         amount: "1230.00",
         currency: "PLN",
+        bankAccount: "PL 00 1111 2222 3333 4444 5555 6666",
       },
     ];
     const content = formatEmailNotificationContent(
@@ -111,8 +113,12 @@ describe("unpaidNotificationContent", () => {
     expect(content.body).toContain("Buyer: Our Company S.A.");
     expect(content.body).toContain("Invoice: FV/2026/04/0042");
     expect(content.body).toContain("Amount: 1230.00 PLN");
+    expect(content.body).toContain(
+      "Bank account: PL 00 1111 2222 3333 4444 5555 6666",
+    );
     expect(content.html).toContain("Example Supplier Sp. z o.o.");
     expect(content.html).toContain("1230.00 PLN");
+    expect(content.html).toContain("PL 00 1111 2222 3333 4444 5555 6666");
   });
 
   it("formats multi-invoice email content as a dashboard table", () => {
@@ -124,6 +130,7 @@ describe("unpaidNotificationContent", () => {
           invoiceNumber: "FV/2026/04/0042",
           amount: "1230.00",
           currency: "PLN",
+          bankAccount: "PL 00 1111 2222 3333 4444 5555 6666",
         },
         {
           nip: "7393955632",
@@ -136,6 +143,7 @@ describe("unpaidNotificationContent", () => {
           invoiceNumber: "FV/2026/04/0043",
           amount: "70.50",
           currency: "PLN",
+          bankAccount: "PL 99 8888 7777 6666 5555 4444 3333",
           pdfPath: "/tmp/Faktura-2.pdf",
         },
       ],
@@ -149,6 +157,8 @@ describe("unpaidNotificationContent", () => {
     expect(content.html).toContain("Invoices requiring payment");
     expect(content.html).toContain("<th style=");
     expect(content.html).toContain(">File</th>");
+    expect(content.html).toContain(">Bank account</th>");
+    expect(content.html).toContain("PL 99 8888 7777 6666 5555 4444 3333");
     expect(content.html).toContain("Second Supplier S.A.");
     expect(content.html).toContain("Faktura-2.pdf");
     expect(content.html).toContain("href=\"cid:invoice-2@ksefctl.local\"");

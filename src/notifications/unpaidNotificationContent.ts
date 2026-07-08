@@ -93,6 +93,8 @@ const formatEmailItem = (
       : `   Amount: ${sanitizeText(item.amount)}`;
     lines.push(amountLine);
   }
+  if (item.bankAccount)
+    lines.push(`   Bank account: ${sanitizeText(item.bankAccount)}`);
   lines.push(`   ${formatDueDate(item.dueDate)}`);
   lines.push(`   ${formatKsefNumber(item.ksefNumber)}`);
   lines.push(`   ${formatFolder(item.path)}`);
@@ -241,6 +243,7 @@ const renderDetailsTable = (item: SyncItem, orgLabels?: OrgLabels): string => {
     ["Invoice", escapeOptionalHtml(item.invoiceNumber)],
     ["File", formatAttachmentLink(item, 0)],
     ["Amount", formatHtmlAmount(item)],
+    ["Bank account", escapeOptionalHtml(item.bankAccount)],
     ["Due date", escapeHtml(formatDueDateValue(item.dueDate))],
     ["KSeF", escapeHtml(item.ksefNumber)],
     ["Folder", escapeHtml(item.path)],
@@ -270,6 +273,7 @@ const renderInvoiceRows = (items: SyncItem[]): string =>
           <td style="${styles.td}">${escapeOptionalHtml(item.sellerName)}</td>
           <td style="${styles.td}">${escapeOptionalHtml(item.invoiceNumber)}</td>
           <td style="${styles.td}">${formatAttachmentLink(item, index)}</td>
+          <td class="mobile-wrap" style="${styles.td}">${escapeOptionalHtml(item.bankAccount)}</td>
           <td class="mobile-wrap" style="${styles.tdNowrap}">${escapeHtml(formatDueDateValue(item.dueDate))}</td>
           <td class="mobile-wrap" style="${styles.tdNowrap}">${formatHtmlAmount(item)}</td>
         </tr>`,
@@ -284,6 +288,7 @@ const renderInvoiceTable = (items: SyncItem[]): string => `
       <th style="${styles.th}">Seller</th>
       <th style="${styles.th}">Invoice</th>
       <th style="${styles.th}">File</th>
+      <th style="${styles.th}">Bank account</th>
       <th style="${styles.th}">Due date</th>
       <th style="${styles.th}">Amount</th>
     </tr>

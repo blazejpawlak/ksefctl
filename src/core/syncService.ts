@@ -1,4 +1,5 @@
 import type { SyncItem } from "./invoiceExtractor";
+import type { PdfGenerationCircuitBreaker } from "./invoiceWriter";
 import type { SyncSubjectRunnerDeps } from "./syncSubjectRunner";
 import type { ExplicitSyncWindow } from "./window";
 import type { KsefClient } from "../api/ksefClient";
@@ -23,6 +24,7 @@ export type SyncResult = {
   downloaded: number;
   skipped: number;
   failed: number;
+  pdfFailed: number;
   items: SyncItem[];
 };
 
@@ -47,6 +49,7 @@ export class SyncService {
   private encryptionCertificate?: string;
   private countdownIntervalSeconds: number;
   private pdfService: PdfService;
+  private pdfCircuitBreaker: PdfGenerationCircuitBreaker;
 
   constructor(options: SyncServiceOptions) {
     this.client = options.client;
@@ -56,7 +59,14 @@ export class SyncService {
     this.store = options.store;
     this.progress = options.progress;
     this.countdownIntervalSeconds = options.countdownIntervalSeconds ?? 60;
-    this.pdfService = options.pdfService ?? new PdfService();
+    this.pdfService =
+      options.pdfService ??
+      new PdfService({ timeoutMs: this.config.sync.pdfGenerationTimeoutMs });
+    this.pdfCircuitBreaker = {
+      consecutiveTimeouts: 0,
+      maxConsecutiveTimeouts: this.config.sync.pdfMaxConsecutiveTimeouts,
+      disabled: false,
+    };
   }
 
   private reportProgress(message: string): void {
@@ -98,6 +108,7 @@ export class SyncService {
       logger: this.logger,
       store: this.store,
       pdfService: this.pdfService,
+      pdfCircuitBreaker: this.pdfCircuitBreaker,
       reportProgress: this.reportProgress.bind(this),
       sleepWithProgress: this.sleepWithProgress.bind(this),
       getEncryptionCertificate: this.getEncryptionCertificate.bind(this),
@@ -122,6 +133,7 @@ export class SyncService {
       logger: this.logger,
       store: this.store,
       pdfService: this.pdfService,
+      pdfCircuitBreaker: this.pdfCircuitBreaker,
     };
     const storageTarget = await resolveInvoiceStorageTarget(
       writerDeps,
@@ -176,6 +188,7 @@ export class SyncService {
       downloaded: 0,
       skipped: 0,
       failed: 0,
+      pdfFailed: 0,
       items: [],
     };
 
@@ -189,6 +202,7 @@ export class SyncService {
         downloaded: 0,
         skipped: 0,
         failed: 0,
+        pdfFailed: 0,
         items: [],
       };
       const accessToken = tokens.accessToken;
@@ -204,6 +218,9 @@ export class SyncService {
           : null;
       if (forced) {
         nipResult.downloaded += 1;
+        if (this.config.sync.generatePdf && !forced.pdfPath) {
+          nipResult.pdfFailed += 1;
+        }
         nipResult.items.push(forced);
       }
 
@@ -238,6 +255,7 @@ export class SyncService {
         nipResult.downloaded += subjectResult.downloaded;
         nipResult.skipped += subjectResult.skipped;
         nipResult.failed += subjectResult.failed;
+        nipResult.pdfFailed += subjectResult.pdfFailed;
         nipResult.items.push(...subjectResult.items);
       }
       return nipResult;
@@ -258,6 +276,7 @@ export class SyncService {
         summary.downloaded += result.downloaded;
         summary.skipped += result.skipped;
         summary.failed += result.failed;
+        summary.pdfFailed += result.pdfFailed;
         summary.items.push(...result.items);
       }
 

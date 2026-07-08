@@ -109,7 +109,7 @@ export const initConfig = async (
     logging: {
       level: "info",
       file: defaultLogPath(storageRoot),
-      pretty: false,
+      pretty: true,
     },
     operational: {
       maxConcurrency: 2,

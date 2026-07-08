@@ -43,7 +43,7 @@ npm run build
 npm link
 ```
 
-`npm ci` runs the repo `postinstall` hook, which prepares the pinned `@akmf/ksef-fe-invoice-converter` dependency for local use.
+`npm ci` runs the repo `postinstall` hook, which prepares the pinned `@akmf/ksef-fe-invoice-converter` dependency for local use. Use `ksefctl --version` to see the app version and the pinned upstream PDF builder version/commit; compare it with the upstream `CIRFMF/ksef-pdf-generator` releases when troubleshooting PDF rendering.
 
 Or global:
 
@@ -75,6 +75,7 @@ The environment prompt shows full names with the API URLs for clarity.
 
 - `ksefctl sync [-n <nip>] [--redownload-all] [--flat-sync] [--time-window <from:to>] [--output-path <path>] [--json]` – run sync.
 - `ksefctl sync -n <nip> --redownload <ksefNumber>` – re-download a single invoice (`-n`/`--nip` is required with `--redownload`).
+- `ksefctl sync --repair-missing-pdfs [--nip <nip>] [--json]` – generate PDFs for local XML invoices that are missing PDF files without contacting KSeF.
 - `ksefctl sync --watch` – run continuously in foreground.
 - `ksefctl status [--json]` – show last sync status.
 - `ksefctl system init [--force] [--yes]` – create config template and storage directories.
@@ -92,7 +93,7 @@ Global options:
 
 - `-c, --config <path>` – override config path.
 - `-v, --verbose` – enable detailed logs.
-- `-V, --version` – print the application version and latest short commit.
+- `-V, --version` – print the application version, latest short commit, and pinned upstream PDF builder version/commit.
 
 All commands except `system init` require a config file and keychain tokens for each configured NIP.
 
@@ -119,6 +120,7 @@ Progress messages go to stderr; use `-v`/`--verbose` for detailed logs. If an in
 | `--time-window <from:to>`   | Explicit date range as `DD-MM-YYYY:DD-MM-YYYY`. Overrides cursor/config-derived bounds. Requires `--redownload`, `--redownload-all`, or `--flat-sync`. Mutually exclusive with `--watch`.                                                                                                                                                                                                                                                                                                                    |
 | `--output-path <path>`      | Override the invoice output root for this run. Requires `-n`/`--nip` when multiple orgs are configured.                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `--watch`                   | Run in the **foreground** continuously, polling every `pollingIntervalSeconds` (default: 300 s). The process occupies the terminal and must be kept alive manually (e.g. in a `tmux` session). Cannot be combined with `--redownload`, `--redownload-all`, or `--time-window`. For unattended background operation, use `ksefctl system service install` instead — it registers a launchd agent (macOS) or systemd unit (Linux) that starts automatically and restarts on failure. Windows is not supported. |
+| `--repair-missing-pdfs`     | Scan locally stored XML invoices and generate missing same-base PDF files without contacting KSeF. Optionally combine with `--nip` to repair one organization. Mutually exclusive with sync/redownload/watch/time-window modes.                                                                                                                                                                                                                                                                              |
 | `--json`                    | Output results as JSON instead of formatted text.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 Config equivalents:
@@ -187,6 +189,18 @@ Run a flat sync for Q1 2026:
 
 ```bash
 ksefctl sync --flat-sync --time-window 01-01-2026:31-03-2026
+```
+
+Repair local invoices that have XML/metadata but no PDF:
+
+```bash
+ksefctl sync --repair-missing-pdfs
+```
+
+Repair missing PDFs for one NIP and emit machine-readable output:
+
+```bash
+ksefctl sync --nip 1234567890 --repair-missing-pdfs --json
 ```
 
 Re-download a specific invoice and scan for additional invoices in a date window:
@@ -334,7 +348,7 @@ Key config fields:
 - `pollingIntervalSeconds`
 - `storage.root`
 - `notifications` (macOS + email with optional unpaid invoice catch-up and `smtpProfiles` for per-NIP routing)
-- `logging` (level, file, pretty)
+- `logging` (level, file, console pretty-printing)
 - `operational` (retry, timeouts, poll, exportCooldownSeconds, allowInsecureHttp)
 - `security.tls` (pinning)
 - `security.allowedHosts`: allowed hosts for package downloads (schema default: `[]`; if empty at runtime the API host is allowed automatically)
@@ -354,7 +368,7 @@ Run `ksefctl system config` after `system init` to see the resolved configuratio
 | `notifications.unpaidInvoiceCatchUp` | `false`                            |
 | `notifications.email.enabled`        | `false`                            |
 | `logging.level`                      | `info`                             |
-| `logging.pretty`                     | `false`                            |
+| `logging.pretty`                     | `true`                             |
 | `operational.maxConcurrency`         | `2`                                |
 | `operational.timeoutSeconds`         | `60`                               |
 | `operational.pollIntervalSeconds`    | `10`                               |
@@ -369,6 +383,8 @@ Run `ksefctl system config` after `system init` to see the resolved configuratio
 | `sync.subjectTypes`                  | all four subject types             |
 | `sync.includeMetadataHeader`         | `true`                             |
 | `sync.generatePdf`                   | `true`                             |
+| `sync.pdfGenerationTimeoutMs`        | `30000`                            |
+| `sync.pdfMaxConsecutiveTimeouts`     | `3`                                |
 | `sync.flatSync`                      | `false`                            |
 | `sync.maxConcurrentNips`             | `1`                                |
 | `security.tls.enablePinning`         | `false`                            |
@@ -439,7 +455,20 @@ When `--time-window DD-MM-YYYY:DD-MM-YYYY` is provided (requires `--redownload`,
 - With `--redownload-all`: cursors are reset to the `from` date, and the scan covers `from` → `to`.
 - With `--flat-sync`: the scan covers `from` → `to` using flat storage layout.
 
-PDF visualization is generated by default via `ksef-pdf-generator` and can be disabled with `sync.generatePdf: false`.
+PDF visualization is generated locally by default via `ksef-pdf-generator` and can be disabled with `sync.generatePdf: false`.
+If the local renderer hangs repeatedly, `sync.pdfMaxConsecutiveTimeouts` disables PDF generation for the rest of that sync run after repeated `sync.pdfGenerationTimeoutMs` timeouts, while XML/metadata sync continues.
+Run `ksefctl sync --repair-missing-pdfs` after upgrading the PDF builder or fixing local renderer issues to backfill PDFs for invoices that were previously saved as XML/metadata only.
+
+### PDF builder version
+
+PDF visualization is produced locally by the pinned upstream `CIRFMF/ksef-pdf-generator` package (`@akmf/ksef-fe-invoice-converter`). `ksefctl --version` prints both the ksefctl build and the pinned PDF builder version/commit, for example:
+
+```text
+2026.6.9 (06fa00c)
+pdf-builder: @akmf/ksef-fe-invoice-converter 1.1.19 (CIRFMF/ksef-pdf-generator@c0392137; check upstream releases for newer versions)
+```
+
+If PDF rendering starts timing out or failing for newly issued invoices, check whether upstream has published a newer `CIRFMF/ksef-pdf-generator` release and update the pinned dependency after testing.
 
 ## Rate limiting & retries
 
@@ -496,6 +525,7 @@ Each notification email includes the following details for every unpaid invoice:
 - **Buyer** — company name of the recipient, extracted from the invoice XML (`Podmiot2`)
 - **Invoice number** — human-readable invoice number from the XML
 - **Amount** — gross amount and currency from the XML (`Fa/P_15`, `Fa/Waluta`)
+- **Bank account** — recipient bank account from the XML payment section when present (`Fa/Platnosc/RachunekBankowy/NrRB`)
 - **Due date**
 - **KSeF number**
 - **Folder** — local path where the invoice was stored

@@ -17,6 +17,7 @@ export type SyncItem = {
   invoiceNumber: string | null;
   amount: string | null;
   currency: string | null;
+  bankAccount: string | null;
   pdfPath: string | null;
 };
 
@@ -263,6 +264,7 @@ export const createSyncItem = (
     invoiceNumber: extractInvoiceNumber(xmlText),
     amount: paymentInfo.amount,
     currency: paymentInfo.currency,
+    bankAccount: paymentInfo.bankAccount,
     pdfPath,
   };
 };

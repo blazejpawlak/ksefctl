@@ -105,6 +105,7 @@ const nullFields = {
   invoiceNumber: null,
   amount: null,
   currency: null,
+  bankAccount: null,
   pdfPath: null,
 };
 
@@ -149,6 +150,9 @@ const createPayableXml = (dueDate = "2026-03-24"): string => `
       <Rozliczenie>
         <DoZaplaty>1033.20</DoZaplaty>
       </Rozliczenie>
+      <RachunekBankowy>
+        <NrRB>PL 00 1111 2222 3333 4444 5555 6666</NrRB>
+      </RachunekBankowy>
     </Platnosc>
   </Fa>
 </Faktura>
@@ -461,6 +465,15 @@ describe("Notifier", () => {
     await notifier.notifyUnpaidInvoices(emptyResult, store);
 
     expect(sendMailMock).toHaveBeenCalledTimes(1);
+    const sentMessage = sendMailMock.mock.calls[0]?.[0] as
+      | { text?: string; html?: string }
+      | undefined;
+    expect(String(sentMessage?.text)).toContain(
+      "Bank account: PL 00 1111 2222 3333 4444 5555 6666",
+    );
+    expect(String(sentMessage?.html)).toContain(
+      "PL 00 1111 2222 3333 4444 5555 6666",
+    );
     const notified = await store.withDb((db) =>
       hasInvoiceNotification(db, "1234567890", "KSEF-CATCHUP-1", "unpaid_due"),
     );

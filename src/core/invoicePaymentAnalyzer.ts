@@ -10,6 +10,7 @@ export type InvoicePaymentInfo = {
   dueDate: string | null;
   amount: string | null;
   currency: string | null;
+  bankAccount: string | null;
 };
 
 const maxXmlBytes = 5_000_000;
@@ -21,6 +22,7 @@ const emptyPaymentInfo: InvoicePaymentInfo = {
   dueDate: null,
   amount: null,
   currency: null,
+  bankAccount: null,
 };
 
 const stripDoctype = (xml: string): string =>
@@ -61,6 +63,11 @@ const normalizeDate = (value: string | null): string | null => {
   const trimmed = normalizeText(value);
   if (!trimmed) return null;
   return isoDatePattern.test(trimmed) ? trimmed : null;
+};
+
+const normalizeBankAccount = (value: string | null): string | null => {
+  const normalized = normalizeText(value)?.replace(/\s+/g, " ") ?? null;
+  return normalized && normalized.length > 0 ? normalized : null;
 };
 
 const getChild = (value: unknown, key: string): unknown => {
@@ -182,6 +189,18 @@ const extractCurrency = (invoice: unknown): string | null => {
   return normalizeText(extractTextValue(getChild(fa, "Waluta")));
 };
 
+const extractBankAccount = (invoice: unknown): string | null => {
+  const fa = getChild(invoice, "Fa");
+  if (!fa) return null;
+
+  const account = collectNestedTexts(fa, [
+    "Platnosc",
+    "RachunekBankowy",
+    "NrRB",
+  ])[0];
+  return normalizeBankAccount(account ?? null);
+};
+
 export const analyzeInvoicePayment = (
   xml: string,
   subjectNip: string,
@@ -209,6 +228,7 @@ export const analyzeInvoicePayment = (
     dueDate: extractDueDate(invoice),
     amount: extractGrossAmount(invoice),
     currency: extractCurrency(invoice),
+    bankAccount: extractBankAccount(invoice),
   };
 };
 

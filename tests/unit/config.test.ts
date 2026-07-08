@@ -66,6 +66,30 @@ describe("config schema", () => {
     expect(config.notifications.unpaidInvoiceCatchUp).toBe(true);
   });
 
+  it("defaults console logging to pretty output", () => {
+    const config = AppConfigSchema.parse({
+      environment: "test",
+      auth: {
+        method: "ksefToken",
+        keychainServiceName: "ksefctl",
+      },
+      organizations: [{ nip: "1234567890" }],
+      pollingIntervalSeconds: 300,
+      storage: { root: "/tmp/ksef" },
+      notifications: { macosNotification: false, email: { enabled: false } },
+      logging: { level: "info", file: "/tmp/ksef/logs/app.log" },
+      operational: {
+        maxConcurrency: 2,
+        timeoutSeconds: 60,
+        pollIntervalSeconds: 10,
+      },
+      security: { tls: { enablePinning: false, pins: [], pinningHosts: [] } },
+      sync: { subjectTypes: ["Subject1"], includeMetadataHeader: true },
+    });
+
+    expect(config.logging.pretty).toBe(true);
+  });
+
   it("accepts per-organization output paths", () => {
     const config = AppConfigSchema.parse({
       environment: "test",

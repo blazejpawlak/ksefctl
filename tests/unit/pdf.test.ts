@@ -69,4 +69,53 @@ describe("PdfService", () => {
       expect(result.message).toBe("Invoice XML missing Faktura root element");
     }
   });
+
+  it("returns timeout when PDF rendering never finishes", async () => {
+    const xml =
+      "<Faktura><Naglowek><KodFormularza kodSystemowy=\"FA (3)\" /></Naglowek></Faktura>";
+    const service = new PdfService({
+      timeoutMs: 5,
+      loader: () =>
+        Promise.resolve({
+          generateFA1: vi.fn(),
+          generateFA2: vi.fn(),
+          generateFA3: vi.fn(() => ({
+            getBuffer: () => undefined,
+          })),
+        }),
+    });
+
+    const result = await service.generateInvoicePdf(xml, "KSEF-5");
+
+    expect(result.status).toBe("failed");
+    if (result.status === "failed") {
+      expect(result.reason).toBe("timeout");
+      expect(result.message).toBe("PDF generation timed out after 5 ms");
+    }
+  });
+
+  it("supports promise-based PDF buffer rendering", async () => {
+    const xml =
+      "<Faktura><Naglowek><KodFormularza kodSystemowy=\"FA (3)\" /></Naglowek></Faktura>";
+    const service = new PdfService({
+      loader: () =>
+        Promise.resolve({
+          generateFA1: vi.fn(),
+          generateFA2: vi.fn(),
+          generateFA3: vi.fn(() => ({
+            value: Buffer.from("pdf-promise"),
+            getBuffer() {
+              return Promise.resolve(this.value);
+            },
+          })),
+        }),
+    });
+
+    const result = await service.generateInvoicePdf(xml, "KSEF-6");
+
+    expect(result.status).toBe("ok");
+    if (result.status === "ok") {
+      expect(result.buffer.toString("utf-8")).toBe("pdf-promise");
+    }
+  });
 });

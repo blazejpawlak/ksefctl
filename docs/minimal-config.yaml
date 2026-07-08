@@ -14,6 +14,7 @@ storage:
 logging:
   level: info
   file: /path/to/storage/logs/ksefctl.log
+  pretty: true
 notifications:
   macosNotification: true
   unpaidInvoiceCatchUp: false
@@ -29,4 +30,6 @@ security:
 sync:
   subjectTypes: [Subject1, Subject2, Subject3]
   generatePdf: true
+  pdfGenerationTimeoutMs: 30000
+  pdfMaxConsecutiveTimeouts: 3
   flatSync: false

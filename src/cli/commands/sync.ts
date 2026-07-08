@@ -2,10 +2,12 @@ import type { Command } from "commander";
 import type { Logger } from "pino";
 import { Option } from "commander";
 import path from "node:path";
+import { repairMissingInvoicePdfs } from "../../core/pdfRepairService";
 import { StatusService } from "../../core/statusService";
 import { SyncService } from "../../core/syncService";
 import { parseCliTimeWindow } from "../../core/window";
 import { Notifier } from "../../notifications/notifier";
+import { PdfService } from "../../services/pdfService";
 import { ConfigError, exitCodeFromError } from "../../utils/errors";
 import { expandHome } from "../../utils/paths";
 import {
@@ -37,6 +39,7 @@ type SyncOptions = {
   outputPath?: string;
   watch?: boolean;
   json?: boolean;
+  repairMissingPdfs?: boolean;
 };
 
 const resolveCliOutputPath = (outputPath?: string): string | undefined => {
@@ -76,6 +79,18 @@ export function registerSync(program: Command): void {
     .option(
       "--watch",
       "run continuously in the foreground, polling every pollingIntervalSeconds (default: 300 s); for background/unattended use run system service install instead",
+    )
+    .addOption(
+      new Option(
+        "--repair-missing-pdfs",
+        "generate PDFs for local XML invoices that are missing PDF files without contacting KSeF",
+      ).conflicts([
+        "watch",
+        "redownload",
+        "redownloadAll",
+        "flatSync",
+        "timeWindow",
+      ]),
     )
     .option("--json", "output results as JSON")
     .action(async (options: SyncOptions) => {
@@ -122,6 +137,11 @@ export function registerSync(program: Command): void {
             "--redownload flags cannot be used with --watch",
           );
         }
+        if (options.outputPath && options.repairMissingPdfs) {
+          throw new ConfigError(
+            "--output-path cannot be used with --repair-missing-pdfs",
+          );
+        }
         if (
           options.timeWindow &&
           !options.redownload &&
@@ -151,6 +171,43 @@ export function registerSync(program: Command): void {
         });
         const notifier = new Notifier(ctx.config, ctx.logger);
         const statusService = new StatusService(ctx.store);
+
+        if (options.repairMissingPdfs) {
+          printHeader("Repair missing PDFs");
+          const result = await repairMissingInvoicePdfs(
+            {
+              config: ctx.config,
+              logger: ctx.logger,
+              pdfService: new PdfService(),
+            },
+            { nip: nipFilter },
+          );
+          if (options.json) {
+            console.log(JSON.stringify({ status: "completed", ...result }));
+          } else {
+            printKeyValues([
+              ["status", "completed"],
+              ["scanned", result.scanned],
+              ["missing", result.missing],
+              ["repaired", result.repaired],
+              ["failed", result.failed],
+              ["skipped", result.skipped],
+            ]);
+            const failedItems = result.items.filter(
+              (item) => item.status === "failed",
+            );
+            if (failedItems.length > 0) {
+              printList(
+                "Failed PDF repairs:",
+                failedItems.map(
+                  (item) =>
+                    `${sanitizeForTerminal(item.nip)} | ${sanitizeForTerminal(item.ksefNumber || "-")} | ${sanitizeForTerminal(item.reason ?? "failed")} | ${sanitizeForTerminal(item.xmlPath)}`,
+                ),
+              );
+            }
+          }
+          return;
+        }
 
         if (options.watch) {
           cleanupServiceStopLogging = installServiceStopSignalLogging(
@@ -207,6 +264,7 @@ export function registerSync(program: Command): void {
               ["downloaded", result?.downloaded ?? 0],
               ["skipped", result?.skipped ?? 0],
               ["failed", result?.failed ?? (errorMessage ? 1 : 0)],
+              ["pdfFailed", result?.pdfFailed ?? 0],
               ["toPay", invoicesToPay.length],
               ["duration", formatDuration(durationMs)],
               ["lastSyncAt", status.lastSyncAt ?? "-"],
@@ -230,6 +288,7 @@ export function registerSync(program: Command): void {
                   downloaded: result?.downloaded ?? 0,
                   skipped: result?.skipped ?? 0,
                   failed: result?.failed ?? (errorMessage ? 1 : 0),
+                  pdfFailed: result?.pdfFailed ?? 0,
                   toPay: invoicesToPay.length,
                   durationMs,
                   lastSyncAt: status.lastSyncAt ?? null,
@@ -285,6 +344,7 @@ export function registerSync(program: Command): void {
                 downloaded: result.downloaded,
                 skipped: result.skipped,
                 failed: result.failed,
+                pdfFailed: result.pdfFailed,
                 toPay: invoicesToPay.length,
                 items: result.items,
               }),
@@ -295,6 +355,7 @@ export function registerSync(program: Command): void {
               ["downloaded", result.downloaded],
               ["skipped", result.skipped],
               ["failed", result.failed],
+              ["pdfFailed", result.pdfFailed],
               ["toPay", invoicesToPay.length],
             ]);
             if (result.items.length === 0) {

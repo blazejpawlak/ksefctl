@@ -7,7 +7,7 @@ import { ensureDir } from "./paths";
 export type LoggerOptions = {
   level: "fatal" | "error" | "warn" | "info" | "debug" | "trace";
   file: string;
-  pretty: boolean;
+  prettyConsole: boolean;
   suppressConsole?: boolean;
 };
 
@@ -31,6 +31,16 @@ const redactions = {
   censor: "***",
 };
 
+export const createPrettyLogStream = (): pino.DestinationStream =>
+  pino.transport({
+    target: "pino-pretty",
+    options: {
+      colorize: true,
+      translateTime: "SYS:standard",
+      ignore: "pid,hostname",
+    },
+  }) as pino.DestinationStream;
+
 export const createLogger = async (options: LoggerOptions): Promise<Logger> => {
   await ensureDir(path.dirname(options.file));
   await fs.open(options.file, "a", 0o600).then((handle) => handle.close());
@@ -42,16 +52,8 @@ export const createLogger = async (options: LoggerOptions): Promise<Logger> => {
   ];
 
   if (!options.suppressConsole) {
-    if (options.pretty) {
-      const transport = pino.transport({
-        target: "pino-pretty",
-        options: {
-          colorize: true,
-          translateTime: "SYS:standard",
-          ignore: "pid,hostname",
-        },
-      }) as pino.DestinationStream;
-      streams.push({ level: options.level, stream: transport });
+    if (options.prettyConsole) {
+      streams.push({ level: options.level, stream: createPrettyLogStream() });
     } else {
       streams.push({ level: options.level, stream: process.stdout });
     }

@@ -1,4 +1,5 @@
 import type { StoredInvoiceMetadata } from "./invoiceWriter";
+import type { PdfGenerationCircuitBreaker } from "./invoiceWriter";
 import type { SyncResult } from "./syncService";
 import type { ExplicitSyncWindow, MetadataFile } from "./window";
 import type { KsefClient } from "../api/ksefClient";
@@ -44,6 +45,7 @@ export type SyncSubjectRunnerDeps = {
   logger: Logger;
   store: SqliteStore;
   pdfService: PdfService;
+  pdfCircuitBreaker?: PdfGenerationCircuitBreaker;
   reportProgress: (msg: string) => void;
   sleepWithProgress: (
     baseMsg: string,
@@ -71,6 +73,7 @@ export async function syncSubjectType(
     logger,
     store,
     pdfService,
+    pdfCircuitBreaker,
     reportProgress,
     sleepWithProgress,
     getEncryptionCertificate,
@@ -121,6 +124,7 @@ export async function syncSubjectType(
     downloaded: 0,
     skipped: 0,
     failed: 0,
+    pdfFailed: 0,
     items: [],
   };
   const exportCooldownMs =
@@ -134,7 +138,7 @@ export async function syncSubjectType(
     reportProgress,
     sleepWithProgress,
   };
-  const writerDeps = { config, logger, store, pdfService };
+  const writerDeps = { config, logger, store, pdfService, pdfCircuitBreaker };
 
   const upperBound = windowEndCap ?? now;
   while (windowStart.getTime() < upperBound.getTime()) {
@@ -301,6 +305,7 @@ export async function syncSubjectType(
     let downloaded = 0;
     let skipped = 0;
     let failed = 0;
+    let pdfFailed = 0;
     const items: typeof summary.items = [];
 
     for (const entry of entries) {
@@ -373,6 +378,9 @@ export async function syncSubjectType(
           metadataMeta: meta,
         });
         downloaded += 1;
+        if (config.sync.generatePdf && !syncItem.pdfPath) {
+          pdfFailed += 1;
+        }
         items.push(syncItem);
       } catch (error) {
         const sanitizedMessage = sanitizeErrorMessage((error as Error).message);
@@ -395,9 +403,10 @@ export async function syncSubjectType(
     summary.downloaded += downloaded;
     summary.skipped += skipped;
     summary.failed += failed;
+    summary.pdfFailed += pdfFailed;
     summary.items.push(...items);
     reportProgress(
-      `Progress: window complete (downloaded=${downloaded}, skipped=${skipped}, failed=${failed})`,
+      `Progress: window complete (downloaded=${downloaded}, skipped=${skipped}, failed=${failed}, pdfFailed=${pdfFailed})`,
     );
 
     if (!explicitWindow) {

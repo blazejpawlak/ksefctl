@@ -12,6 +12,7 @@ import { isManagedServiceMode } from "./serviceMode";
 
 type ContextOptions = {
   verbose?: boolean;
+  prettyConsole?: boolean;
   progress?: (message: string) => void;
   countdownIntervalSeconds?: number;
 };
@@ -33,7 +34,8 @@ export const createContext = async (
   const logger = await createLogger({
     level,
     file: config.logging.file,
-    pretty: verbose ? true : config.logging.pretty,
+    prettyConsole:
+      options?.prettyConsole ?? (verbose ? true : config.logging.pretty),
     suppressConsole,
   });
   const countdownIntervalSeconds =

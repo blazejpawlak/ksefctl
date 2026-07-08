@@ -24,6 +24,9 @@ describe("invoicePaymentAnalyzer", () => {
               <Termin>2026-03-24</Termin>
             </TerminPlatnosci>
             <FormaPlatnosci>6</FormaPlatnosci>
+            <RachunekBankowy>
+              <NrRB>PL 00 1111 2222 3333 4444 5555 6666</NrRB>
+            </RachunekBankowy>
           </Platnosc>
         </Fa>
       </Faktura>
@@ -35,6 +38,7 @@ describe("invoicePaymentAnalyzer", () => {
       dueDate: "2026-03-24",
       amount: null,
       currency: null,
+      bankAccount: "PL 00 1111 2222 3333 4444 5555 6666",
     });
   });
 
@@ -135,12 +139,18 @@ describe("invoicePaymentAnalyzer", () => {
             <n0:TerminPlatnosci>
               <n0:Termin>2026-03-29</n0:Termin>
             </n0:TerminPlatnosci>
+            <n0:RachunekBankowy>
+              <n0:NrRB>  PL\n  12   3456 7890 1234 5678 9012 3456  </n0:NrRB>
+            </n0:RachunekBankowy>
           </n0:Platnosc>
         </n0:Fa>
       </n0:Faktura>
     `;
 
     expect(analyzeInvoicePayment(xml, "5541346379").dueDate).toBe("2026-03-29");
+    expect(analyzeInvoicePayment(xml, "5541346379").bankAccount).toBe(
+      "PL 12 3456 7890 1234 5678 9012 3456",
+    );
   });
 
   it("falls back to due date embedded in XML description", () => {
@@ -175,6 +185,7 @@ describe("invoicePaymentAnalyzer", () => {
       dueDate: null,
       amount: null,
       currency: null,
+      bankAccount: null,
     });
   });
 
@@ -187,11 +198,12 @@ describe("invoicePaymentAnalyzer", () => {
       dueDate: null,
       amount: null,
       currency: null,
+      bankAccount: null,
     });
   });
 
   it("recognizes notification eligibility only for payable unpaid invoices with due date", () => {
-    const base = { amount: null, currency: null };
+    const base = { amount: null, currency: null, bankAccount: null };
     expect(
       isEligibleForNotification({
         invoiceType: "payable",

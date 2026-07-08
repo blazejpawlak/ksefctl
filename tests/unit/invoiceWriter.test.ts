@@ -1,10 +1,14 @@
 import type { AppConfig } from "../../src/config/schema";
-import { describe, expect, it } from "vitest";
+import type { PdfGenerationCircuitBreaker } from "../../src/core/invoiceWriter";
+import type { PdfService } from "../../src/services/pdfService";
+import type { Logger } from "pino";
+import { describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
   getMetadataFileName,
+  maybeWritePdf,
   resolveInvoiceStorageTarget,
 } from "../../src/core/invoiceWriter";
 
@@ -17,6 +21,16 @@ const baseConfig = (root: string): AppConfig =>
   }) as unknown as AppConfig;
 
 const deps = (root: string) => ({ config: baseConfig(root) });
+
+const createPdfConfig = (): AppConfig =>
+  ({
+    sync: { generatePdf: true },
+  }) as unknown as AppConfig;
+
+const createLogger = () =>
+  ({
+    warn: vi.fn(),
+  }) as unknown as Logger;
 
 describe("getMetadataFileName", () => {
   it("returns shared metadata.json for non-flat layout", () => {
@@ -63,7 +77,7 @@ describe("resolveInvoiceStorageTarget", () => {
       true,
     );
     expect(target.invoiceDir).toContain("2024");
-    expect(target.invoiceDir).not.toContain("FLAT001"); // no per-invoice dir in flat mode
+    expect(target.invoiceDir).not.toContain("FLAT001");
     expect(target.metadataFileName).toContain(".metadata.json");
   });
 
@@ -82,5 +96,52 @@ describe("resolveInvoiceStorageTarget", () => {
       override,
     );
     expect(target.invoiceDir).toContain("custom-output");
+  });
+});
+
+describe("maybeWritePdf", () => {
+  it("disables local PDF generation after repeated timeouts", async () => {
+    const invoiceDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-pdf-"));
+    const generateInvoicePdf = vi.fn().mockResolvedValue({
+      status: "failed",
+      reason: "timeout",
+      message: "PDF generation timed out after 30000 ms",
+    });
+    const pdfService = { generateInvoicePdf } as unknown as PdfService;
+    const logger = createLogger();
+    const breaker: PdfGenerationCircuitBreaker = {
+      consecutiveTimeouts: 0,
+      maxConsecutiveTimeouts: 3,
+      disabled: false,
+    };
+    const pdfDeps = {
+      config: createPdfConfig(),
+      logger,
+      pdfService,
+      pdfCircuitBreaker: breaker,
+    };
+
+    for (const ksefNumber of ["KSEF-1", "KSEF-2", "KSEF-3", "KSEF-4"]) {
+      await maybeWritePdf(
+        pdfDeps,
+        invoiceDir,
+        "<Faktura />",
+        ksefNumber,
+        "1234567890",
+        ksefNumber,
+      );
+    }
+
+    expect(generateInvoicePdf).toHaveBeenCalledTimes(3);
+    expect(breaker.disabled).toBe(true);
+    expect(logger.warn).toHaveBeenCalledTimes(3);
+    expect(logger.warn).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        reason: "timeout",
+        consecutiveTimeouts: 3,
+        maxConsecutiveTimeouts: 3,
+      }),
+      "PDF generation disabled after repeated timeouts",
+    );
   });
 });
