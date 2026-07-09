@@ -4,7 +4,12 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import tls from "node:tls";
 import { calculateBackoff } from "./backoff";
-import { AuthError, ConfigError, NetworkError, sanitizeErrorMessage } from "./errors";
+import {
+  AuthError,
+  ConfigError,
+  NetworkError,
+  sanitizeErrorMessage,
+} from "./errors";
 import { formatDuration, sleep, sleepWithCountdown } from "./time";
 
 export type RetryOptions = {
@@ -73,6 +78,9 @@ const extractHttpStatus = (message: string): number | null => {
 
 const isRetryableStatus = (status: number): boolean =>
   status === 429 || status >= 500;
+
+const retryReasonForStatus = (status: number): "rate_limit" | "server_error" =>
+  status === 429 ? "rate_limit" : "server_error";
 
 // SHA-256 produces 32 bytes → exactly 44 base64 characters with standard padding.
 const PIN_REGEX = /^[A-Za-z0-9+/]{43}=$/;
@@ -153,7 +161,6 @@ export class HttpClient {
   }
 
   private emitProgress(message: string): void {
-    this.logger?.info(message);
     if (this.progress) {
       this.progress(message);
     }
@@ -209,9 +216,10 @@ export class HttpClient {
           if (attempt < this.options.retry.maxAttempts) {
             const retryAfter = response.headers.get("Retry-After");
             const retrySeconds = retryAfter ? Number(retryAfter) : NaN;
-            const retryDelay = Number.isFinite(retrySeconds)
-              ? retrySeconds * 1000
-              : null;
+            const retryDelay =
+              Number.isFinite(retrySeconds) && retrySeconds >= 0
+                ? retrySeconds * 1000
+                : null;
             const delay =
               retryDelay ??
               calculateBackoff({
@@ -226,10 +234,15 @@ export class HttpClient {
                 method,
                 path: safePath,
                 status: response.status,
+                retryReason: retryReasonForStatus(response.status),
+                nextAttempt: attempt + 1,
+                maxAttempts: this.options.retry.maxAttempts,
                 delay: formatDuration(delay),
                 delayMs: delay,
               },
-              "HTTP retry scheduled",
+              response.status === 429
+                ? "KSeF rate limit reached; retry scheduled"
+                : "KSeF service returned a retryable response; retry scheduled",
             );
             if (response.status === 429) {
               this.emitProgress(
@@ -282,21 +295,26 @@ export class HttpClient {
           throw new NetworkError(`Network failure: ${message}`);
         }
 
-        this.logger?.warn(
-          {
-            attempt,
-            method,
-            path: safePath,
-            err: sanitizeErrorMessage(message),
-          },
-          "HTTP request failed, retrying",
-        );
         const delay = calculateBackoff({
           attempt,
           baseDelayMs: this.options.retry.baseDelayMs,
           maxDelayMs: this.options.retry.maxDelayMs,
           jitter: this.options.retry.jitter,
         });
+        this.logger?.warn(
+          {
+            attempt,
+            method,
+            path: safePath,
+            retryReason: "network_failure",
+            nextAttempt: attempt + 1,
+            maxAttempts: this.options.retry.maxAttempts,
+            delay: formatDuration(delay),
+            delayMs: delay,
+            err: sanitizeErrorMessage(message),
+          },
+          "Temporary network failure; retry scheduled",
+        );
         await sleep(delay);
       } finally {
         clearTimeout(timeout);

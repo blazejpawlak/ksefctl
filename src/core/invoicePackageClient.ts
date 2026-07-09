@@ -1,4 +1,7 @@
-import type { InvoiceExportStatusResponse, KsefClient } from "../api/ksefClient";
+import type {
+  InvoiceExportStatusResponse,
+  KsefClient,
+} from "../api/ksefClient";
 import type { AppConfig } from "../config/schema";
 import type { Logger } from "pino";
 import { sanitizeForTerminal } from "../cli/commandTree";
@@ -38,7 +41,18 @@ export async function waitForExport(
       throw new Error(`Export failed: ${status.status.description}`);
     }
     const description = sanitizeForTerminal(status.status.description);
-    logger.info({ attempt, status: description }, "Export in progress");
+    logger.debug(
+      {
+        attempt,
+        referenceNumber: sanitizeForTerminal(referenceNumber),
+        status: description,
+        maxAttempts,
+        remainingAttempts: maxAttempts - attempt,
+        nextPollIn: formatDuration(intervalMs),
+        nextPollInMs: intervalMs,
+      },
+      "KSeF export is still processing; next status check scheduled",
+    );
     const baseMessage = `Progress: export in progress (${description})`;
     await sleepWithProgress(
       baseMessage,

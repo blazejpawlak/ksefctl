@@ -84,6 +84,18 @@ describe("waitForExport", () => {
     const result = await waitForExport(deps, "token", "ref-1");
     expect(result).toBe(ready);
     expect(getExportStatus).toHaveBeenCalledTimes(2);
+    expect(deps.logger.debug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attempt: 1,
+        referenceNumber: "ref-1",
+        status: "Pending",
+        maxAttempts: 3,
+        remainingAttempts: 2,
+        nextPollInMs: 1000,
+      }),
+      "KSeF export is still processing; next status check scheduled",
+    );
+    expect(deps.logger.info).not.toHaveBeenCalled();
   });
 
   it("throws immediately on 4xx response", async () => {

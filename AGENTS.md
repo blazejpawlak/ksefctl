@@ -84,6 +84,18 @@ Lint/format:
 - Do not introduce additional formatting/lint tooling without discussion.
 - Do run the @linter agent to lint.
 
+Dependency audit:
+
+```bash
+npm audit
+```
+
+Notes:
+
+- Run `npm audit` before every release.
+- Fix actionable vulnerabilities before tagging or publishing a release.
+- If `npm audit` requires a semver-major dependency update, report the finding and get approval before applying it.
+
 ## Key paths
 
 - CLI entry: `src/cli.ts`
@@ -181,6 +193,7 @@ Testing:
 ## Commit and review expectations
 
 - Ensure `npm run build` passes for TypeScript changes.
+- Before release, ensure `npm audit` reports zero vulnerabilities.
 - Add or update tests for non-trivial logic changes.
 - Keep README and docs consistent with behavior changes.
 - This repository is hosted on GitHub.com; when using `gh`, set `GH_HOST=github.com` if the shell environment points to another GitHub host.

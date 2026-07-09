@@ -1,3 +1,4 @@
+import type { Logger } from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -10,7 +11,9 @@ import {
 } from "../../src/utils/errors";
 import { HttpClient, validateTlsOptions } from "../../src/utils/http";
 
-const createClient = () =>
+const createClient = (
+  overrides: Partial<ConstructorParameters<typeof HttpClient>[0]> = {},
+) =>
   new HttpClient({
     baseUrl: "https://api.example.com/v2",
     timeoutMs: 1000,
@@ -25,7 +28,16 @@ const createClient = () =>
       pins: [],
       pinningHosts: [],
     },
+    ...overrides,
   });
+
+const createLogger = (): Logger =>
+  ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  }) as unknown as Logger;
 
 let _savedFetch: typeof globalThis.fetch | undefined;
 
@@ -76,9 +88,9 @@ describe("HttpClient", () => {
   it("trailing-word clause consumes at most one word after the primary token", () => {
     // "token=abc expired at 5pm": the regex eats "abc expired" (two words)
     // leaving " at 5pm" intact.
-    expect(
-      sanitizeErrorMessage("token=abc123 expired at 5pm"),
-    ).toBe("token=[REDACTED] at 5pm");
+    expect(sanitizeErrorMessage("token=abc123 expired at 5pm")).toBe(
+      "token=[REDACTED] at 5pm",
+    );
   });
 
   it("formats unknown errors through the shared sanitizer", () => {
@@ -105,6 +117,123 @@ describe("HttpClient", () => {
       client.request({ method: "POST", path: "/invoices/exports" }),
     ).rejects.toBeInstanceOf(NetworkError);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs rate-limit retries as state changes without duplicating progress ticks", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response("retry later", {
+          status: 429,
+          headers: { "Retry-After": "0" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    _savedFetch = globalThis.fetch;
+    (globalThis as Record<string, unknown>).fetch = fetchSpy;
+    const logger = createLogger();
+    const progress = vi.fn();
+    const client = createClient({ logger, progress });
+
+    await expect(
+      client.request({ method: "POST", path: "/invoices/exports" }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 429,
+        retryReason: "rate_limit",
+        nextAttempt: 2,
+        maxAttempts: 3,
+        delayMs: 0,
+      }),
+      "KSeF rate limit reached; retry scheduled",
+    );
+    expect(logger.info).not.toHaveBeenCalled();
+    expect(progress).toHaveBeenCalledWith(
+      "Progress: rate limited, waiting 0ms",
+    );
+  });
+
+  it("logs transient fetch failures with retry delay context", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("fetch failed"))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    _savedFetch = globalThis.fetch;
+    (globalThis as Record<string, unknown>).fetch = fetchSpy;
+    const logger = createLogger();
+    const client = createClient({ logger });
+
+    await expect(
+      client.request({ method: "GET", path: "/invoices/exports/ref" }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attempt: 1,
+        method: "GET",
+        path: "/invoices/exports/ref",
+        retryReason: "network_failure",
+        nextAttempt: 2,
+        maxAttempts: 3,
+        delayMs: 1,
+        err: "fetch failed",
+      }),
+      "Temporary network failure; retry scheduled",
+    );
+  });
+
+  it("falls back to backoff for negative Retry-After values", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response("retry later", {
+          status: 429,
+          headers: { "Retry-After": "-5" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    _savedFetch = globalThis.fetch;
+    (globalThis as Record<string, unknown>).fetch = fetchSpy;
+    const logger = createLogger();
+    const client = createClient({
+      logger,
+      retry: {
+        maxAttempts: 3,
+        baseDelayMs: 7,
+        maxDelayMs: 7,
+        jitter: 0,
+      },
+    });
+
+    await expect(
+      client.request({ method: "POST", path: "/invoices/exports" }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 429,
+        retryReason: "rate_limit",
+        delayMs: 7,
+      }),
+      "KSeF rate limit reached; retry scheduled",
+    );
   });
 });
 
