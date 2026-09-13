@@ -40,7 +40,7 @@
   },
   "dependencies": {
     "@akmf/ksef-fe-invoice-converter": "github:CIRFMF/ksef-pdf-generator#c0392137f7817ca7e532c1f2c71e47bcb896952d",
-    "adm-zip": "^0.5.10",
+    "adm-zip": "^0.6.1",
     "cli-spinners": "^2.9.2",
     "commander": "^12.1.0",
     "keytar": "^7.9.0",
