@@ -40,18 +40,18 @@
   },
   "dependencies": {
     "@akmf/ksef-fe-invoice-converter": "github:CIRFMF/ksef-pdf-generator#c0392137f7817ca7e532c1f2c71e47bcb896952d",
-    "adm-zip": "^0.5.10",
+    "adm-zip": "^0.6.1",
     "cli-spinners": "^2.9.2",
     "commander": "^12.1.0",
     "keytar": "^7.9.0",
     "node-notifier": "^10.0.1",
-    "nodemailer": "^9.0.3",
+    "nodemailer": "^9.1.1",
     "ora": "^5.4.1",
     "pino": "^9.3.2",
     "pino-pretty": "^11.2.2",
     "proper-lockfile": "^4.1.2",
     "sql.js": "^1.10.3",
-    "undici": "^6.27.0",
+    "undici": "^6.28.0",
     "xml-js": "^1.6.11",
     "yaml": "^2.5.1",
     "zod": "^3.23.8"
@@ -78,6 +78,6 @@
     "openapi-typescript": "^7.5.2",
     "rimraf": "^6.0.1",
     "typescript": "^5.7.2",
-    "vitest": "^4.0.18"
+    "vitest": "^5.0.0"
   }
 }
