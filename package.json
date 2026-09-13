@@ -51,7 +51,7 @@
     "pino-pretty": "^11.2.2",
     "proper-lockfile": "^4.1.2",
     "sql.js": "^1.10.3",
-    "undici": "^6.27.0",
+    "undici": "^6.28.0",
     "xml-js": "^1.6.11",
     "yaml": "^2.5.1",
     "zod": "^3.23.8"
