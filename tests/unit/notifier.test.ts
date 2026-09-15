@@ -197,7 +197,7 @@ describe("Notifier", () => {
     expect(notified).toBe(true);
   });
 
-  it("adds matching content IDs for PDF attachment links", async () => {
+  it("sends PDFs as regular attachments without unsupported CID links", async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-notifier-"));
     const pdfPath = path.join(tmpDir, "Faktura-1.pdf");
     await fs.writeFile(pdfPath, "pdf");
@@ -223,12 +223,12 @@ describe("Notifier", () => {
       | undefined;
     expect(sentMessage?.attachments).toEqual([
       {
-        cid: "invoice-1@ksefctl.local",
         filename: "Faktura-1.pdf",
         path: pdfPath,
       },
     ]);
-    expect(String(sentMessage?.html)).toContain("cid:invoice-1@ksefctl.local");
+    expect(String(sentMessage?.html)).toContain("(attached PDF)");
+    expect(String(sentMessage?.html)).not.toContain("href=\u0022cid:");
   });
 
   it("skips invoices that were already notified", async () => {

@@ -12,6 +12,7 @@ import {
   renderFishCompletion,
   shouldRunFirstRun,
 } from "../../src/cli";
+import { escapeFishDescription } from "../../src/cli/completion";
 import { defaultDataRoot } from "../../src/utils/paths";
 
 const setTty = (value: boolean) => {
@@ -67,6 +68,52 @@ describe("completion helpers", () => {
     expect(output).toContain("__fish_complete_path");
   });
 
+  it("escapes fish completion descriptions for quotes, backslashes, substitution, and newlines", () => {
+    expect(escapeFishDescription("say \"hi\" and \"\"\"more\"\"\"")).toBe(
+      "say \\\"hi\\\" and \\\"\\\"\\\"more\\\"\\\"\\\"",
+    );
+    expect(escapeFishDescription("path\\to\\file and trailing\\")).toBe(
+      "path\\\\to\\\\file and trailing\\\\",
+    );
+    expect(escapeFishDescription("\\\"")).toBe("\\\\\\\"");
+    expect(escapeFishDescription("\\\\\"")).toBe("\\\\\\\\\\\"");
+    expect(escapeFishDescription("$HOME ${HOME} $(whoami) $$$$")).toBe(
+      "\\$HOME \\${HOME} \\$\\(whoami) \\$\\$\\$\\$",
+    );
+    expect(escapeFishDescription("(echo pwned)")).toBe("\\(echo pwned)");
+    expect(escapeFishDescription("((((cmd")).toBe("\\(\\(\\(\\(cmd");
+    expect(escapeFishDescription("line1\ncomplete -c pwned\rline2")).toBe(
+      "line1 complete -c pwned line2",
+    );
+    expect(escapeFishDescription("a\0b\tc\x1bd\u007fe")).toBe("a b c d e");
+
+    const payload =
+      "say \"hi\" $HOME $(whoami) (echo pwned) path\\file\ncomplete -c pwned\0\t\u007f";
+    const program = new Command();
+    program.option("--payload <value>", payload);
+    const output = renderFishCompletion(buildCompletionSpec(program));
+    const payloadLine = output
+      .split("\n")
+      .find((line) => line.includes("-l payload"));
+
+    expect(payloadLine).toBeDefined();
+    expect(payloadLine).toContain(`-d "${escapeFishDescription(payload)}"`);
+    expect(payloadLine).toContain("\\\"hi\\\"");
+    expect(payloadLine).toContain("\\$HOME");
+    expect(payloadLine).toContain("\\$\\(whoami)");
+    expect(payloadLine).toContain("\\(echo pwned)");
+    expect(payloadLine).toContain("path\\\\file");
+    expect(payloadLine).not.toContain("say \"hi\"");
+    expect(payloadLine).not.toMatch(/(^|[^\\])\$HOME/);
+    expect(payloadLine).not.toMatch(/(^|[^\\])\$\(/);
+    expect(payloadLine).not.toMatch(/(^|[^\\])\(echo pwned\)/);
+    expect(payloadLine).not.toMatch(/[\u0000-\u001f\u007f]/);
+    expect(output).not.toMatch(/\ncomplete -c pwned(?:\s|$)/);
+    expect(
+      output.split("\n").filter((line) => line.includes("-l payload")),
+    ).toHaveLength(1);
+  });
+
   it("detects global version flags before command parsing", () => {
     expect(hasVersionFlag(["--version"])).toBe(true);
     expect(hasVersionFlag(["-V"])).toBe(true);
@@ -84,14 +131,14 @@ describe("completion helpers", () => {
     expect(
       formatVersionOutput("2026.02.21", "06fa00c", {
         name: "@akmf/ksef-fe-invoice-converter",
-        version: "1.1.19",
+        version: "1.1.39",
         source: "CIRFMF/ksef-pdf-generator",
-        commit: "c0392137f7817ca7e532c1f2c71e47bcb896952d",
+        commit: "fb12569a439a391a8e0c705e7dc331079be8c942",
       }),
     ).toBe(
       [
         "2026.02.21 (06fa00c)",
-        "pdf-builder: @akmf/ksef-fe-invoice-converter 1.1.19 (CIRFMF/ksef-pdf-generator@c0392137; check upstream releases for newer versions)",
+        "pdf-builder: @akmf/ksef-fe-invoice-converter 1.1.39 (CIRFMF/ksef-pdf-generator@fb12569a; check upstream releases for newer versions)",
       ].join("\n"),
     );
   });

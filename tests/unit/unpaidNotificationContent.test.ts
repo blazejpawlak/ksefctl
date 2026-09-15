@@ -71,15 +71,15 @@ describe("unpaidNotificationContent", () => {
     expect(content.html).toContain("Invoice details");
     expect(content.html).toContain("2026-03-24");
     expect(content.html).toContain(
-      "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">",
+      "<meta name=\u0022viewport\u0022 content=\u0022width=device-width, initial-scale=1.0\u0022>",
     );
     expect(content.html).toContain("@media only screen and (max-width: 600px)");
-    expect(content.html).toContain("class=\"summary-card-cell\"");
-    expect(content.html).toContain("class=\"detail-label\"");
-    expect(content.html).toContain("class=\"detail-value\"");
+    expect(content.html).toContain("class=\u0022summary-card-cell\u0022");
+    expect(content.html).toContain("class=\u0022detail-label\u0022");
+    expect(content.html).toContain("class=\u0022detail-value\u0022");
     expect(content.html).toContain("overflow-wrap:anywhere");
     expect(content.html).toContain("max-width:1180px");
-    expect(content.html).not.toContain("width=\"720\"");
+    expect(content.html).not.toContain("width=\u0022720\u0022");
   });
 
   it("shows org label when provided", () => {
@@ -161,7 +161,8 @@ describe("unpaidNotificationContent", () => {
     expect(content.html).toContain("PL 99 8888 7777 6666 5555 4444 3333");
     expect(content.html).toContain("Second Supplier S.A.");
     expect(content.html).toContain("Faktura-2.pdf");
-    expect(content.html).toContain("href=\"cid:invoice-2@ksefctl.local\"");
+    expect(content.html).toContain("(attached PDF)");
+    expect(content.html).not.toContain("href=\u0022cid:");
   });
 
   it("escapes HTML values in email content", () => {

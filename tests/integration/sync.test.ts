@@ -2,7 +2,7 @@ import AdmZip from "adm-zip";
 import keytar from "keytar";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import YAML from "yaml";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
@@ -11,6 +11,36 @@ import path from "node:path";
 import { createContext } from "../../src/cli/context";
 import { SyncService } from "../../src/core/syncService";
 import { encryptAes256Cbc, sha256Base64 } from "../../src/utils/crypto";
+
+const keychainEntries = vi.hoisted(() => new Map<string, string>());
+
+vi.mock("keytar", () => ({
+  default: {
+    getPassword: (service: string, account: string) =>
+      Promise.resolve(
+        keychainEntries.get(`${service}\u0000${account}`) ?? null,
+      ),
+    setPassword: (
+      service: string,
+      account: string,
+      password: string,
+    ) => {
+      keychainEntries.set(`${service}\u0000${account}`, password);
+      return Promise.resolve();
+    },
+    deletePassword: (service: string, account: string) =>
+      Promise.resolve(keychainEntries.delete(`${service}\u0000${account}`)),
+    findCredentials: (service: string) =>
+      Promise.resolve(
+        [...keychainEntries.entries()].flatMap(([key, password]) => {
+          const separator = key.indexOf("\u0000");
+          return key.slice(0, separator) === service
+            ? [{ account: key.slice(separator + 1), password }]
+            : [];
+        }),
+      ),
+  },
+}));
 
 const baseUrl = "http://localhost/v2";
 const serviceName = "ksefctl-test";
@@ -160,6 +190,7 @@ describe("integration sync", () => {
   );
 
   beforeAll(() => server.listen());
+  beforeEach(() => keychainEntries.clear());
   afterAll(() => server.close());
 
   it("runs a happy path sync and writes files", async () => {

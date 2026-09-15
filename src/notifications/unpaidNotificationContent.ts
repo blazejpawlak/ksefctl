@@ -123,18 +123,11 @@ const getOrgLabel = (item: SyncItem, orgLabels?: OrgLabels): string =>
 const formatAttachmentName = (item: SyncItem): string | null =>
   item.pdfPath ? path.basename(item.pdfPath) : null;
 
-export const formatAttachmentCid = (
-  item: Pick<SyncItem, "pdfPath">,
-  index: number,
-): string | null =>
-  item.pdfPath ? `invoice-${index + 1}@ksefctl.local` : null;
-
-const formatAttachmentLink = (item: SyncItem, index: number): string => {
+const formatAttachmentLabel = (item: SyncItem): string => {
   const name = formatAttachmentName(item);
-  const cid = formatAttachmentCid(item, index);
-  if (!name || !cid) return "&mdash;";
+  if (!name) return "&mdash;";
 
-  return `<a href="cid:${escapeHtml(cid)}" style="color:#0f172a;text-decoration:underline;overflow-wrap:anywhere;word-break:break-word;">${escapeHtml(name)}</a>`;
+  return `<span style="color:#0f172a;overflow-wrap:anywhere;word-break:break-word;">${escapeHtml(name)}</span> <span style="color:#64748b;">(attached PDF)</span>`;
 };
 
 const sumInvoiceAmounts = (items: SyncItem[]): string => {
@@ -241,7 +234,7 @@ const renderDetailsTable = (item: SyncItem, orgLabels?: OrgLabels): string => {
     ["Buyer", escapeHtml(getOrgLabel(item, orgLabels))],
     ["NIP", escapeHtml(item.nip)],
     ["Invoice", escapeOptionalHtml(item.invoiceNumber)],
-    ["File", formatAttachmentLink(item, 0)],
+    ["File", formatAttachmentLabel(item)],
     ["Amount", formatHtmlAmount(item)],
     ["Bank account", escapeOptionalHtml(item.bankAccount)],
     ["Due date", escapeHtml(formatDueDateValue(item.dueDate))],
@@ -272,7 +265,7 @@ const renderInvoiceRows = (items: SyncItem[]): string =>
           <td style="${styles.td}">${index + 1}</td>
           <td style="${styles.td}">${escapeOptionalHtml(item.sellerName)}</td>
           <td style="${styles.td}">${escapeOptionalHtml(item.invoiceNumber)}</td>
-          <td style="${styles.td}">${formatAttachmentLink(item, index)}</td>
+          <td style="${styles.td}">${formatAttachmentLabel(item)}</td>
           <td class="mobile-wrap" style="${styles.td}">${escapeOptionalHtml(item.bankAccount)}</td>
           <td class="mobile-wrap" style="${styles.tdNowrap}">${escapeHtml(formatDueDateValue(item.dueDate))}</td>
           <td class="mobile-wrap" style="${styles.tdNowrap}">${formatHtmlAmount(item)}</td>
@@ -297,13 +290,11 @@ const renderInvoiceTable = (items: SyncItem[]): string => `
 
 const renderAttachments = (items: SyncItem[]): string => {
   const attachments = items
-    .map((item, index) => ({
-      cid: formatAttachmentCid(item, index),
+    .map((item) => ({
       name: formatAttachmentName(item),
     }))
     .filter(
-      (attachment): attachment is { cid: string; name: string } =>
-        attachment.cid !== null && attachment.name !== null,
+      (attachment): attachment is { name: string } => attachment.name !== null,
     );
   if (attachments.length === 0) return "";
 
@@ -312,9 +303,9 @@ const renderAttachments = (items: SyncItem[]): string => {
     <table cellpadding="0" cellspacing="0" border="0" width="100%">
       ${attachments
         .map(
-          ({ cid, name }) => `
+          ({ name }) => `
             <tr>
-              <td class="attachment-name" style="padding:8px 0;color:#1f2937;font-size:15px;line-height:22px;overflow-wrap:anywhere;word-break:break-word;">📎 <a href="cid:${escapeHtml(cid)}" style="color:#0f172a;text-decoration:underline;">${escapeHtml(name)}</a></td>
+              <td class="attachment-name" style="padding:8px 0;color:#1f2937;font-size:15px;line-height:22px;overflow-wrap:anywhere;word-break:break-word;">📎 ${escapeHtml(name)} <span style="color:#64748b;">(attached PDF)</span></td>
             </tr>`,
         )
         .join("")}

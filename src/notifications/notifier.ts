@@ -15,7 +15,6 @@ import {
   markInvoiceNotification,
 } from "../db/repository";
 import {
-  formatAttachmentCid,
   formatEmailNotificationContent,
   formatMacNotificationContent,
   type OrgLabels,
@@ -181,18 +180,15 @@ export class Notifier {
 
   private async buildPdfAttachments(
     items: SyncItem[],
-  ): Promise<{ filename: string; path: string; cid: string }[]> {
+  ): Promise<{ filename: string; path: string }[]> {
     const results = await Promise.all(
-      items.map(async (item, index) => {
+      items.map(async (item) => {
         if (!item.pdfPath) return null;
-        const cid = formatAttachmentCid(item, index);
-        if (!cid) return null;
         try {
           await fs.access(item.pdfPath);
           return {
             filename: path.basename(item.pdfPath),
             path: item.pdfPath,
-            cid,
           };
         } catch {
           return null;
