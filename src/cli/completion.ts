@@ -266,6 +266,19 @@ export const renderZshCompletion = (spec: CompletionSpec): string => {
   return lines.join("\n");
 };
 
+/**
+ * Escape a value for a fish `complete -d "..."` double-quoted string.
+ * Fish expands `$` and `(...)` inside double quotes, so those are escaped
+ * after backslashes; control characters are flattened to keep one directive per line.
+ */
+export const escapeFishDescription = (value: string): string =>
+  value
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, "\\\"")
+    .replace(/\$/g, "\\$")
+    .replace(/\(/g, "\\(");
+
 export const renderFishCompletion = (spec: CompletionSpec): string => {
   const lines = [
     `complete -c ksefctl -f -n "__fish_use_subcommand" -a "${(spec.subcommandsByPath[""] ?? []).join(" ")}"`,
@@ -293,7 +306,7 @@ export const renderFishCompletion = (spec: CompletionSpec): string => {
       const shortFlag = option.short ? `-s ${option.short.slice(1)}` : "";
       const longFlag = option.long ? `-l ${option.long.slice(2)}` : "";
       const description = option.description
-        ? `-d "${option.description.replace(/"/g, "\\\"")}"`
+        ? `-d "${escapeFishDescription(option.description)}"`
         : "";
       const valueArgs = isConfigOption(option)
         ? "-r -a \"(__fish_complete_path)\""

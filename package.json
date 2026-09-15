@@ -1,6 +1,6 @@
 {
   "name": "@blazejpawlak/ksefctl",
-  "version": "2026.7.9",
+  "version": "2026.9.15",
   "description": "CLI background service for KSeF inbox synchronization",
   "license": "Apache-2.0",
   "repository": {
@@ -25,7 +25,8 @@
     "bin",
     "dist",
     "docs",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -39,19 +40,19 @@
     "test:integration": "NODE_OPTIONS= NODE_NO_WARNINGS=1 vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
-    "@akmf/ksef-fe-invoice-converter": "github:CIRFMF/ksef-pdf-generator#c0392137f7817ca7e532c1f2c71e47bcb896952d",
-    "adm-zip": "^0.5.10",
+    "@akmf/ksef-fe-invoice-converter": "github:CIRFMF/ksef-pdf-generator#fb12569a439a391a8e0c705e7dc331079be8c942",
+    "adm-zip": "^0.6.1",
     "cli-spinners": "^2.9.2",
     "commander": "^12.1.0",
     "keytar": "^7.9.0",
     "node-notifier": "^10.0.1",
-    "nodemailer": "^9.0.3",
+    "nodemailer": "^9.1.1",
     "ora": "^5.4.1",
     "pino": "^9.3.2",
     "pino-pretty": "^11.2.2",
     "proper-lockfile": "^4.1.2",
     "sql.js": "^1.10.3",
-    "undici": "^6.27.0",
+    "undici": "^6.28.1",
     "xml-js": "^1.6.11",
     "yaml": "^2.5.1",
     "zod": "^3.23.8"
@@ -62,7 +63,6 @@
     }
   },
   "devDependencies": {
-    "@types/adm-zip": "^0.5.5",
     "@types/node": "^22.10.7",
     "@types/node-notifier": "^8.0.5",
     "@types/nodemailer": "^6.4.15",
@@ -78,6 +78,6 @@
     "openapi-typescript": "^7.5.2",
     "rimraf": "^6.0.1",
     "typescript": "^5.7.2",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.11"
   }
 }

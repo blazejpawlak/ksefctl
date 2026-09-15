@@ -1,57 +1,53 @@
 # ksefctl
 
+[![CI](https://github.com/blazejpawlak/ksefctl/actions/workflows/ci.yml/badge.svg)](https://github.com/blazejpawlak/ksefctl/actions/workflows/ci.yml)
+[![GitHub release](https://img.shields.io/github/v/release/blazejpawlak/ksefctl)](https://github.com/blazejpawlak/ksefctl/releases)
+[![License](https://img.shields.io/github/license/blazejpawlak/ksefctl)](LICENSE)
+
 CLI background service for KSeF API 2.0 inbox synchronization (macOS + Linux). No GUI. No Windows.
+
+[Install](#install) · [Quick start](#quick-start) · [Commands](#commands) · [Configuration](#configuration) · [Services](#services) · [Security](#security--data-handling) · [Development](#development-and-release-checks)
 
 ## What it does
 
 - Authenticates to KSeF API 2.0 (KSeF token).
 - Incrementally downloads incoming invoices using export packages and HWM.
 - Stores invoices idempotently with a local SQLite state DB (sql.js).
+- Generates local PDF visualizations by default.
 - Sends macOS Notification Center alerts and optional SMTP email summaries.
 - Runs once or continuously (`sync --watch`); provides launchd and systemd installers.
-
-## Features
-
-- Cross-platform CLI (macOS + Linux)
-- Incremental sync with HWM + deduplication
-- Idempotent storage + SQLite state
-- Optional PDF visualization output (default on)
-- Notifications (macOS + SMTP)
-- launchd/systemd installers
 
 ## Prerequisites
 
 - Node.js >= 22 (nvm recommended)
 - macOS or Linux (x64/arm64)
 - For keychain storage on Linux: libsecret (keytar backend)
-
-## Source-of-truth docs used
-
-- OpenAPI contract: `open-api.json` from https://github.com/CIRFMF/ksef-docs
-- Auth: `uwierzytelnianie.md`
-- Token management: `tokeny-ksef.md`
-- Invoice download: `pobieranie-faktur/pobieranie-faktur.md`
-- Incremental download: `pobieranie-faktur/przyrostowe-pobieranie-faktur.md`
-- Environments: `srodowiska.md`
-- Rate limits: `limity/limity.md`
+- Git, when building from source
 
 ## Install
 
+### GitHub Packages
+
+Releases are published as `@blazejpawlak/ksefctl` on GitHub Packages. GitHub's npm registry requires authentication even for public packages. Create a classic personal access token with `read:packages`, then use it as the password when prompted:
+
 ```bash
+npm login --scope=@blazejpawlak --auth-type=legacy --registry=https://npm.pkg.github.com
+npm install --global @blazejpawlak/ksefctl --registry=https://npm.pkg.github.com
+```
+
+Do not put the token in this repository or commit it to an `.npmrc` file.
+
+### Build from source
+
+```bash
+git clone https://github.com/blazejpawlak/ksefctl.git
+cd ksefctl
 npm ci
 npm run build
 npm link
 ```
 
 `npm ci` runs the repo `postinstall` hook, which prepares the pinned `@akmf/ksef-fe-invoice-converter` dependency for local use. Use `ksefctl --version` to see the app version and the pinned upstream PDF builder version/commit; compare it with the upstream `CIRFMF/ksef-pdf-generator` releases when troubleshooting PDF rendering.
-
-Or global:
-
-```bash
-npm install -g .
-```
-
-Node requirement: `>= 22`.
 
 ## Quick start
 
@@ -82,6 +78,9 @@ The environment prompt shows full names with the API URLs for clarity.
 - `ksefctl system verify [-n <nip>]` – validate authentication against the configured environment.
 - `ksefctl system service install` – install + enable launchd/systemd.
 - `ksefctl system service uninstall` – remove launchd/systemd.
+- `ksefctl system service status` – show service state and last sync details.
+- `ksefctl system service restart` – restart the background service.
+- `ksefctl system service logs [-f] [-n <lines>] [--error]` – show or follow service logs.
 - `ksefctl system config` – show sanitized config.
 - `ksefctl system secret set [-n <nip>] [--token-stdin]` – store KSeF token in keychain.
 - `ksefctl system secret show` – show which NIPs have keychain secrets.
@@ -95,7 +94,7 @@ Global options:
 - `-v, --verbose` – enable detailed logs.
 - `-V, --version` – print the application version, latest short commit, and pinned upstream PDF builder version/commit.
 
-All commands except `system init` require a config file and keychain tokens for each configured NIP.
+Commands that sync, verify, inspect state, or manage the background service require completed initialization: a valid config plus a keychain token for every configured NIP. Help/version output, `system completion`, `system pin`, and creation of the initial config template do not require KSeF credentials.
 
 ### system init
 
@@ -465,7 +464,7 @@ PDF visualization is produced locally by the pinned upstream `CIRFMF/ksef-pdf-ge
 
 ```text
 2026.6.9 (06fa00c)
-pdf-builder: @akmf/ksef-fe-invoice-converter 1.1.19 (CIRFMF/ksef-pdf-generator@c0392137; check upstream releases for newer versions)
+pdf-builder: @akmf/ksef-fe-invoice-converter 1.1.39 (CIRFMF/ksef-pdf-generator@fb12569a; check upstream releases for newer versions)
 ```
 
 If PDF rendering starts timing out or failing for newly issued invoices, check whether upstream has published a newer `CIRFMF/ksef-pdf-generator` release and update the pinned dependency after testing.
@@ -576,6 +575,15 @@ Each invoice is matched against profiles in order; the first profile whose `nips
 
 ## Services
 
+Manage the installed service with:
+
+```bash
+ksefctl system service status
+ksefctl system service restart
+ksefctl system service logs --lines 100
+ksefctl system service logs --follow
+```
+
 ### macOS launchd (user agent)
 
 `ksefctl system service install` creates:
@@ -634,19 +642,18 @@ If invoice package parts are served from a different host, add it to `pinningHos
 - `ksefctl system secret show` only reports presence, never the token value
 - Interactive commands will prompt for missing tokens and store them in keychain
 
-## Tests
+## Development and release checks
 
 ```bash
+npm ci
+npm run lint
+npm run build
 npm test
 npm run test:integration
+npm audit
 ```
 
-## Lint
-
-```bash
-npm run lint
-npm run lint:fix
-```
+All six commands must pass before a release. Use `npm run lint:fix` only when you intend to modify formatting or lint findings.
 
 ## Verification checklist
 
@@ -668,20 +675,23 @@ npm run lint:fix
 npm run generate:openapi
 ```
 
-## API reference
+## KSeF references
 
-KSeF API contract: https://github.com/CIRFMF/ksef-docs/blob/main/open-api.json
+The implementation follows the official [`CIRFMF/ksef-docs`](https://github.com/CIRFMF/ksef-docs) documentation:
+
+- [OpenAPI contract](https://github.com/CIRFMF/ksef-docs/blob/main/open-api.json)
+- `uwierzytelnianie.md` for authentication
+- `tokeny-ksef.md` for token management
+- `pobieranie-faktur/pobieranie-faktur.md` for invoice downloads
+- `pobieranie-faktur/przyrostowe-pobieranie-faktur.md` for incremental downloads
+- `srodowiska.md` for environments
+- `limity/limity.md` for rate limits
 
 ## Contributing
 
-```bash
-npm ci
-npm run lint:fix
-npm run build
-npm test
-```
+Run the complete [development and release checks](#development-and-release-checks) before opening a pull request. See [`AGENTS.md`](AGENTS.md) for repository conventions and generated-file boundaries.
 
-All-in-one:
+For local development, the convenience script installs dependencies, applies lint fixes, builds, runs both test suites, and links the CLI:
 
 ```bash
 npm run solution

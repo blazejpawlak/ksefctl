@@ -24,7 +24,7 @@ describe("version helpers", () => {
 
     await expect(readPdfBuilderInfo()).resolves.toMatchObject({
       name: "@akmf/ksef-fe-invoice-converter",
-      version: "1.1.19",
+      version: "1.1.39",
       source: "CIRFMF/ksef-pdf-generator",
       commit: expectedCommit,
     });

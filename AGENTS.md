@@ -96,6 +96,58 @@ Notes:
 - Fix actionable vulnerabilities before tagging or publishing a release.
 - If `npm audit` requires a semver-major dependency update, report the finding and get approval before applying it.
 
+## Release and GitHub Packages publishing
+
+This package is published to GitHub Packages, not the public npm registry. The registry is configured in `package.json` as `https://npm.pkg.github.com`.
+
+Before publishing:
+
+```bash
+npm ci
+npm run lint
+npm run build
+npm test
+npm run test:integration
+npm audit
+```
+
+All checks must pass, and `npm audit` must report zero vulnerabilities. If a fix requires a semver-major dependency update, get approval before changing dependencies. After dependency or version changes, rerun the complete validation sequence.
+
+Use a new unused date-based package version and update both `package.json` and `package-lock.json`:
+
+```bash
+npm version YYYY.M.D --no-git-tag-version
+```
+
+Validate GitHub CLI credentials before publishing:
+
+```bash
+gh auth status --hostname github.com
+```
+
+The active credential must include the `write:packages` scope. If it does not, refresh the credential and complete the browser/device authorization flow:
+
+```bash
+gh auth refresh --hostname github.com --scopes write:packages
+gh auth status --hostname github.com
+```
+
+Do not commit tokens or add registry credentials to repository files. Publish with the GitHub CLI token only for the current command:
+
+```bash
+env "npm_config_//npm.pkg.github.com/:_authToken=$(gh auth token --hostname github.com)" \
+  npm publish --registry=https://npm.pkg.github.com
+```
+
+Verify the published version:
+
+```bash
+env "npm_config_//npm.pkg.github.com/:_authToken=$(gh auth token --hostname github.com)" \
+  npm view @blazejpawlak/ksefctl@VERSION version --registry=https://npm.pkg.github.com
+```
+
+Published package versions cannot be overwritten. If publishing reports that a version already exists, bump to the next unused date-based version, rerun validation, commit and push the version change, and publish again. After publishing, remove the `write:packages` scope from the local credential if it is no longer needed.
+
 ## Key paths
 
 - CLI entry: `src/cli.ts`

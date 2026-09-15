@@ -121,11 +121,39 @@ describe("ServiceInstaller", () => {
       expect(plist).toContain("<string>/usr/local/bin/ksefctl&lt;</string>");
       expect(plist).toContain("<string>/tmp/ksefctl&amp;.yml</string>");
       expect(plist).toContain(
-        `<key>WorkingDirectory</key><string>${storageRoot.replace("&", "&amp;")}</string>`,
+        "<key>WorkingDirectory</key><string>/tmp/storage &amp; logs</string>",
       );
       expect(plist).not.toContain("NODE_OPTIONS");
     },
   );
+
+  it("escapes repeated XML metacharacters in launchd plist string values", () => {
+    const storageRoot = "/tmp/a&&b<<c>>d\"e'f&g";
+    const plist = buildLaunchdPlist(
+      {
+        configPath: "/tmp/ksefctl&&<>\"'&.yml",
+        storageRoot,
+        lifecycleLogPath: `${storageRoot}/logs/ksefctl.log`,
+        nodePath: "/usr/local/bin/node&&",
+        cliPath: "/usr/local/bin/ksefctl<<>>",
+      },
+      null,
+    );
+
+    expect(plist).toContain(
+      "<key>WorkingDirectory</key><string>/tmp/a&amp;&amp;b&lt;&lt;c&gt;&gt;d&quot;e&apos;f&amp;g</string>",
+    );
+    expect(plist).toContain("<string>/usr/local/bin/node&amp;&amp;</string>");
+    expect(plist).toContain(
+      "<string>/usr/local/bin/ksefctl&lt;&lt;&gt;&gt;</string>",
+    );
+    expect(plist).toContain(
+      "<string>/tmp/ksefctl&amp;&amp;&lt;&gt;&quot;&apos;&amp;.yml</string>",
+    );
+    expect(plist).not.toMatch(/<string>[^<]*&&[^<]*<\/string>/);
+    expect(plist).not.toMatch(/<string>[^<]*<<[^<]*<\/string>/);
+    expect(plist).not.toMatch(/<string>[^<]*>>[^<]*<\/string>/);
+  });
 
   maybeIt("resolves non-root launchd target from HOME", () => {
     expect(resolveLaunchdTarget("/tmp/home", 501, false)).toEqual({
