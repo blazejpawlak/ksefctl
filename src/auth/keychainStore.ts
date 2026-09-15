@@ -19,7 +19,7 @@ let keytarModulePromise: Promise<KeytarModule> | undefined;
 const loadKeytar = async (): Promise<KeytarModule> => {
   keytarModulePromise ??= import("keytar").then((module) => {
     const keytar = "default" in module ? module.default : module;
-    return keytar as KeytarModule;
+    return keytar;
   });
   return keytarModulePromise;
 };

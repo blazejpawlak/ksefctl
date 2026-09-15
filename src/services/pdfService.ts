@@ -159,7 +159,7 @@ const withTimeout = async <T>(
 };
 
 const defaultGeneratorLoader: PdfGeneratorLoader = async () =>
-  (await import("@akmf/ksef-fe-invoice-converter")) as PdfGeneratorModule;
+  import("@akmf/ksef-fe-invoice-converter");
 
 const ensureGeneratorExports = (
   generator: PdfGeneratorModule,

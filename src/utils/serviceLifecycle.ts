@@ -43,8 +43,6 @@ export type ServiceLifecycleEvent = ServiceLifecycleInitiator & {
   signal?: NodeJS.Signals;
 } & ServiceLifecycleContext;
 
-type FlushableLogger = Logger & { flush?: () => void };
-
 const trackedSignals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
 
 const normalizeValue = (value: string | undefined): string | null => {
@@ -141,7 +139,7 @@ export const installServiceStopSignalLogging = (
         signal,
       });
       cleanup();
-      (logger as FlushableLogger).flush?.();
+      logger.flush?.();
       process.kill(process.pid, signal);
     };
 

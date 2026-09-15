@@ -1,6 +1,6 @@
 import type { KsefClient } from "../../src/api/ksefClient";
 import type { AuthService } from "../../src/auth/authService";
-import type { AppConfig, SubjectType } from "../../src/config/schema";
+import type { AppConfig } from "../../src/config/schema";
 import type { Logger } from "pino";
 import AdmZip from "adm-zip";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -411,7 +411,7 @@ describe("SyncService", () => {
     await service.runOnce();
 
     const continuation = await store.withDb((db) =>
-      getContinuationPoint(db, "1234567890", "Subject1" as SubjectType),
+      getContinuationPoint(db, "1234567890", "Subject1"),
     );
     expect(continuation).toBe(now.toISOString());
     expect(exportInvoices).toHaveBeenCalledTimes(2);
@@ -979,7 +979,7 @@ describe("SyncService", () => {
       getInvoice(db, "1234567890", "KSEF-BAD"),
     );
     const continuation = await store.withDb((db) =>
-      getContinuationPoint(db, "1234567890", "Subject1" as SubjectType),
+      getContinuationPoint(db, "1234567890", "Subject1"),
     );
     const secondRun = await service.runOnce();
     writeFileSpy.mockRestore();
