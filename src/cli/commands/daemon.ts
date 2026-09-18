@@ -1,3 +1,4 @@
+import type { ShutdownController } from "../../utils/serviceLifecycle";
 import type { Logger } from "pino";
 import { Command } from "commander";
 import { StatusService } from "../../core/statusService";
@@ -5,7 +6,14 @@ import { SyncService } from "../../core/syncService";
 import { Notifier } from "../../notifications/notifier";
 import { ConfigError, exitCodeFromError } from "../../utils/errors";
 import {
-  installServiceStopSignalLogging,
+  clampIntervalSeconds,
+  computeNextIntervalSeconds,
+  readRateLimitState,
+  resolveRateLimitStatePath,
+  writeRateLimitState,
+} from "../../utils/rateLimit";
+import {
+  installShutdownController,
   logServiceLifecycle,
 } from "../../utils/serviceLifecycle";
 import { formatDuration, sleep, sleepWithCountdown } from "../../utils/time";
@@ -21,6 +29,15 @@ import {
   type RootOptions,
 } from "./runCommand";
 
+// Bounds the drain of an in-flight cycle after a stop signal so a hung KSeF
+// call cannot keep the service alive indefinitely.
+const shutdownDrainMs = 10_000;
+
+type SyncCycleOutcome = {
+  result: Awaited<ReturnType<SyncService["runOnce"]>> | null;
+  errorMessage: string | null;
+};
+
 export function registerDaemon(program: Command): void {
   const daemonCmd = new Command("daemon");
   daemonCmd
@@ -34,7 +51,7 @@ export function registerDaemon(program: Command): void {
       const { config, verbose } = rootOpts;
       let daemonLogFile: string | null = null;
       let daemonLogger: Logger | null = null;
-      let cleanupServiceStopLogging: (() => void) | null = null;
+      let shutdown: ShutdownController | null = null;
       const renderer =
         !verbose && process.stderr.isTTY
           ? createProgressRenderer({ stream: process.stderr })
@@ -55,9 +72,30 @@ export function registerDaemon(program: Command): void {
         if (nips.length === 0) {
           throw new ConfigError("No organizations configured");
         }
-        const intervalMs = ctx.config.pollingIntervalSeconds * 1000;
-        const statusService = new StatusService(ctx.store);
-        cleanupServiceStopLogging = installServiceStopSignalLogging(ctx.logger);
+        const adaptive = ctx.config.sync.adaptivePolling;
+        const statePath = resolveRateLimitStatePath(ctx.config.storage.root);
+        let intervalSeconds = ctx.config.pollingIntervalSeconds;
+        if (adaptive.enabled) {
+          const persisted = await readRateLimitState(statePath);
+          if (persisted) {
+            // Restarting at the floor would immediately re-trip the limiter.
+            intervalSeconds = clampIntervalSeconds(
+              persisted.intervalSeconds,
+              adaptive,
+            );
+            ctx.rateLimitTracker.restoreRetryAfterDeadline(
+              persisted.retryAfterDeadlineMs,
+            );
+          }
+        }
+        let intervalMs = intervalSeconds * 1000;
+        const statusService = new StatusService(ctx.store, {
+          storageRoot: ctx.config.storage.root,
+          fallbackIntervalSeconds: ctx.config.pollingIntervalSeconds,
+          adaptivePollingEnabled: adaptive.enabled,
+        });
+        const stopController = installShutdownController(ctx.logger);
+        shutdown = stopController;
         const startupEvent = logServiceLifecycle(ctx.logger, {
           action: "start",
           stage: "completed",
@@ -76,6 +114,7 @@ export function registerDaemon(program: Command): void {
           ...getLifecycleEventEntries(startupEvent),
         ]);
 
+        const notifier = new Notifier(ctx.config, ctx.logger);
         const sync = new SyncService({
           client: ctx.client,
           auth: ctx.auth,
@@ -84,25 +123,77 @@ export function registerDaemon(program: Command): void {
           store: ctx.store,
           progress,
           countdownIntervalSeconds: ctx.countdownIntervalSeconds,
+          // Watch mode notifies per NIP so a stop mid-cycle cannot lose alerts.
+          notifier,
         });
-        const notifier = new Notifier(ctx.config, ctx.logger);
         let iteration = 0;
 
         while (true) {
           iteration += 1;
           const startedAt = Date.now();
-          let result: Awaited<ReturnType<SyncService["runOnce"]>> | null = null;
-          let errorMessage: string | null = null;
-          try {
-            progress?.(`Progress: sync cycle ${iteration} started`);
-            result = await sync.runOnce();
-            await notifier.notifyUnpaidInvoices(result, ctx.store);
-          } catch (error) {
-            logUnexpectedError(error, daemonLogger, daemonLogFile);
-            errorMessage = formatCliError(error);
+          let cycleCompleted = false;
+          const cycle = (async (): Promise<SyncCycleOutcome> => {
+            let result: Awaited<ReturnType<SyncService["runOnce"]>> | null =
+              null;
+            let errorMessage: string | null = null;
+            try {
+              progress?.(`Progress: sync cycle ${iteration} started`);
+              result = await sync.runOnce();
+              await notifier.notifyUnpaidInvoices(result, ctx.store);
+            } catch (error) {
+              logUnexpectedError(error, daemonLogger, daemonLogFile);
+              errorMessage = formatCliError(error);
+            } finally {
+              cycleCompleted = true;
+            }
+            return { result, errorMessage };
+          })();
+          await Promise.race([cycle, stopController.whenStopRequested]);
+          if (stopController.stopRequested && !cycleCompleted) {
+            // Let the in-flight notification finish, but not forever.
+            await Promise.race([cycle, sleep(shutdownDrainMs)]);
+            if (!cycleCompleted) {
+              ctx.logger.warn(
+                { iteration, drainTimeoutMs: shutdownDrainMs },
+                "Shutdown drain timed out; abandoning in-flight sync cycle",
+              );
+              renderer?.done();
+              stopController.finalize();
+              break;
+            }
           }
           renderer?.done();
+          const { result, errorMessage } = await cycle;
           const durationMs = Date.now() - startedAt;
+          if (adaptive.enabled) {
+            const cycleSummary = ctx.rateLimitTracker.completeCycle();
+            const nextIntervalSeconds = computeNextIntervalSeconds({
+              currentIntervalSeconds: intervalSeconds,
+              hadRateLimit: cycleSummary.hadRateLimit,
+              options: adaptive,
+              retryAfterDeadlineMs: ctx.rateLimitTracker.getRetryAfterDeadline(),
+            });
+            if (nextIntervalSeconds !== intervalSeconds) {
+              ctx.logger.info(
+                {
+                  iteration,
+                  previousIntervalSeconds: intervalSeconds,
+                  intervalSeconds: nextIntervalSeconds,
+                  rateLimitCount: cycleSummary.rateLimitCount,
+                  cleanCycles: cycleSummary.cleanCycles,
+                },
+                "Adaptive polling interval updated",
+              );
+            }
+            intervalSeconds = nextIntervalSeconds;
+            intervalMs = intervalSeconds * 1000;
+            await writeRateLimitState(statePath, {
+              intervalSeconds,
+              nextRunAt: new Date(Date.now() + intervalMs).toISOString(),
+              retryAfterDeadlineMs:
+                ctx.rateLimitTracker.getRetryAfterDeadline(),
+            });
+          }
           const status = await statusService.getStatus();
           const invoicesToPay = result ? getInvoicesToPay(result.items) : [];
           printHeader(`Sync iteration ${iteration}`);
@@ -127,21 +218,37 @@ export function registerDaemon(program: Command): void {
             );
           }
 
+          if (stopController.stopRequested) {
+            stopController.finalize();
+            break;
+          }
           if (progress) {
             progress(`Progress: next run in ${formatDuration(intervalMs)}`);
-            await sleepWithCountdown(
-              intervalMs,
-              ctx.countdownIntervalSeconds,
-              (remaining) =>
-                progress(`Progress: next run in ${formatDuration(remaining)}`),
-            );
+            await Promise.race([
+              sleepWithCountdown(
+                intervalMs,
+                ctx.countdownIntervalSeconds,
+                (remaining) =>
+                  progress(
+                    `Progress: next run in ${formatDuration(remaining)}`,
+                  ),
+              ),
+              stopController.whenStopRequested,
+            ]);
             renderer?.done();
           } else {
-            await sleep(intervalMs);
+            await Promise.race([
+              sleep(intervalMs),
+              stopController.whenStopRequested,
+            ]);
+          }
+          if (stopController.stopRequested) {
+            stopController.finalize();
+            break;
           }
         }
       } catch (error) {
-        cleanupServiceStopLogging?.();
+        shutdown?.dispose();
         renderer?.done();
         const logHint = logUnexpectedError(error, daemonLogger, daemonLogFile);
         console.error(`${formatCliError(error)}${logHint}`);
