@@ -70,6 +70,7 @@ export class Notifier {
     const candidates = listInvoicesMissingNotification(
       db,
       unpaidDueNotificationKind,
+      this.config.notifications.unpaidCatchUpLookbackDays,
     );
     if (candidates.length === 0) return [];
 

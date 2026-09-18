@@ -5,6 +5,10 @@ import {
   getSyncState,
   setServiceLifecycleState,
 } from "../db/repository";
+import {
+  readRateLimitState,
+  resolveRateLimitStatePath,
+} from "../utils/rateLimit";
 
 export type StatusInfo = {
   lastSyncAt: string | null;
@@ -18,16 +22,50 @@ export type StatusInfo = {
   lastLifecycleBy: string | null;
   lastLifecycleInitiatorSource: string | null;
   lastLifecycleReason: string | null;
+  /** Interval the watch loop is currently using, adaptive value included. */
+  effectiveIntervalSeconds: number | null;
+  nextRunAt: string | null;
+};
+
+export type StatusServiceOptions = {
+  /** config.storage.root; without it the adaptive fields stay unresolved. */
+  storageRoot?: string;
+  /** config.pollingIntervalSeconds, used until the watch loop persists state. */
+  fallbackIntervalSeconds?: number;
+  /** config.sync.adaptivePolling.enabled; false keeps the fixed interval. */
+  adaptivePollingEnabled?: boolean;
 };
 
 export class StatusService {
   private store: SqliteStore;
+  private options: StatusServiceOptions;
 
-  constructor(store: SqliteStore) {
+  constructor(store: SqliteStore, options: StatusServiceOptions = {}) {
     this.store = store;
+    this.options = options;
+  }
+
+  private async readAdaptiveStatus(): Promise<
+    Pick<StatusInfo, "effectiveIntervalSeconds" | "nextRunAt">
+  > {
+    const fallback = this.options.fallbackIntervalSeconds ?? null;
+    if (
+      this.options.adaptivePollingEnabled === false ||
+      !this.options.storageRoot
+    ) {
+      return { effectiveIntervalSeconds: fallback, nextRunAt: null };
+    }
+    const state = await readRateLimitState(
+      resolveRateLimitStatePath(this.options.storageRoot),
+    );
+    return {
+      effectiveIntervalSeconds: state?.intervalSeconds ?? fallback,
+      nextRunAt: state?.nextRunAt ?? null,
+    };
   }
 
   async getStatus(): Promise<StatusInfo> {
+    const adaptive = await this.readAdaptiveStatus();
     return this.store.withDb((db) => {
       const state = getSyncState(db);
       const lifecycle = getServiceLifecycleState(db);
@@ -43,6 +81,7 @@ export class StatusService {
         lastLifecycleBy: lifecycle.last_lifecycle_by,
         lastLifecycleInitiatorSource: lifecycle.last_lifecycle_initiator_source,
         lastLifecycleReason: lifecycle.last_lifecycle_reason,
+        ...adaptive,
       };
     });
   }

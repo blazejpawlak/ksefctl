@@ -8,6 +8,7 @@ import { SqliteStore } from "../db/sqlite";
 import { ConfigError } from "../utils/errors";
 import { HttpClient, validateTlsOptions } from "../utils/http";
 import { createLogger } from "../utils/logger";
+import { RateLimitTracker } from "../utils/rateLimit";
 import { isManagedServiceMode } from "./serviceMode";
 
 type ContextOptions = {
@@ -37,6 +38,7 @@ export const createContext = async (
     prettyConsole:
       options?.prettyConsole ?? (verbose ? true : config.logging.pretty),
     suppressConsole,
+    rotation: config.logging.rotation,
   });
   const countdownIntervalSeconds =
     options?.countdownIntervalSeconds ?? (verbose ? 10 : 60);
@@ -67,6 +69,7 @@ export const createContext = async (
   };
   await validateTlsOptions(tlsSecurity);
 
+  const rateLimitTracker = new RateLimitTracker();
   const http = new HttpClient({
     baseUrl,
     timeoutMs: config.operational.timeoutSeconds * 1000,
@@ -75,6 +78,8 @@ export const createContext = async (
     logger,
     progress: options?.progress,
     countdownIntervalSeconds,
+    onRateLimit: (info) => rateLimitTracker.recordRateLimit(info),
+    onSuccess: () => rateLimitTracker.recordSuccess(),
   });
 
   const client = new KsefClient(http);
@@ -101,5 +106,6 @@ export const createContext = async (
     store,
     keychain,
     countdownIntervalSeconds,
+    rateLimitTracker,
   };
 };

@@ -155,7 +155,10 @@ Published package versions cannot be overwritten. If publishing reports that a v
 - Auth: `src/auth/*`
 - API client: `src/api/ksefClient.ts`
 - HTTP: `src/utils/http.ts`
-- Sync: `src/core/syncService.ts`
+- Rate limiting / adaptive polling: `src/utils/rateLimit.ts`
+- Logging and rotation: `src/utils/logger.ts`
+- Sync: `src/core/syncService.ts`, `src/core/syncSubjectRunner.ts`, `src/core/window.ts`
+- Notifications: `src/notifications/*`
 - Storage: `src/core/storage.ts`
 - DB: `src/db/*`
 - Tests: `tests/unit`, `tests/integration`

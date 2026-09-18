@@ -165,6 +165,20 @@ export const computeSyncWindow = (
 };
 
 /**
+ * Determine whether a candidate export window is too narrow to be worth
+ * requesting. KSeF rejects requests whose range ends inside the lag between
+ * wall clock and its permanent-storage high-water mark; narrow windows are
+ * the ones most likely to fall entirely within that lag.
+ */
+export const isBelowMinExportWindow = (
+  windowStart: Date,
+  windowEnd: Date,
+  minExportWindowSeconds: number,
+): boolean =>
+  (windowEnd.getTime() - windowStart.getTime()) / 1000 <
+  minExportWindowSeconds;
+
+/**
  * Advance the window to the next cursor position.
  * Returns null when the cursor has not moved (indicating a potential stall).
  */

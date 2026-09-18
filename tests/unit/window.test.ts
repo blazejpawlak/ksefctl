@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   addUtcMonths,
+  advanceWindow,
   computeSyncWindow,
+  isBelowMinExportWindow,
   maxDate,
   minDate,
   parseCliTimeWindow,
@@ -183,6 +185,58 @@ describe("addUtcMonths", () => {
     const date = new Date(Date.UTC(2026, 5, 15)); // Jun 15
     const result = addUtcMonths(date, -3);
     expect(result.getUTCMonth()).toBe(2); // March
+  });
+});
+
+describe("isBelowMinExportWindow", () => {
+  it("returns true when the window is narrower than the minimum", () => {
+    const start = new Date("2026-05-10T11:59:00Z");
+    const end = new Date("2026-05-10T12:00:00Z"); // 60s window
+    expect(isBelowMinExportWindow(start, end, 300)).toBe(true);
+  });
+
+  it("returns false when the window is exactly at the minimum", () => {
+    const start = new Date("2026-05-10T11:55:00Z");
+    const end = new Date("2026-05-10T12:00:00Z"); // exactly 300s
+    expect(isBelowMinExportWindow(start, end, 300)).toBe(false);
+  });
+
+  it("returns false when the window is wider than the minimum", () => {
+    const start = new Date("2026-02-01T00:00:00Z");
+    const end = new Date("2026-05-01T00:00:00Z"); // 3 months
+    expect(isBelowMinExportWindow(start, end, 300)).toBe(false);
+  });
+
+  it("returns false when the configured minimum is zero", () => {
+    const start = new Date("2026-05-10T11:59:59Z");
+    const end = new Date("2026-05-10T12:00:00Z"); // 1s window
+    expect(isBelowMinExportWindow(start, end, 0)).toBe(false);
+  });
+});
+
+describe("advanceWindow", () => {
+  it("advances when the next cursor is after the current start", () => {
+    const currentStart = new Date("2026-05-01T00:00:00Z");
+    const nextCursor = "2026-05-05T00:00:00Z";
+    const result = advanceWindow(currentStart, nextCursor);
+    expect(result.stalled).toBe(false);
+    expect(result.nextStart.toISOString()).toBe(
+      new Date(nextCursor).toISOString(),
+    );
+  });
+
+  it("reports stalled when the next cursor does not move forward", () => {
+    const currentStart = new Date("2026-05-05T00:00:00Z");
+    const nextCursor = "2026-05-05T00:00:00Z";
+    const result = advanceWindow(currentStart, nextCursor);
+    expect(result.stalled).toBe(true);
+  });
+
+  it("reports stalled when the next cursor moves backward", () => {
+    const currentStart = new Date("2026-05-05T00:00:00Z");
+    const nextCursor = "2026-05-01T00:00:00Z";
+    const result = advanceWindow(currentStart, nextCursor);
+    expect(result.stalled).toBe(true);
   });
 });
 

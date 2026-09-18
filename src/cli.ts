@@ -7,6 +7,7 @@ import { registerSync } from "./cli/commands/sync";
 import { registerSystemCompletion } from "./cli/commands/systemCompletion";
 import { registerSystemConfig } from "./cli/commands/systemConfig";
 import { registerSystemInit } from "./cli/commands/systemInit";
+import { registerSystemNotifications } from "./cli/commands/systemNotifications";
 import { registerSystemPin } from "./cli/commands/systemPin";
 import { registerSystemSecret } from "./cli/commands/systemSecret";
 import {
@@ -53,6 +54,7 @@ registerSystemService(system, program);
 registerSystemPin(system);
 registerSystemConfig(system, program);
 registerSystemSecret(system, program);
+registerSystemNotifications(system, program);
 registerSystemCompletion(system, program);
 registerSync(program);
 registerDaemon(program);

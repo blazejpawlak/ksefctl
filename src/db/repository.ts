@@ -259,9 +259,40 @@ export const markInvoiceNotification = (
 export const listInvoicesMissingNotification = (
   db: Database,
   notificationKind: InvoiceNotificationKind,
+  lookbackDays: number,
+  now = new Date(),
 ): InvoiceNotificationCandidate[] => {
+  const downloadedSince = new Date(
+    now.getTime() - lookbackDays * 24 * 60 * 60 * 1000,
+  ).toISOString();
   const stmt = db.prepare(
     `SELECT i.nip, i.ksef_number, i.file_path
+     FROM invoices i
+     LEFT JOIN invoice_notifications n
+       ON n.nip = i.nip
+      AND n.ksef_number = i.ksef_number
+      AND n.notification_kind = ?
+     WHERE i.status = 'downloaded'
+       AND i.file_path <> ''
+       AND i.downloaded_at >= ?
+       AND n.nip IS NULL`,
+  );
+  stmt.bind([notificationKind, downloadedSince]);
+
+  const records: InvoiceNotificationCandidate[] = [];
+  while (stmt.step()) {
+    records.push(stmt.getAsObject() as InvoiceNotificationCandidate);
+  }
+  stmt.free();
+  return records;
+};
+
+export const countInvoicesMissingNotification = (
+  db: Database,
+  notificationKind: InvoiceNotificationKind,
+): number => {
+  const stmt = db.prepare(
+    `SELECT COUNT(*) AS count
      FROM invoices i
      LEFT JOIN invoice_notifications n
        ON n.nip = i.nip
@@ -272,11 +303,36 @@ export const listInvoicesMissingNotification = (
        AND n.nip IS NULL`,
   );
   stmt.bind([notificationKind]);
-
-  const records: InvoiceNotificationCandidate[] = [];
-  while (stmt.step()) {
-    records.push(stmt.getAsObject() as InvoiceNotificationCandidate);
-  }
+  const row = stmt.step()
+    ? (stmt.getAsObject() as { count?: number })
+    : { count: 0 };
   stmt.free();
-  return records;
+  return row.count ?? 0;
+};
+
+export const markInvoicesMissingNotification = (
+  db: Database,
+  notificationKind: InvoiceNotificationKind,
+  notifiedAt: string,
+): number => {
+  const stmt = db.prepare(
+    `INSERT OR IGNORE INTO invoice_notifications (
+       nip,
+       ksef_number,
+       notification_kind,
+       notified_at
+     )
+     SELECT i.nip, i.ksef_number, ?, ?
+     FROM invoices i
+     LEFT JOIN invoice_notifications n
+       ON n.nip = i.nip
+      AND n.ksef_number = i.ksef_number
+      AND n.notification_kind = ?
+     WHERE i.status = 'downloaded'
+       AND i.file_path <> ''
+       AND n.nip IS NULL`,
+  );
+  stmt.run([notificationKind, notifiedAt, notificationKind]);
+  stmt.free();
+  return db.getRowsModified();
 };

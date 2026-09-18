@@ -85,6 +85,7 @@ The environment prompt shows full names with the API URLs for clarity.
 - `ksefctl system secret set [-n <nip>] [--token-stdin]` – store KSeF token in keychain.
 - `ksefctl system secret show` – show which NIPs have keychain secrets.
 - `ksefctl system secret clear -n <nip>` – remove keychain secret for a NIP.
+- `ksefctl system notifications backfill [--dry-run] [--yes]` – mark existing invoices as notification-handled without sending anything.
 - `ksefctl system completion <bash|zsh|fish>` – generate shell completion script.
 - `ksefctl system pin <host> [-p <port>]` – print the SPKI SHA-256 TLS pin for a host (ready to paste into `security.tls.pins`).
 
@@ -365,9 +366,14 @@ Run `ksefctl system config` after `system init` to see the resolved configuratio
 | `pollingIntervalSeconds`             | `300` (5 min)                      |
 | `notifications.macosNotification`    | `true`                             |
 | `notifications.unpaidInvoiceCatchUp` | `false`                            |
+| `notifications.unpaidCatchUpLookbackDays` | `30`                          |
 | `notifications.email.enabled`        | `false`                            |
 | `logging.level`                      | `info`                             |
 | `logging.pretty`                     | `true`                             |
+| `logging.rotation.enabled`           | `true`                             |
+| `logging.rotation.maxFileMegabytes`  | `16`                               |
+| `logging.rotation.maxFiles`          | `5`                                |
+| `logging.rotation.maxAgeDays`        | `30`                               |
 | `operational.maxConcurrency`         | `2`                                |
 | `operational.timeoutSeconds`         | `60`                               |
 | `operational.pollIntervalSeconds`    | `10`                               |
@@ -386,6 +392,13 @@ Run `ksefctl system config` after `system init` to see the resolved configuratio
 | `sync.pdfMaxConsecutiveTimeouts`     | `3`                                |
 | `sync.flatSync`                      | `false`                            |
 | `sync.maxConcurrentNips`             | `1`                                |
+| `sync.minExportWindowSeconds`        | `300`                              |
+| `sync.adaptivePolling.enabled`       | `true`                             |
+| `sync.adaptivePolling.minIntervalSeconds` | `300`                         |
+| `sync.adaptivePolling.maxIntervalSeconds` | `3600`                        |
+| `sync.adaptivePolling.growthFactor`  | `2`                                |
+| `sync.adaptivePolling.decayFactor`   | `0.8`                              |
+| `sync.adaptivePolling.respectRetryAfter` | `true`                         |
 | `security.tls.enablePinning`         | `false`                            |
 | `security.allowedHosts`              | `[]` (API host allowed by default) |
 
@@ -438,6 +451,7 @@ Implementation follows `przyrostowe-pobieranie-faktur.md`:
 - `subjectType` iterates through configured subject types
 - `dateRange.to` is set to the window end to honor the 3-month export limit
 - Cursor is updated using `LastPermanentStorageDate` if truncated, otherwise `PermanentStorageHwmDate`
+- Windows narrower than `sync.minExportWindowSeconds` are skipped without contacting KSeF, and a window KSeF rejects as out of range leaves the cursor untouched (see [Rate limiting & retries](#rate-limiting--retries))
 
 First-time sync default: `initialSyncFrom` is set to ~3 months ago to satisfy the KSeF date range limit. Override in config if needed.
 The CLI chunks older ranges into 3-month windows automatically.
@@ -473,6 +487,49 @@ If PDF rendering starts timing out or failing for newly issued invoices, check w
 
 KSeF limits are enforced per `limity/limity.md`. The client retries 429/5xx with exponential backoff and jitter and respects `Retry-After`.
 To be a good citizen, `operational.exportCooldownSeconds` adds a short pause between export requests (default: 2s).
+
+### Why a fixed poll interval is not enough
+
+Every cycle issues one `POST /invoices/exports` per organization per subject type.
+With four NIPs and the four default subject types that is 16 export requests per
+cycle; at `pollingIntervalSeconds: 300` it works out to roughly 192 export
+requests an hour, which is well above what KSeF permits. When the limit is hit
+KSeF replies `429` with a `Retry-After` header, and that header is authoritative:
+observed values range from seconds to 50 minutes, with a median around 12 minutes.
+
+### Adaptive polling
+
+`sync.adaptivePolling` (enabled by default) lets the watch loop tune its own
+interval instead of polling blindly:
+
+- after a cycle that hit a rate limit, the interval grows by `growthFactor`;
+- after a clean cycle it decays by `decayFactor`;
+- the result is clamped between `minIntervalSeconds` and `maxIntervalSeconds`;
+- with `respectRetryAfter` (default `true`) the next cycle is never scheduled
+  before the newest `Retry-After` deadline has passed, whatever the maths says.
+
+The effective interval is persisted under `<storage.root>/state/` so a restart
+does not reset to the floor and immediately re-trip the limiter. `ksefctl status`
+reports `effectiveIntervalSeconds` and `nextRunAt`. Set
+`sync.adaptivePolling.enabled: false` to restore the previous fixed-interval
+behaviour exactly.
+
+### Minimum export window
+
+KSeF rejects export requests whose range ends inside the lag between wall clock
+and its permanent-storage high-water mark, with
+`Zakres filtrowania wykracza poza dostepny zakres danych`. Once a cursor has
+caught up to near-now, the next window is only seconds wide and is certain to be
+rejected while still consuming a rate-limited request.
+
+`sync.minExportWindowSeconds` (default `300`) skips the request entirely when the
+candidate window is narrower than that, leaving the cursor untouched so the next
+cycle retries once enough time has accumulated.
+
+A rejected window never advances the continuation point. KSeF returned no data,
+so moving the cursor to a locally derived timestamp could strand invoices that
+are later assigned a `permanentStorageDate` inside the skipped range; the
+successful path continues to take the cursor from KSeF's own high-water mark.
 
 ## Security & data handling
 
@@ -514,6 +571,30 @@ If `organizations[].outputPath` is set, or `--output-path` is passed on the CLI,
 
 - macOS Notification Center via `node-notifier`.
 - SMTP email notifications via `nodemailer`.
+
+Notifications are dispatched after each organization finishes rather than once
+at the end of the whole cycle. A cycle can block for a long time on rate-limit
+backoff, and stopping the service in that gap previously lost the notification
+permanently: the invoice was already on disk and in the database, but no
+notification row had been written. The service also drains the in-flight
+notification on `SIGTERM`/`SIGINT` before exiting.
+
+### Catch-up and backfill
+
+`notifications.unpaidInvoiceCatchUp` re-checks stored invoices that never got a
+notification. It is bounded by `notifications.unpaidCatchUpLookbackDays`
+(default `30`) so it does not rescan the entire archive on every cycle.
+
+Enabling catch-up on an install that already has a backlog would email every
+unpaid invoice it finds, with PDF attachments, in one burst. Seed the state
+first:
+
+```bash
+ksefctl system notifications backfill --dry-run   # report how many would be marked
+ksefctl system notifications backfill --yes       # mark them, sending nothing
+```
+
+Only then set `notifications.unpaidInvoiceCatchUp: true`.
 
 ### Email notification content
 
@@ -582,6 +663,27 @@ ksefctl system service status
 ksefctl system service restart
 ksefctl system service logs --lines 100
 ksefctl system service logs --follow
+```
+
+### Log rotation
+
+The application log is rotated by size and pruned by age and count, configured
+under `logging.rotation`: files larger than `maxFileMegabytes` (default 16) are
+rotated aside, at most `maxFiles` (default 5) rotated files are retained, and
+anything older than `maxAgeDays` (default 30) is removed. Rotated files keep
+`0600` permissions, since logs can carry business data. Rotation failures are
+warned about and never take the service down.
+
+Rotation applies to the log named by `logging.file`. The service manager's own
+stdout/stderr capture is separate: on Linux the unit sends both to journald,
+which applies its own retention, and `ksefctl system service logs --error` reads
+from `journalctl`. launchd offers no size cap for its `StandardOutPath` /
+`StandardErrorPath` files, so on macOS those remain uncapped by the platform.
+
+After upgrading, restart the service so it reopens the rotated log:
+
+```bash
+ksefctl system service restart
 ```
 
 ### macOS launchd (user agent)

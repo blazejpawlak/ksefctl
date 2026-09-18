@@ -194,6 +194,95 @@ describe("HttpClient", () => {
     );
   });
 
+  it("reports the Retry-After delay to onRateLimit and successes to onSuccess", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response("retry later", {
+          status: 429,
+          headers: { "Retry-After": "0" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    _savedFetch = globalThis.fetch;
+    (globalThis as Record<string, unknown>).fetch = fetchSpy;
+    const onRateLimit = vi.fn();
+    const onSuccess = vi.fn();
+    const client = createClient({ onRateLimit, onSuccess });
+
+    await expect(
+      client.request({ method: "POST", path: "/invoices/exports" }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(onRateLimit).toHaveBeenCalledTimes(1);
+    expect(onRateLimit).toHaveBeenCalledWith({
+      path: "/invoices/exports",
+      retryAfterMs: 0,
+      at: expect.any(Number) as number,
+    });
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a 429 on the final attempt even though no retry follows", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response("retry later", {
+        status: 429,
+        headers: { "Retry-After": "12" },
+      }),
+    );
+    _savedFetch = globalThis.fetch;
+    (globalThis as Record<string, unknown>).fetch = fetchSpy;
+    const onRateLimit = vi.fn();
+    const onSuccess = vi.fn();
+    const client = createClient({
+      onRateLimit,
+      onSuccess,
+      retry: { maxAttempts: 1, baseDelayMs: 1, maxDelayMs: 1, jitter: 0 },
+    });
+
+    await expect(
+      client.request({ method: "POST", path: "/invoices/exports" }),
+    ).rejects.toBeInstanceOf(NetworkError);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(onRateLimit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/invoices/exports",
+        retryAfterMs: 12_000,
+      }),
+    );
+    expect(onSuccess).not.toHaveBeenCalled();
+  });
+
+  it("does not report rate limits for retryable server errors", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("boom", { status: 503 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    _savedFetch = globalThis.fetch;
+    (globalThis as Record<string, unknown>).fetch = fetchSpy;
+    const onRateLimit = vi.fn();
+    const onSuccess = vi.fn();
+    const client = createClient({ onRateLimit, onSuccess });
+
+    await expect(
+      client.request({ method: "GET", path: "/invoices/exports/ref" }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(onRateLimit).not.toHaveBeenCalled();
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+
   it("falls back to backoff for negative Retry-After values", async () => {
     const fetchSpy = vi
       .fn()
