@@ -149,3 +149,73 @@ export const installServiceStopSignalLogging = (
 
   return cleanup;
 };
+
+export type ShutdownController = {
+  /** True once SIGINT/SIGTERM has been observed. */
+  readonly stopRequested: boolean;
+  /** Resolves as soon as a stop is requested. */
+  readonly whenStopRequested: Promise<NodeJS.Signals>;
+  /** Re-raise the original signal after draining. Safe to call more than once. */
+  finalize: () => void;
+  /** Remove the installed handlers without exiting. */
+  dispose: () => void;
+};
+
+/**
+ * Install SIGINT/SIGTERM handlers that record the stop request and let the
+ * caller drain in-flight work before the process dies. Unlike
+ * installServiceStopSignalLogging, this does not re-raise the signal
+ * immediately; the caller decides when by calling finalize().
+ */
+export const installShutdownController = (
+  logger: Logger,
+): ShutdownController => {
+  const handlers = new Map<NodeJS.Signals, () => void>();
+  let stopRequested = false;
+  let received: NodeJS.Signals | null = null;
+  let resolveStop: ((signal: NodeJS.Signals) => void) | null = null;
+  const whenStopRequested = new Promise<NodeJS.Signals>((resolve) => {
+    resolveStop = resolve;
+  });
+
+  const dispose = (): void => {
+    for (const [signal, handler] of handlers.entries()) {
+      process.off(signal, handler);
+    }
+    handlers.clear();
+  };
+
+  const finalize = (): void => {
+    const signal = received ?? "SIGTERM";
+    dispose();
+    logger.flush?.();
+    process.kill(process.pid, signal);
+  };
+
+  for (const signal of trackedSignals) {
+    const handler = (): void => {
+      if (stopRequested) return;
+      stopRequested = true;
+      received = signal;
+      logServiceLifecycle(logger, {
+        action: "stop",
+        stage: "signal_received",
+        origin: "service",
+        reason: "process-signal",
+        signal,
+      });
+      resolveStop?.(signal);
+    };
+    handlers.set(signal, handler);
+    process.on(signal, handler);
+  }
+
+  return {
+    get stopRequested() {
+      return stopRequested;
+    },
+    whenStopRequested,
+    finalize,
+    dispose,
+  };
+};
