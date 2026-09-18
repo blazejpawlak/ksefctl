@@ -38,6 +38,7 @@ export const createContext = async (
     prettyConsole:
       options?.prettyConsole ?? (verbose ? true : config.logging.pretty),
     suppressConsole,
+    rotation: config.logging.rotation,
   });
   const countdownIntervalSeconds =
     options?.countdownIntervalSeconds ?? (verbose ? 10 : 60);

@@ -140,12 +140,49 @@ const toExistingPath = async (filePath: string): Promise<string | null> => {
   }
 };
 
+const spawnAndPipe = async (
+  command: string,
+  args: string[],
+  pretty: boolean,
+): Promise<void> => {
+  await new Promise<void>((resolve, reject) => {
+    const prettyStream = pretty
+      ? (createPrettyLogStream() as unknown as Writable)
+      : null;
+    const child = spawn(command, args, {
+      stdio: ["ignore", prettyStream ? "pipe" : "inherit", "inherit"],
+    });
+    if (prettyStream && child.stdout) child.stdout.pipe(prettyStream);
+    child.on("close", (code) => {
+      prettyStream?.end();
+      if (code !== null && code !== 0)
+        reject(new Error(`${command} exited with code ${code}`));
+      else resolve();
+    });
+    child.on("error", (error) => {
+      prettyStream?.end();
+      reject(error);
+    });
+  });
+};
+
 export const showServiceLogs = async (
   configPathOverride: string | undefined,
   opts: LogsOptions,
 ): Promise<void> => {
   await ensureInitialized(configPathOverride);
   const ctx = await createContext(configPathOverride, { prettyConsole: true });
+
+  // systemd sends the unit's stdout/stderr to journald rather than to files,
+  // so the stderr view has to come from journalctl instead of a tail.
+  if (serviceManager === "systemd" && opts.error) {
+    const journalArgs = process.getuid?.() === 0 ? [] : ["--user"];
+    journalArgs.push("-u", unitName, "-n", opts.lines ?? "50", "-p", "err");
+    if (opts.follow) journalArgs.push("-f");
+    await spawnAndPipe("journalctl", journalArgs, false);
+    return;
+  }
+
   const requestedPaths = resolveServiceLogPaths({
     appName: APP_NAME,
     storageRoot: ctx.config.storage.root,
