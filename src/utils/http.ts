@@ -26,6 +26,12 @@ export type SecurityOptions = {
   caPath?: string;
 };
 
+export type RateLimitReport = {
+  path: string;
+  retryAfterMs: number;
+  at: number;
+};
+
 export type HttpClientOptions = {
   baseUrl: string;
   timeoutMs: number;
@@ -34,6 +40,10 @@ export type HttpClientOptions = {
   logger?: Logger;
   progress?: (message: string) => void;
   countdownIntervalSeconds?: number;
+  /** Reports every 429 with the delay the response asked for. */
+  onRateLimit?: (info: RateLimitReport) => void;
+  /** Reports every successful response. */
+  onSuccess?: () => void;
 };
 
 export type RequestOptions = {
@@ -152,12 +162,16 @@ export class HttpClient {
   private options: HttpClientOptions;
   private logger?: Logger;
   private progress?: (message: string) => void;
+  private onRateLimit?: (info: RateLimitReport) => void;
+  private onSuccess?: () => void;
 
   constructor(options: HttpClientOptions) {
     this.options = options;
     this.dispatcherPromise = createDispatcher(options.security);
     this.logger = options.logger;
     this.progress = options.progress;
+    this.onRateLimit = options.onRateLimit;
+    this.onSuccess = options.onSuccess;
   }
 
   private emitProgress(message: string): void {
@@ -213,21 +227,30 @@ export class HttpClient {
         } as RequestInit & { dispatcher: Agent });
 
         if (response.status === 429 || response.status >= 500) {
+          const retryAfter = response.headers.get("Retry-After");
+          const retrySeconds = retryAfter ? Number(retryAfter) : NaN;
+          const retryDelay =
+            Number.isFinite(retrySeconds) && retrySeconds >= 0
+              ? retrySeconds * 1000
+              : null;
+          const delay =
+            retryDelay ??
+            calculateBackoff({
+              attempt,
+              baseDelayMs: this.options.retry.baseDelayMs,
+              maxDelayMs: this.options.retry.maxDelayMs,
+              jitter: this.options.retry.jitter,
+            });
+          if (response.status === 429) {
+            // Report every 429, including the last attempt: the scheduler needs
+            // the Retry-After deadline even when this request gives up.
+            this.onRateLimit?.({
+              path: safePath,
+              retryAfterMs: delay,
+              at: Date.now(),
+            });
+          }
           if (attempt < this.options.retry.maxAttempts) {
-            const retryAfter = response.headers.get("Retry-After");
-            const retrySeconds = retryAfter ? Number(retryAfter) : NaN;
-            const retryDelay =
-              Number.isFinite(retrySeconds) && retrySeconds >= 0
-                ? retrySeconds * 1000
-                : null;
-            const delay =
-              retryDelay ??
-              calculateBackoff({
-                attempt,
-                baseDelayMs: this.options.retry.baseDelayMs,
-                maxDelayMs: this.options.retry.maxDelayMs,
-                jitter: this.options.retry.jitter,
-              });
             this.logger?.warn(
               {
                 attempt,
@@ -272,6 +295,7 @@ export class HttpClient {
           { attempt, method, path: safePath, status: response.status },
           "HTTP response",
         );
+        this.onSuccess?.();
 
         if (options.parseAs === "text") {
           return (await response.text()) as T;

@@ -1,3 +1,4 @@
+import type { ShutdownController } from "../../utils/serviceLifecycle";
 import type { Command } from "commander";
 import type { Logger } from "pino";
 import { Option } from "commander";
@@ -11,7 +12,14 @@ import { PdfService } from "../../services/pdfService";
 import { ConfigError, exitCodeFromError } from "../../utils/errors";
 import { expandHome } from "../../utils/paths";
 import {
-  installServiceStopSignalLogging,
+  clampIntervalSeconds,
+  computeNextIntervalSeconds,
+  readRateLimitState,
+  resolveRateLimitStatePath,
+  writeRateLimitState,
+} from "../../utils/rateLimit";
+import {
+  installShutdownController,
   logServiceLifecycle,
 } from "../../utils/serviceLifecycle";
 import { formatDuration, sleep, sleepWithCountdown } from "../../utils/time";
@@ -40,6 +48,15 @@ type SyncOptions = {
   watch?: boolean;
   json?: boolean;
   repairMissingPdfs?: boolean;
+};
+
+// Bounds the drain of an in-flight cycle after a stop signal so a hung KSeF
+// call cannot keep the service alive indefinitely.
+const shutdownDrainMs = 10_000;
+
+type SyncCycleOutcome = {
+  result: Awaited<ReturnType<SyncService["runOnce"]>> | null;
+  errorMessage: string | null;
 };
 
 const resolveCliOutputPath = (outputPath?: string): string | undefined => {
@@ -96,7 +113,7 @@ export function registerSync(program: Command): void {
     .action(async (options: SyncOptions) => {
       let logFile: string | null = null;
       let cmdLogger: Logger | null = null;
-      let cleanupServiceStopLogging: (() => void) | null = null;
+      let shutdown: ShutdownController | null = null;
       const renderer = process.stderr.isTTY
         ? createProgressRenderer({ stream: process.stderr })
         : null;
@@ -160,6 +177,7 @@ export function registerSync(program: Command): void {
         cmdLogger = ctx.logger;
         const nipFilter =
           options.nip ?? (nips.length === 1 ? nips[0] : undefined);
+        const notifier = new Notifier(ctx.config, ctx.logger);
         const sync = new SyncService({
           client: ctx.client,
           auth: ctx.auth,
@@ -168,9 +186,15 @@ export function registerSync(program: Command): void {
           store: ctx.store,
           progress,
           countdownIntervalSeconds: ctx.countdownIntervalSeconds,
+          // Watch mode notifies per NIP so a stop mid-cycle cannot lose alerts.
+          ...(options.watch ? { notifier } : {}),
         });
-        const notifier = new Notifier(ctx.config, ctx.logger);
-        const statusService = new StatusService(ctx.store);
+        const adaptive = ctx.config.sync.adaptivePolling;
+        const statusService = new StatusService(ctx.store, {
+          storageRoot: ctx.config.storage.root,
+          fallbackIntervalSeconds: ctx.config.pollingIntervalSeconds,
+          adaptivePollingEnabled: adaptive.enabled,
+        });
 
         if (options.repairMissingPdfs) {
           printHeader("Repair missing PDFs");
@@ -210,9 +234,8 @@ export function registerSync(program: Command): void {
         }
 
         if (options.watch) {
-          cleanupServiceStopLogging = installServiceStopSignalLogging(
-            ctx.logger,
-          );
+          const stopController = installShutdownController(ctx.logger);
+          shutdown = stopController;
           const startupEvent = logServiceLifecycle(ctx.logger, {
             action: "start",
             stage: "completed",
@@ -221,7 +244,22 @@ export function registerSync(program: Command): void {
             context: { serviceMode: "watch" },
           });
           await statusService.recordLifecycle(startupEvent);
-          const intervalMs = ctx.config.pollingIntervalSeconds * 1000;
+          const statePath = resolveRateLimitStatePath(ctx.config.storage.root);
+          let intervalSeconds = ctx.config.pollingIntervalSeconds;
+          if (adaptive.enabled) {
+            const persisted = await readRateLimitState(statePath);
+            if (persisted) {
+              // Restarting at the floor would immediately re-trip the limiter.
+              intervalSeconds = clampIntervalSeconds(
+                persisted.intervalSeconds,
+                adaptive,
+              );
+              ctx.rateLimitTracker.restoreRetryAfterDeadline(
+                persisted.retryAfterDeadlineMs,
+              );
+            }
+          }
+          let intervalMs = intervalSeconds * 1000;
           printHeader("Sync");
           printKeyValues([
             ["mode", "watch"],
@@ -237,25 +275,76 @@ export function registerSync(program: Command): void {
           while (true) {
             iteration += 1;
             const startedAt = Date.now();
-            let result: Awaited<ReturnType<SyncService["runOnce"]>> | null =
-              null;
-            let errorMessage: string | null = null;
-            try {
-              progress?.(`Progress: sync cycle ${iteration} started`);
-              result = await sync.runOnce(
-                undefined,
-                nipFilter,
-                false,
-                options.flatSync,
-                outputPath,
-              );
-              await notifier.notifyUnpaidInvoices(result, ctx.store);
-            } catch (error) {
-              logUnexpectedError(error, cmdLogger, logFile);
-              errorMessage = formatCliError(error);
+            let cycleCompleted = false;
+            const cycle = (async (): Promise<SyncCycleOutcome> => {
+              let result: Awaited<ReturnType<SyncService["runOnce"]>> | null =
+                null;
+              let errorMessage: string | null = null;
+              try {
+                progress?.(`Progress: sync cycle ${iteration} started`);
+                result = await sync.runOnce(
+                  undefined,
+                  nipFilter,
+                  false,
+                  options.flatSync,
+                  outputPath,
+                );
+                await notifier.notifyUnpaidInvoices(result, ctx.store);
+              } catch (error) {
+                logUnexpectedError(error, cmdLogger, logFile);
+                errorMessage = formatCliError(error);
+              } finally {
+                cycleCompleted = true;
+              }
+              return { result, errorMessage };
+            })();
+            await Promise.race([cycle, stopController.whenStopRequested]);
+            if (stopController.stopRequested && !cycleCompleted) {
+              // Let the in-flight notification finish, but not forever.
+              await Promise.race([cycle, sleep(shutdownDrainMs)]);
+              if (!cycleCompleted) {
+                ctx.logger.warn(
+                  { iteration, drainTimeoutMs: shutdownDrainMs },
+                  "Shutdown drain timed out; abandoning in-flight sync cycle",
+                );
+                renderer?.done();
+                stopController.finalize();
+                break;
+              }
             }
             renderer?.done();
+            const { result, errorMessage } = await cycle;
             const durationMs = Date.now() - startedAt;
+            if (adaptive.enabled) {
+              const cycleSummary = ctx.rateLimitTracker.completeCycle();
+              const nextIntervalSeconds = computeNextIntervalSeconds({
+                currentIntervalSeconds: intervalSeconds,
+                hadRateLimit: cycleSummary.hadRateLimit,
+                options: adaptive,
+                retryAfterDeadlineMs:
+                  ctx.rateLimitTracker.getRetryAfterDeadline(),
+              });
+              if (nextIntervalSeconds !== intervalSeconds) {
+                ctx.logger.info(
+                  {
+                    iteration,
+                    previousIntervalSeconds: intervalSeconds,
+                    intervalSeconds: nextIntervalSeconds,
+                    rateLimitCount: cycleSummary.rateLimitCount,
+                    cleanCycles: cycleSummary.cleanCycles,
+                  },
+                  "Adaptive polling interval updated",
+                );
+              }
+              intervalSeconds = nextIntervalSeconds;
+              intervalMs = intervalSeconds * 1000;
+              await writeRateLimitState(statePath, {
+                intervalSeconds,
+                nextRunAt: new Date(Date.now() + intervalMs).toISOString(),
+                retryAfterDeadlineMs:
+                  ctx.rateLimitTracker.getRetryAfterDeadline(),
+              });
+            }
             const status = await statusService.getStatus();
             const invoicesToPay = result ? getInvoicesToPay(result.items) : [];
             printHeader(`Sync iteration ${iteration}`);
@@ -296,19 +385,33 @@ export function registerSync(program: Command): void {
                 }),
               );
             }
+            if (stopController.stopRequested) {
+              stopController.finalize();
+              break;
+            }
             if (progress) {
               progress(`Progress: next run in ${formatDuration(intervalMs)}`);
-              await sleepWithCountdown(
-                intervalMs,
-                ctx.countdownIntervalSeconds,
-                (remaining) =>
-                  progress(
-                    `Progress: next run in ${formatDuration(remaining)}`,
-                  ),
-              );
+              await Promise.race([
+                sleepWithCountdown(
+                  intervalMs,
+                  ctx.countdownIntervalSeconds,
+                  (remaining) =>
+                    progress(
+                      `Progress: next run in ${formatDuration(remaining)}`,
+                    ),
+                ),
+                stopController.whenStopRequested,
+              ]);
               renderer?.done();
             } else {
-              await sleep(intervalMs);
+              await Promise.race([
+                sleep(intervalMs),
+                stopController.whenStopRequested,
+              ]);
+            }
+            if (stopController.stopRequested) {
+              stopController.finalize();
+              break;
             }
           }
         } else {
@@ -378,7 +481,7 @@ export function registerSync(program: Command): void {
           await notifier.notifyUnpaidInvoices(result, ctx.store);
         }
       } catch (error) {
-        cleanupServiceStopLogging?.();
+        shutdown?.dispose();
         const message = formatCliError(error);
         renderer?.done();
         const logHint = logUnexpectedError(error, cmdLogger, logFile);
