@@ -149,6 +149,12 @@ export const buildLaunchdPlist = (
   const cliPathValue = escapeXml(options.cliPath);
   const configPathValue = escapeXml(options.configPath);
   const storageRootValue = escapeXml(options.storageRoot);
+  // launchd has no size or age cap for StandardOutPath / StandardErrorPath.
+  // Those files grow unbounded for as long as the job stays loaded; ksefctl
+  // log rotation (src/utils/logger.ts) only covers logging.file. Cap these
+  // service stdio files with newsyslog(8) (or an equivalent rotator) at:
+  //   <storageRoot>/logs/ksefctl.stdout.log
+  //   <storageRoot>/logs/ksefctl.err.log
   const stdoutPath = escapeXml(
     resolveServiceOutputPath(options.storageRoot, "stdout"),
   );
@@ -225,6 +231,47 @@ const writeRegularFile = async (
   } finally {
     await handle.close();
   }
+};
+
+export const buildSystemdUnit = (
+  options: ServiceInstallOptions,
+  nodeOptionsValue: string | null,
+  isRoot: boolean,
+): string => {
+  const nodeOptionsLine =
+    nodeOptionsValue === null
+      ? ""
+      : `Environment="NODE_OPTIONS=${escapeSystemdEnvValue(nodeOptionsValue)}"\n`;
+  const target = isRoot ? "multi-user.target" : "default.target";
+  const nodePathValue = escapeSystemdUnitValue(options.nodePath);
+  const cliPathValue = escapeSystemdUnitValue(options.cliPath);
+  const configPathValue = escapeSystemdUnitValue(options.configPath);
+  const storageRootValue = escapeSystemdUnitValue(options.storageRoot);
+
+  // File-backed StandardOutput=append cannot be rotated by ksefctl.
+  // journald applies its own size/age retention (SystemMaxUse / MaxFileSec).
+  return `[Unit]
+Description=KSeFctl Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart="${nodePathValue}" "${cliPathValue}" sync --watch --config "${configPathValue}"
+WorkingDirectory="${storageRootValue}"
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=${serviceName}
+Restart=on-failure
+RestartSec=5
+Environment=${KSEFCTL_SERVICE_MODE}=1
+Environment=NODE_ENV=production
+${nodeOptionsLine}NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=${target}
+`;
 };
 
 export class ServiceInstaller {
@@ -323,47 +370,11 @@ export class ServiceInstaller {
           process.env.NODE_OPTIONS,
           localstoragePath,
         );
-    const nodeOptionsLine =
-      nodeOptionsValue === null
-        ? ""
-        : `Environment="NODE_OPTIONS=${escapeSystemdEnvValue(nodeOptionsValue)}"\n`;
-
-    const target = isRoot ? "multi-user.target" : "default.target";
     assertSafeUnitValue("nodePath", options.nodePath);
     assertSafeUnitValue("cliPath", options.cliPath);
     assertSafeUnitValue("configPath", options.configPath);
     assertSafeUnitValue("storageRoot", options.storageRoot);
-    const nodePathValue = escapeSystemdUnitValue(options.nodePath);
-    const cliPathValue = escapeSystemdUnitValue(options.cliPath);
-    const configPathValue = escapeSystemdUnitValue(options.configPath);
-    const storageRootValue = escapeSystemdUnitValue(options.storageRoot);
-    const stdoutPathValue = escapeSystemdUnitValue(
-      resolveServiceOutputPath(options.storageRoot, "stdout"),
-    );
-    const stderrPathValue = escapeSystemdUnitValue(
-      resolveServiceOutputPath(options.storageRoot, "err"),
-    );
-    const unit = `[Unit]
-Description=KSeFctl Service
-After=network.target
-
-[Service]
-Type=simple
-ExecStart="${nodePathValue}" "${cliPathValue}" sync --watch --config "${configPathValue}"
-WorkingDirectory="${storageRootValue}"
-StandardOutput=append:${stdoutPathValue}
-StandardError=append:${stderrPathValue}
-Restart=on-failure
-RestartSec=5
-Environment=${KSEFCTL_SERVICE_MODE}=1
-Environment=NODE_ENV=production
-${nodeOptionsLine}NoNewPrivileges=true
-PrivateTmp=true
-UMask=0077
-
-[Install]
-WantedBy=${target}
-`;
+    const unit = buildSystemdUnit(options, nodeOptionsValue, isRoot);
 
     await writeRegularFile(unitPath, unit);
 

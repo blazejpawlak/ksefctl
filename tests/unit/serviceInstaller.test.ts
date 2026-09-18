@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   buildLaunchdPlist,
+  buildSystemdUnit,
   resolveLaunchdTarget,
   ServiceInstaller,
 } from "../../src/services/serviceInstaller";
@@ -258,5 +259,63 @@ describe("ServiceInstaller", () => {
         cliPath: "/usr/local/bin/ksefctl",
       }),
     ).rejects.toThrow("Refusing to modify symlinked service file");
+  });
+
+  it("sends systemd stdio to journald instead of unbounded files", () => {
+    const unit = buildSystemdUnit(
+      {
+        configPath: "/tmp/ksefctl.yml",
+        storageRoot: "/tmp/storage",
+        lifecycleLogPath: "/tmp/storage/logs/ksefctl.log",
+        nodePath: "/usr/bin/node",
+        cliPath: "/usr/bin/ksefctl",
+      },
+      null,
+      false,
+    );
+
+    expect(unit).toContain("StandardOutput=journal");
+    expect(unit).toContain("StandardError=journal");
+    expect(unit).toContain("SyslogIdentifier=ksefctl");
+    expect(unit).not.toMatch(/StandardOutput=append:/);
+    expect(unit).not.toMatch(/StandardError=append:/);
+    expect(unit).toContain("WantedBy=default.target");
+    expect(unit).not.toContain("NODE_OPTIONS");
+  });
+
+  it("uses multi-user.target and omits NODE_OPTIONS for root systemd units", () => {
+    const unit = buildSystemdUnit(
+      {
+        configPath: "/tmp/ksefctl.yml",
+        storageRoot: "/tmp/storage",
+        lifecycleLogPath: "/tmp/storage/logs/ksefctl.log",
+        nodePath: "/usr/bin/node",
+        cliPath: "/usr/bin/ksefctl",
+      },
+      null,
+      true,
+    );
+
+    expect(unit).toContain("WantedBy=multi-user.target");
+    expect(unit).not.toContain("NODE_OPTIONS");
+    expect(unit).toContain("StandardOutput=journal");
+  });
+
+  it("preserves NODE_OPTIONS in non-root systemd units", () => {
+    const unit = buildSystemdUnit(
+      {
+        configPath: "/tmp/ksefctl.yml",
+        storageRoot: "/tmp/storage",
+        lifecycleLogPath: "/tmp/storage/logs/ksefctl.log",
+        nodePath: "/usr/bin/node",
+        cliPath: "/usr/bin/ksefctl",
+      },
+      "--localstorage-file=/tmp/store.json",
+      false,
+    );
+
+    expect(unit).toContain(
+      "Environment=\"NODE_OPTIONS=--localstorage-file=/tmp/store.json\"",
+    );
   });
 });
