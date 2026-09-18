@@ -6,6 +6,7 @@ import type { KsefClient } from "../api/ksefClient";
 import type { AuthService, AuthTokens } from "../auth/authService";
 import type { AppConfig } from "../config/schema";
 import type { SqliteStore } from "../db/sqlite";
+import type { Notifier } from "../notifications/notifier";
 import type { Logger } from "pino";
 import { getSyncState, setSyncState } from "../db/repository";
 import { PdfService } from "../services/pdfService";
@@ -37,6 +38,7 @@ export type SyncServiceOptions = {
   progress?: (message: string) => void;
   countdownIntervalSeconds?: number;
   pdfService?: PdfService;
+  notifier?: Pick<Notifier, "notifyUnpaidInvoices">;
 };
 
 export class SyncService {
@@ -50,6 +52,7 @@ export class SyncService {
   private countdownIntervalSeconds: number;
   private pdfService: PdfService;
   private pdfCircuitBreaker: PdfGenerationCircuitBreaker;
+  private notifier?: Pick<Notifier, "notifyUnpaidInvoices">;
 
   constructor(options: SyncServiceOptions) {
     this.client = options.client;
@@ -67,6 +70,7 @@ export class SyncService {
       maxConsecutiveTimeouts: this.config.sync.pdfMaxConsecutiveTimeouts,
       disabled: false,
     };
+    this.notifier = options.notifier;
   }
 
   private reportProgress(message: string): void {
@@ -265,7 +269,9 @@ export class SyncService {
       this.logger.debug({ nip }, "Syncing NIP");
       this.reportProgress(`Progress: syncing NIP ${nip}`);
       const tokens = await this.auth.getAccessToken(nip);
-      return syncSingleNip(nip, tokens);
+      const result = await syncSingleNip(nip, tokens);
+      await this.notifier?.notifyUnpaidInvoices(result, this.store);
+      return result;
     };
 
     try {

@@ -197,6 +197,77 @@ const createDeferred = <T>() => {
 };
 
 describe("SyncService", () => {
+  it("notifies after each NIP completes", async () => {
+    const store = new SqliteStore(":memory:");
+    const logger = createLogger();
+    const notifier = {
+      notifyUnpaidInvoices: vi.fn().mockResolvedValue(undefined),
+    };
+    const deferredA = createDeferred<{
+      accessToken: string;
+      accessTokenValidUntil: string;
+      refreshToken: string;
+      refreshTokenValidUntil: string;
+    }>();
+    const getAccessToken = vi.fn((nip: string) => {
+      if (nip === "1234567890") return deferredA.promise;
+      if (nip === "9876543210") {
+        return Promise.resolve({
+          accessToken: "ACCESS-B",
+          accessTokenValidUntil: "",
+          refreshToken: "",
+          refreshTokenValidUntil: "",
+        });
+      }
+      throw new Error(`Unexpected NIP ${nip}`);
+    });
+    const auth = { getAccessToken } as unknown as AuthService;
+    const client = {} as KsefClient;
+    const config = createConfig({
+      organizations: [{ nip: "1234567890" }, { nip: "9876543210" }],
+      sync: {
+        subjectTypes: [],
+        includeMetadataHeader: true,
+        generatePdf: false,
+        maxConcurrentNips: 1,
+      },
+    });
+    const service = new SyncService({
+      client,
+      auth,
+      config,
+      logger,
+      store,
+      notifier,
+    });
+    const runPromise = service.runOnce();
+
+    deferredA.resolve({
+      accessToken: "ACCESS-A",
+      accessTokenValidUntil: "",
+      refreshToken: "",
+      refreshTokenValidUntil: "",
+    });
+
+    await vi.waitFor(() => {
+      expect(notifier.notifyUnpaidInvoices).toHaveBeenCalledTimes(2);
+    });
+    await expect(runPromise).resolves.toBeDefined();
+    expect(notifier.notifyUnpaidInvoices).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ items: [] }),
+      store,
+    );
+    expect(notifier.notifyUnpaidInvoices).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ items: [] }),
+      store,
+    );
+    expect(
+      notifier.notifyUnpaidInvoices.mock.invocationCallOrder[0],
+    ).toBeLessThan(getAccessToken.mock.invocationCallOrder[1]!);
+  });
+
   it("serializes configured NIPs when maxConcurrentNips is one", async () => {
     const store = new SqliteStore(":memory:");
     const logger = createLogger();

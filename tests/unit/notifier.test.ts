@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { backfillUnpaidInvoiceNotifications } from "../../src/cli/commands/systemNotifications";
 import {
   hasInvoiceNotification,
   markInvoiceNotification,
@@ -457,8 +458,8 @@ describe("Notifier", () => {
         file_path: invoiceDir,
         hash: null,
         status: "downloaded",
-        downloaded_at: "2026-04-15T20:27:55.637Z",
-        received_at: "2026-04-15T20:27:55.637Z",
+        downloaded_at: new Date().toISOString(),
+        received_at: new Date().toISOString(),
         error: null,
       });
     });
@@ -497,5 +498,109 @@ describe("Notifier", () => {
       hasInvoiceNotification(db, "1234567890", "KSEF-CATCHUP-1", "unpaid_due"),
     );
     expect(notified).toBe(true);
+  });
+
+  it("excludes invoices older than the catch-up lookback", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-notifier-"));
+    const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
+    const invoiceDir = path.join(tmpDir, "invoices", "KSEF-CATCHUP-OLD");
+    await fs.mkdir(invoiceDir, { recursive: true });
+    await fs.writeFile(
+      path.join(invoiceDir, "invoice.xml"),
+      createPayableXml(),
+    );
+    const oldDate = new Date(
+      Date.now() - 31 * 24 * 60 * 60 * 1000,
+    ).toISOString();
+
+    await store.withDb((db) => {
+      upsertInvoice(db, {
+        nip: "1234567890",
+        ksef_number: "KSEF-CATCHUP-OLD",
+        file_path: invoiceDir,
+        hash: null,
+        status: "downloaded",
+        downloaded_at: oldDate,
+        received_at: oldDate,
+        error: null,
+      });
+    });
+
+    const notifier = new Notifier(
+      {
+        ...createConfig(),
+        notifications: {
+          ...createConfig().notifications,
+          unpaidInvoiceCatchUp: true,
+          unpaidCatchUpLookbackDays: 30,
+        },
+      },
+      createLogger(),
+    );
+    await notifier.notifyUnpaidInvoices(
+      {
+        downloaded: 0,
+        skipped: 1,
+        failed: 0,
+        pdfFailed: 0,
+        items: [],
+      },
+      store,
+    );
+
+    expect(sendMailMock).not.toHaveBeenCalled();
+    const notified = await store.withDb((db) =>
+      hasInvoiceNotification(
+        db,
+        "1234567890",
+        "KSEF-CATCHUP-OLD",
+        "unpaid_due",
+      ),
+    );
+    expect(notified).toBe(false);
+  });
+
+  it("backfills notification state without sending and supports dry-run", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-notifier-"));
+    const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
+    await store.withDb((db) => {
+      upsertInvoice(db, {
+        nip: "1234567890",
+        ksef_number: "KSEF-BACKFILL-1",
+        file_path: "/tmp/invoice-backfill-1",
+        hash: null,
+        status: "downloaded",
+        downloaded_at: new Date().toISOString(),
+        received_at: null,
+        error: null,
+      });
+    });
+
+    const preview = await backfillUnpaidInvoiceNotifications(store, true);
+    expect(preview).toEqual({ candidates: 1, marked: 0 });
+    expect(
+      await store.withDb((db) =>
+        hasInvoiceNotification(
+          db,
+          "1234567890",
+          "KSEF-BACKFILL-1",
+          "unpaid_due",
+        ),
+      ),
+    ).toBe(false);
+
+    const result = await backfillUnpaidInvoiceNotifications(store, false);
+    expect(result).toEqual({ candidates: 1, marked: 1 });
+    expect(
+      await store.withDb((db) =>
+        hasInvoiceNotification(
+          db,
+          "1234567890",
+          "KSEF-BACKFILL-1",
+          "unpaid_due",
+        ),
+      ),
+    ).toBe(true);
+    expect(sendMailMock).not.toHaveBeenCalled();
   });
 });
