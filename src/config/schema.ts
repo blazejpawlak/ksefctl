@@ -48,6 +48,7 @@ const SmtpProfileSchema = SmtpSchema.extend({
 const NotificationSchema = z.object({
   macosNotification: z.boolean().default(true),
   unpaidInvoiceCatchUp: z.boolean().default(false),
+  unpaidCatchUpLookbackDays: z.number().int().min(1).default(30),
   email: z
     .object({
       enabled: z.boolean().default(false),
@@ -57,12 +58,20 @@ const NotificationSchema = z.object({
     .default({ enabled: false }),
 });
 
+const LogRotationSchema = z.object({
+  enabled: z.boolean().default(true),
+  maxFileMegabytes: z.number().int().min(1).default(16),
+  maxFiles: z.number().int().min(1).default(5),
+  maxAgeDays: z.number().int().min(1).default(30),
+});
+
 const LoggingSchema = z.object({
   level: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace"])
     .default("info"),
   file: z.string().min(1),
   pretty: z.boolean().default(true),
+  rotation: LogRotationSchema.default({}),
 });
 
 const RetrySchema = z.object({
@@ -95,6 +104,15 @@ const SecuritySchema = z.object({
   allowedHosts: z.array(z.string().min(1)).default([]),
 });
 
+const AdaptivePollingSchema = z.object({
+  enabled: z.boolean().default(true),
+  minIntervalSeconds: z.number().int().min(30).default(300),
+  maxIntervalSeconds: z.number().int().min(30).default(3600),
+  growthFactor: z.number().min(1).default(2),
+  decayFactor: z.number().min(0.1).max(1).default(0.8),
+  respectRetryAfter: z.boolean().default(true),
+});
+
 const SyncSchema = z.object({
   subjectTypes: z
     .array(SubjectTypeSchema)
@@ -106,6 +124,8 @@ const SyncSchema = z.object({
   flatSync: z.boolean().default(false),
   initialSyncFrom: z.string().datetime().optional(),
   maxConcurrentNips: z.number().int().min(1).default(1),
+  minExportWindowSeconds: z.number().int().min(0).default(300),
+  adaptivePolling: AdaptivePollingSchema.default({}),
 });
 
 export const AppConfigSchema = z.object({

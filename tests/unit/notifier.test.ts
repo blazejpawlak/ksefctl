@@ -56,6 +56,7 @@ const createConfig = (): AppConfig => ({
   notifications: {
     macosNotification: false,
     unpaidInvoiceCatchUp: false,
+    unpaidCatchUpLookbackDays: 30,
     email: {
       enabled: true,
       smtp: {
@@ -70,7 +71,7 @@ const createConfig = (): AppConfig => ({
       },
     },
   },
-  logging: { level: "info", file: "/tmp/ksef/logs/app.log", pretty: false },
+  logging: { level: "info", file: "/tmp/ksef/logs/app.log", pretty: false, rotation: { enabled: false, maxFileMegabytes: 16, maxFiles: 5, maxAgeDays: 30 } },
   operational: {
     maxConcurrency: 2,
     timeoutSeconds: 60,
@@ -94,6 +95,17 @@ const createConfig = (): AppConfig => ({
     subjectTypes: ["Subject1"],
     includeMetadataHeader: true,
     generatePdf: false,
+    pdfGenerationTimeoutMs: 30000,
+    pdfMaxConsecutiveTimeouts: 3,
+    minExportWindowSeconds: 300,
+    adaptivePolling: {
+      enabled: false,
+      minIntervalSeconds: 300,
+      maxIntervalSeconds: 3600,
+      growthFactor: 2,
+      decayFactor: 0.8,
+      respectRetryAfter: true,
+    },
     flatSync: false,
     maxConcurrentNips: 1,
   },
@@ -113,6 +125,7 @@ const createResult = (): SyncResult => ({
   downloaded: 1,
   skipped: 0,
   failed: 0,
+  pdfFailed: 0,
   items: [
     {
       nip: "1234567890",
@@ -257,6 +270,7 @@ describe("Notifier", () => {
       downloaded: 1,
       skipped: 0,
       failed: 0,
+      pdfFailed: 0,
       items: [
         {
           nip: "1234567890",
@@ -286,6 +300,7 @@ describe("Notifier", () => {
       notifications: {
         macosNotification: false,
         unpaidInvoiceCatchUp: false,
+    unpaidCatchUpLookbackDays: 30,
         email: {
           enabled: true,
           smtpProfiles: [
@@ -322,6 +337,7 @@ describe("Notifier", () => {
       downloaded: 2,
       skipped: 0,
       failed: 0,
+      pdfFailed: 0,
       items: [
         {
           nip: "1234567890",
@@ -362,6 +378,7 @@ describe("Notifier", () => {
       downloaded: 2,
       skipped: 0,
       failed: 0,
+      pdfFailed: 0,
       items: [
         ...createResult().items,
         {
@@ -410,6 +427,7 @@ describe("Notifier", () => {
       downloaded: 0,
       skipped: 1,
       failed: 0,
+      pdfFailed: 0,
       items: [],
     };
 
@@ -459,6 +477,7 @@ describe("Notifier", () => {
       downloaded: 0,
       skipped: 1,
       failed: 0,
+      pdfFailed: 0,
       items: [],
     };
 
