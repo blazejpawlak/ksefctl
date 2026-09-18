@@ -477,7 +477,7 @@ describe("SyncService", () => {
     expect(toDates.every((value) => Boolean(value))).toBe(true);
   });
 
-  it("advances continuation point when export window is out of range", async () => {
+  it("preserves continuation point when export window is out of range", async () => {
     const now = new Date("2026-05-10T12:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
@@ -524,8 +524,11 @@ describe("SyncService", () => {
     const continuation = await store.withDb((db) =>
       getContinuationPoint(db, "1234567890", "Subject1"),
     );
-    expect(continuation).toBe(now.toISOString());
-    expect(exportInvoices).toHaveBeenCalledTimes(2);
+    // KSeF rejected the query, so no data was verified for that range. The
+    // cursor must stay where it was; advancing it to a locally-derived "now"
+    // would strand any invoice later stored inside the skipped range.
+    expect(continuation).toBeNull();
+    expect(exportInvoices).toHaveBeenCalledTimes(1);
   });
 
   it("uses sanitized invoice number for file names", async () => {
