@@ -313,7 +313,11 @@ export function registerSystemService(system: Command, program: Command): void {
         await ensureInitialized(config);
         const ctx = await createContext(config, { verbose });
         const osState = await queryOsServiceState();
-        const statusService = new StatusService(ctx.store);
+        const statusService = new StatusService(ctx.store, {
+          storageRoot: ctx.config.storage.root,
+          fallbackIntervalSeconds: ctx.config.pollingIntervalSeconds,
+          adaptivePollingEnabled: ctx.config.sync.adaptivePolling.enabled,
+        });
         const syncStatus = await statusService.getStatus();
         printHeader("System Service Status");
         const entries: [string, string | number | null][] = [
@@ -327,6 +331,8 @@ export function registerSystemService(system: Command, program: Command): void {
           ["lastSyncAt", syncStatus.lastSyncAt ?? "-"],
           ["lastSuccessAt", syncStatus.lastSuccessAt ?? "-"],
           ["lastDownloaded", syncStatus.lastDownloadedCount ?? 0],
+          ["effectiveIntervalSeconds", syncStatus.effectiveIntervalSeconds ?? "-"],
+          ["nextRunAt", syncStatus.nextRunAt ?? "-"],
         );
         if (syncStatus.lastError) {
           entries.push(["lastError", syncStatus.lastError]);

@@ -21,7 +21,11 @@ export function registerStatus(program: Command): void {
         const { config, verbose } = rootOpts;
         await ensureInitialized(config);
         const ctx = await createContext(config, { verbose });
-        const statusService = new StatusService(ctx.store);
+        const statusService = new StatusService(ctx.store, {
+          storageRoot: ctx.config.storage.root,
+          fallbackIntervalSeconds: ctx.config.pollingIntervalSeconds,
+          adaptivePollingEnabled: ctx.config.sync.adaptivePolling.enabled,
+        });
         const status = await statusService.getStatus();
         const payload = {
           configPath: ctx.configPath,
@@ -40,6 +44,8 @@ export function registerStatus(program: Command): void {
           ["lastSuccessAt", payload.lastSuccessAt],
           ["lastError", payload.lastError],
           ["lastDownloadedCount", payload.lastDownloadedCount],
+          ["effectiveIntervalSeconds", payload.effectiveIntervalSeconds],
+          ["nextRunAt", payload.nextRunAt],
           ...getLifecycleStatusEntries(payload),
         ]);
       }),
