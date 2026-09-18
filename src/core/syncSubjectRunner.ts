@@ -29,6 +29,7 @@ import { resolveInvoiceStorageTarget, writeInvoice } from "./invoiceWriter";
 import {
   addUtcMonths,
   advanceWindow,
+  isBelowMinExportWindow,
   isOutOfRangeError,
   ksefStartDateIso,
   maxDateRangeMonths,
@@ -142,6 +143,30 @@ export async function syncSubjectType(
 
   const upperBound = windowEndCap ?? now;
   while (windowStart.getTime() < upperBound.getTime()) {
+    const windowEnd = windowEndCap
+      ? minDate(addUtcMonths(windowStart, maxDateRangeMonths), windowEndCap)
+      : minDate(addUtcMonths(windowStart, maxDateRangeMonths), now);
+
+    if (
+      isBelowMinExportWindow(
+        windowStart,
+        windowEnd,
+        config.sync.minExportWindowSeconds,
+      )
+    ) {
+      logger.debug(
+        {
+          nip,
+          subjectType,
+          windowStart: windowStart.toISOString(),
+          windowEnd: windowEnd.toISOString(),
+          minExportWindowSeconds: config.sync.minExportWindowSeconds,
+        },
+        "Export window narrower than configured minimum, skipping until more time accumulates",
+      );
+      break;
+    }
+
     if (windowIndex > 0 && exportCooldownMs > 0) {
       const baseMessage = `Progress: waiting ${formatDuration(exportCooldownMs)} before next export`;
       await sleepWithProgress(
@@ -152,9 +177,6 @@ export async function syncSubjectType(
       );
     }
     windowIndex += 1;
-    const windowEnd = windowEndCap
-      ? minDate(addUtcMonths(windowStart, maxDateRangeMonths), windowEndCap)
-      : minDate(addUtcMonths(windowStart, maxDateRangeMonths), now);
     const fromDate = windowStart.toISOString();
     const toDate = windowEnd.toISOString();
     logger.debug(
@@ -200,6 +222,12 @@ export async function syncSubjectType(
     } catch (error) {
       const message = (error as Error).message;
       if (isOutOfRangeError(message)) {
+        // KSeF rejected the query outright: no data was returned, so the
+        // cursor must stay put. Advancing it to our locally-derived `toDate`
+        // would skip past a range KSeF hasn't verified yet, and any invoice
+        // later assigned a permanentStorageDate inside that range would be
+        // missed. Stop this subject's loop for this cycle; the next cycle
+        // retries with a later `now` once enough time has accumulated.
         logger.warn(
           { nip, subjectType, fromDate, toDate, err: message },
           "Export window outside available data, skipping",
@@ -207,19 +235,7 @@ export async function syncSubjectType(
         reportProgress(
           "Progress: export window outside available data, skipping",
         );
-        await store.withDb((db) =>
-          setContinuationPoint(db, nip, subjectType, toDate),
-        );
-        const { nextStart, stalled } = advanceWindow(windowStart, toDate);
-        if (stalled) {
-          logger.warn(
-            { nip, subjectType, nextCursor: toDate },
-            "Continuation point did not advance",
-          );
-          break;
-        }
-        windowStart = nextStart;
-        continue;
+        break;
       }
       throw error;
     }
