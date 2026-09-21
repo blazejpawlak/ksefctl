@@ -213,29 +213,77 @@ show as a forced update.
 ### Mirroring issues to GitHub
 
 Planned work is mirrored to GitHub Issues so it is readable without `bd`
-installed. Beads is the source of truth and the push is one-way:
+installed. Beads is the source of truth and the mirror is one-way: push from
+beads, never edit the issue and expect it to flow back.
+
+`github.owner` and `github.repo` are set in `bd config`. The token is
+deliberately **not** persisted, so every invocation supplies it:
 
 ```bash
 GITHUB_TOKEN="$(gh auth token --hostname github.com)" \
-  bd github sync --push-only --parent <epic-id>
+  bd github sync --push-only --parent <epic-id> --dry-run
 ```
 
-`github.owner` and `github.repo` are set in `bd config`; the token is deliberately
-not persisted and is supplied per invocation. Each bead records the resulting
-issue URL in `external_ref`, so re-running the sync updates the existing issues
-rather than creating duplicates.
+Always dry-run first, then re-run without `--dry-run`. Scope every push with
+`--parent <epic-id>` (or `--issues <id,id,...>`).
 
-Only the description is mirrored. Acceptance criteria, design notes and
-dependency edges stay in beads — read them with `bd show <id>`. Do not hand-edit a
-synced issue's body: the next push overwrites it from the bead description. Put
-additional detail in issue comments instead, which survive both directions.
+#### Always scope the push
+
+An unscoped `bd github sync --push-only` pushes **every** bead in the database,
+closed ones included. In this repo that is 59 historical closed beads that have
+no GitHub issue, so an unscoped push would open 59 issues in one go. There is no
+undo — GitHub issues cannot be deleted through the API, only closed.
+
+Scope with `--parent` or `--issues`, and confirm the dry-run lists only what you
+expect before running it for real.
+
+#### Keeping the mirror current
+
+Re-run the same scoped push after changing anything you want reflected: title,
+description, priority, type or labels. Pushes are idempotent — each bead stores
+its issue URL in `external_ref`, so a re-push updates the existing issue instead
+of creating a duplicate, and a bead whose fields have not changed produces no
+GitHub write at all (the dry-run prints nothing for it).
+
+What is mirrored:
+
+- **Description only.** Acceptance criteria, design notes and dependency edges
+  stay in beads; read them with `bd show <id>`.
+- **Priority and type become labels** — `priority::medium`, `type::task`,
+  `type::epic`, `type::decision` — alongside the bead's own labels.
+
+What is not mirrored:
+
+- **Dependency edges.** A blocked bead's GitHub issue shows no blocker. Record
+  cross-references in a comment (`Blocked by #NN`) when the relationship matters
+  to a reader on GitHub.
+- **Anything you type into the issue body.** The body is generated from the bead
+  description, so a hand edit is lost the next time that bead changes and is
+  pushed. Put extra detail in issue comments, which no push rewrites.
+
+#### Pulling from GitHub
+
+`bd github sync` is bidirectional by default and `bd github pull` pulls only.
+Neither is part of the normal workflow here: beads is authoritative, and a pull
+with the default `--prefer-newer` can overwrite a bead's description with the
+GitHub body, flattening the structured fields. Use `--pull-only` deliberately and
+only to adopt issues that were opened directly on GitHub, never as routine
+housekeeping.
+
+#### Closing the loop
+
+Closing a bead does not retroactively close issues that were never pushed again.
+When work finishes, `bd close <id>` and then re-run the scoped push so the mirror
+reflects it; verify with `gh issue list --state open` that nothing stale is left
+behind.
 
 ### Notes
 
-- `.beads/issues.jsonl` is an export artifact for migration and interoperability,
-  not a backup, and it is not kept current. Durability comes from `bd dolt push`
-  and the `bd backup` flow; run `bd export` on demand if a readable snapshot is
-  wanted.
+- There is intentionally no checked-in JSONL export. `bd export` produces an
+  artifact for migration and interoperability, not a backup, and a copy left on
+  disk goes stale silently. Durability comes from `bd dolt push` and the
+  `bd backup` flow; run `bd export -o <path>` on demand when a readable snapshot
+  is genuinely needed, and treat the result as disposable.
 - `bd create --graph` writes dependency rows without setting the denormalized
   `is_blocked` flag, so blocked issues wrongly appear in `bd ready`. Re-add each
   edge with `bd dep add`, then confirm with `bd blocked`.
