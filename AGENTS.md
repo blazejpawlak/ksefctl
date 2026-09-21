@@ -100,7 +100,11 @@ Notes:
 
 This package is published to GitHub Packages, not the public npm registry. The registry is configured in `package.json` as `https://npm.pkg.github.com`.
 
-Before publishing:
+Publishing is automated. `.github/workflows/publish.yml` runs on every pushed `v*` tag and, after re-running the full validation sequence, publishes using the workflow's own `packages: write` permission and `GITHUB_TOKEN`. Pushing the tag is what releases the package; no local registry credential is involved.
+
+### Release steps
+
+Validate locally before releasing:
 
 ```bash
 npm ci
@@ -119,17 +123,44 @@ Use a new unused date-based package version and update both `package.json` and `
 npm version YYYY.M.D --no-git-tag-version
 ```
 
-Validate GitHub CLI credentials before publishing:
+Move the `CHANGELOG.md` `[Unreleased]` section under the new version with its release date, and add the corresponding compare link reference, newest first.
+
+Rerun the complete validation sequence, then commit, tag, and push. Commits and tags are signed, and tags are annotated:
 
 ```bash
-gh auth status --hostname github.com
+git commit -S -m "chore(release): prepare YYYY.M.D"
+git tag -s vYYYY.M.D -m "vYYYY.M.D"
+git push origin main
+git push origin vYYYY.M.D
 ```
 
-The active credential must include the `write:packages` scope. If it does not, refresh the credential and complete the browser/device authorization flow:
+`main` is protected: changes are expected to arrive through a pull request with the `quality` check passing. Administrators may bypass this, in which case the push is recorded as a bypassed rule violation. Prefer a pull request unless an administrator is deliberately driving the release directly.
+
+The tag push triggers `publish.yml`. Create the GitHub release from the new changelog section:
 
 ```bash
-gh auth refresh --hostname github.com --scopes write:packages
+gh release create vYYYY.M.D --title "vYYYY.M.D" --notes-file <notes-file> --verify-tag
+```
+
+Confirm the publish succeeded:
+
+```bash
+gh run list --workflow=publish.yml --limit 1
+```
+
+The publish step logs `+ @blazejpawlak/ksefctl@VERSION` on success.
+
+The tag push also triggers `ci.yml`, duplicating checks that `publish.yml` already runs. If that duplicate run hangs, cancel it; the `Publish` run is authoritative.
+
+Published package versions cannot be overwritten. If publishing reports that a version already exists, bump to the next unused date-based version, rerun validation, commit and push the version change, and tag again.
+
+### Manual publish (fallback only)
+
+Only needed when the workflow is unavailable. This path requires the `write:packages` scope, which the local credential does not carry by default:
+
+```bash
 gh auth status --hostname github.com
+gh auth refresh --hostname github.com --scopes write:packages
 ```
 
 Do not commit tokens or add registry credentials to repository files. Publish with the GitHub CLI token only for the current command:
@@ -139,14 +170,14 @@ env "npm_config_//npm.pkg.github.com/:_authToken=$(gh auth token --hostname gith
   npm publish --registry=https://npm.pkg.github.com
 ```
 
-Verify the published version:
+Verify the published version. This read requires the `read:packages` scope:
 
 ```bash
 env "npm_config_//npm.pkg.github.com/:_authToken=$(gh auth token --hostname github.com)" \
   npm view @blazejpawlak/ksefctl@VERSION version --registry=https://npm.pkg.github.com
 ```
 
-Published package versions cannot be overwritten. If publishing reports that a version already exists, bump to the next unused date-based version, rerun validation, commit and push the version change, and publish again. After publishing, remove the `write:packages` scope from the local credential if it is no longer needed.
+After publishing manually, remove the `write:packages` scope from the local credential if it is no longer needed.
 
 ## Key paths
 
