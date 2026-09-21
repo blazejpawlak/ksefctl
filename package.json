@@ -63,7 +63,7 @@
     }
   },
   "devDependencies": {
-    "@types/node": "^22.20.2",
+    "@types/node": "^22.20.3",
     "@types/node-notifier": "^8.0.5",
     "@types/nodemailer": "^6.4.15",
     "@types/proper-lockfile": "^4.1.3",
