@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [2026.9.21] - 2026-09-21
 
 ### Added
 
@@ -37,4 +37,5 @@
 - Added integration-test and dependency-audit gates to CI and package publishing.
 - Added weekly grouped Dependabot updates for npm and GitHub Actions while keeping major upgrades manual.
 
+[2026.9.21]: https://github.com/blazejpawlak/ksefctl/compare/v2026.9.15...v2026.9.21
 [2026.9.15]: https://github.com/blazejpawlak/ksefctl/compare/v2026.7.9...v2026.9.15
