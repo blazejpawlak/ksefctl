@@ -179,6 +179,67 @@ env "npm_config_//npm.pkg.github.com/:_authToken=$(gh auth token --hostname gith
 
 After publishing manually, remove the `write:packages` scope from the local credential if it is no longer needed.
 
+## Issue tracking (beads)
+
+Issues are tracked with [beads](https://github.com/steveyegge/beads) (`bd`). The
+database is deliberately kept out of the working tree: `bd init --stealth` added
+`.beads/` to `.git/info/exclude`, and `.beads/config.yaml` sets `no-git-ops: true`,
+so `bd` never runs git commands and nothing under `.beads/` is committed.
+
+Because `bd` performs no git operations here, replication is manual.
+
+### Backing up issue state
+
+This repository doubles as the Dolt remote for the issue database, on the
+`refs/dolt/data` ref; the `__dolt_remote_info__` branch records the current head
+and the time it was last written. Push after any significant planning or triage
+session, otherwise the remote silently drifts behind the local database:
+
+```bash
+bd dolt push
+```
+
+To pick the state up on another machine, or to restore after losing `.beads/`:
+
+```bash
+bd dolt pull
+```
+
+Neither command touches `main`, the working tree, or any branch history — the
+issue data rides on its own ref, so it never enters the commit graph. `bd dolt push`
+rewrites `__dolt_remote_info__` to a single commit, so that branch is expected to
+show as a forced update.
+
+### Mirroring issues to GitHub
+
+Planned work is mirrored to GitHub Issues so it is readable without `bd`
+installed. Beads is the source of truth and the push is one-way:
+
+```bash
+GITHUB_TOKEN="$(gh auth token --hostname github.com)" \
+  bd github sync --push-only --parent <epic-id>
+```
+
+`github.owner` and `github.repo` are set in `bd config`; the token is deliberately
+not persisted and is supplied per invocation. Each bead records the resulting
+issue URL in `external_ref`, so re-running the sync updates the existing issues
+rather than creating duplicates.
+
+Only the description is mirrored. Acceptance criteria, design notes and
+dependency edges stay in beads — read them with `bd show <id>`. Do not hand-edit a
+synced issue's body: the next push overwrites it from the bead description. Put
+additional detail in issue comments instead, which survive both directions.
+
+### Notes
+
+- `.beads/issues.jsonl` is an export artifact for migration and interoperability,
+  not a backup, and it is not kept current. Durability comes from `bd dolt push`
+  and the `bd backup` flow; run `bd export` on demand if a readable snapshot is
+  wanted.
+- `bd create --graph` writes dependency rows without setting the denormalized
+  `is_blocked` flag, so blocked issues wrongly appear in `bd ready`. Re-add each
+  edge with `bd dep add`, then confirm with `bd blocked`.
+
 ## Key paths
 
 - CLI entry: `src/cli.ts`
