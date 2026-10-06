@@ -118,7 +118,7 @@ Progress messages go to stderr; use `-v`/`--verbose` for detailed logs. If an in
 | `--redownload-all`          | Reset cursors to `sync.initialSyncFrom` (or `2026-02-01`) and re-download all invoices. Optionally filter by `--nip`. Mutually exclusive with `--redownload`.                                                                                                                                                                                                                                                                                                                                                |
 | `--flat-sync`               | Store invoices in monthly folders (`invoices/<NIP>/YYYY/MM/`) using `Seller - InvoiceNumber` filenames. Colliding filenames get ` - <ksefNumber>` appended.                                                                                                                                                                                                                                                                                                                                                  |
 | `--time-window <from:to>`   | Explicit date range as `DD-MM-YYYY:DD-MM-YYYY`. Overrides cursor/config-derived bounds. Requires `--redownload`, `--redownload-all`, or `--flat-sync`. Mutually exclusive with `--watch`.                                                                                                                                                                                                                                                                                                                    |
-| `--output-path <path>`      | Override the invoice output root for this run. Requires `-n`/`--nip` when multiple orgs are configured.                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `--output-path <path>`      | Export invoices to this directory for this run. Requires `-n`/`--nip` when multiple orgs are configured. An export is kept out of the canonical sync state: invoice records, continuation points, sync status and notification markers are left unchanged, so the regular sync still fills the store. Invoices already present in the output directory are skipped.                                                                                                                                          |
 | `--watch`                   | Run in the **foreground** continuously, polling every `pollingIntervalSeconds` (default: 300 s). The process occupies the terminal and must be kept alive manually (e.g. in a `tmux` session). Cannot be combined with `--redownload`, `--redownload-all`, or `--time-window`. For unattended background operation, use `ksefctl system service install` instead — it registers a launchd agent (macOS) or systemd unit (Linux) that starts automatically and restarts on failure. Windows is not supported. |
 | `--repair-missing-pdfs`     | Scan locally stored XML invoices and generate missing same-base PDF files without contacting KSeF. Optionally combine with `--nip` to repair one organization. Mutually exclusive with sync/redownload/watch/time-window modes.                                                                                                                                                                                                                                                                              |
 | `--json`                    | Output results as JSON instead of formatted text.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
@@ -254,7 +254,7 @@ In that setup:
 
 - NIP `1234567890` writes to `/var/lib/ksefctl/invoices/1234567890/...`
 - NIP `9876543210` writes to `/srv/ksef/org-b/...`
-- `ksefctl sync --nip 9876543210 --output-path ~/Exports/manual-run` overrides the config path just for that run
+- `ksefctl sync --nip 9876543210 --output-path ~/Exports/manual-run` exports to `~/Exports/manual-run` just for that run, without touching the canonical state (see below)
 
 Run continuously in foreground:
 
@@ -566,6 +566,13 @@ storageRoot/
 If two invoices would produce the same flat filename, ksefctl keeps the first name and appends ` - <ksefNumber>` only for the conflicting invoice.
 
 If `organizations[].outputPath` is set, or `--output-path` is passed on the CLI, that path becomes the invoice root for that NIP instead of `storageRoot/invoices/<NIP>/`.
+
+`organizations[].outputPath` is the canonical location for that NIP: the regular sync records invoices there and tracks them in `db/state.sqlite`. `--output-path` is different — it is a one-off export to an ad-hoc location:
+
+- Invoice records in `db/state.sqlite` are neither created nor updated, so deleting the export directory later never makes the regular sync think an invoice is missing.
+- Continuation points do not move. The export window starts at the regular cursor (or `sync.initialSyncFrom` with `--redownload-all`, or `--time-window`), and the next regular sync still downloads the same invoices into the store.
+- Deduplication is against the export directory: an invoice whose XML is already there with the same content is skipped. `--redownload`/`--redownload-all` always rewrite.
+- `ksefctl status` (last sync, last success, last downloaded count) and unpaid-invoice notification markers are left unchanged, and no notifications are sent.
 
 ## Notifications
 

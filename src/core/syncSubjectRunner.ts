@@ -15,6 +15,7 @@ import {
   setContinuationPoint,
   upsertInvoice,
 } from "../db/repository";
+import { sha256Base64 } from "../utils/crypto";
 import { sanitizeErrorMessage } from "../utils/errors";
 import { formatDuration } from "../utils/time";
 import { createEncryptionData } from "./encryption";
@@ -25,7 +26,11 @@ import {
   maxZipTotalBytes,
 } from "./invoiceExtractor";
 import { downloadAndDecryptParts, waitForExport } from "./invoicePackageClient";
-import { resolveInvoiceStorageTarget, writeInvoice } from "./invoiceWriter";
+import {
+  hasMatchingInvoiceXml,
+  resolveInvoiceStorageTarget,
+  writeInvoice,
+} from "./invoiceWriter";
 import {
   addUtcMonths,
   isBelowMinExportWindow,
@@ -79,6 +84,10 @@ export async function syncSubjectType(
     getEncryptionCertificate,
   } = deps;
 
+  // A CLI `--output-path` run is an export to an ad-hoc location. It must leave
+  // the canonical state (invoice rows, continuation points) untouched so the
+  // regular sync still downloads every invoice into the canonical store.
+  const exportOnly = outputPath !== undefined;
   const now = new Date();
   const ksefStartDate = parseIsoDate(ksefStartDateIso, "KSeF start date");
   const defaultFrom = resolveDefaultStart(now);
@@ -101,10 +110,12 @@ export async function syncSubjectType(
     if (cursor) {
       const cursorDate = parseIsoDate(cursor, "continuation point");
       if (cursorDate.getTime() < configuredStart.getTime()) {
-        const floorIso = configuredStart.toISOString();
-        await store.withDb((db) =>
-          setContinuationPoint(db, nip, subjectType, floorIso),
-        );
+        if (!exportOnly) {
+          const floorIso = configuredStart.toISOString();
+          await store.withDb((db) =>
+            setContinuationPoint(db, nip, subjectType, floorIso),
+          );
+        }
         windowStart = configuredStart;
       } else {
         windowStart = cursorDate;
@@ -113,7 +124,7 @@ export async function syncSubjectType(
     if (windowStart.getTime() > now.getTime()) {
       windowStart = now;
     }
-    if (forceRedownloadAll) {
+    if (forceRedownloadAll && !exportOnly) {
       await store.withDb((db) =>
         setContinuationPoint(db, nip, subjectType, windowStart.toISOString()),
       );
@@ -256,9 +267,9 @@ export async function syncSubjectType(
         );
         return false;
       }
-      // An explicit window is a one-off export; it must never move the
-      // regular sync cursor.
-      if (!explicitWindow) {
+      // An explicit window or an output-path export is a one-off export; it
+      // must never move the regular sync cursor.
+      if (!explicitWindow && !exportOnly) {
         await store.withDb((db) =>
           setContinuationPoint(db, nip, subjectType, continuation.cursor),
         );
@@ -354,9 +365,11 @@ export async function syncSubjectType(
       if (isForce && skipForcedId) {
         continue;
       }
-      const existing = await store.withDb((db) =>
-        getInvoice(db, nip, ksefNumber),
-      );
+      // Exports deduplicate against the output directory instead (below), so
+      // the canonical row is neither consulted nor modified.
+      const existing = exportOnly
+        ? undefined
+        : await store.withDb((db) => getInvoice(db, nip, ksefNumber));
       const hasFiles =
         existing?.status === "downloaded" && existing.file_path
           ? await hasValidInvoiceXml(existing.file_path, existing.hash)
@@ -406,6 +419,15 @@ export async function syncSubjectType(
           meta,
           outputPath,
         );
+        if (
+          exportOnly &&
+          !isForce &&
+          !forceRedownloadAll &&
+          (await hasMatchingInvoiceXml(storageTarget, sha256Base64(xmlData)))
+        ) {
+          skipped += 1;
+          continue;
+        }
         const syncItem = await writeInvoice(writerDeps, {
           nip,
           ksefNumber,
@@ -415,6 +437,7 @@ export async function syncSubjectType(
           receivedDate: dateString ?? null,
           sourceEnvironment: config.environment,
           metadataMeta: meta,
+          updateCanonicalState: !exportOnly,
         });
         downloaded += 1;
         if (config.sync.generatePdf && !syncItem.pdfPath) {
@@ -423,18 +446,25 @@ export async function syncSubjectType(
         items.push(syncItem);
       } catch (error) {
         const sanitizedMessage = sanitizeErrorMessage((error as Error).message);
-        await store.withDb((db) =>
-          upsertInvoice(db, {
-            nip,
-            ksef_number: ksefNumber,
-            file_path: existing?.file_path ?? "",
-            hash: existing?.hash ?? null,
-            status: "failed",
-            downloaded_at: existing?.downloaded_at ?? null,
-            received_at: existing?.received_at ?? null,
-            error: sanitizedMessage,
-          }),
-        );
+        if (exportOnly) {
+          logger.warn(
+            { nip, ksefNumber, err: sanitizedMessage },
+            "Failed to export invoice to output path",
+          );
+        } else {
+          await store.withDb((db) =>
+            upsertInvoice(db, {
+              nip,
+              ksef_number: ksefNumber,
+              file_path: existing?.file_path ?? "",
+              hash: existing?.hash ?? null,
+              status: "failed",
+              downloaded_at: existing?.downloaded_at ?? null,
+              received_at: existing?.received_at ?? null,
+              error: sanitizedMessage,
+            }),
+          );
+        }
         failed += 1;
       }
     }

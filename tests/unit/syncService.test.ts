@@ -1469,3 +1469,118 @@ describe("SyncService", () => {
     expect(exportInvoices).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("SyncService --output-path isolation (ksefctl-h40)", () => {
+  const nip = "1234567890";
+  const ksefNumber = "5252584121-20260918-24FC75C00008-B2";
+  const xmlText = "<Faktura><P_2>FV/ISO/1</P_2></Faktura>";
+
+  const setup = async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-06T12:00:00Z"));
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
+    const storageRoot = path.join(tmpDir, "storage");
+    const client = {
+      downloadInvoiceXml: vi.fn().mockResolvedValue(xmlText),
+    } as unknown as KsefClient;
+    const config = createConfig({
+      storage: { root: storageRoot },
+      sync: { subjectTypes: [], generatePdf: false, maxConcurrentNips: 1 },
+    });
+    const notifier = {
+      notifyUnpaidInvoices: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = new SyncService({
+      client,
+      auth: createAuth(),
+      config,
+      logger: createLogger(),
+      store,
+      notifier,
+    });
+    const readInvoice = () =>
+      store.withDb((db) => getInvoice(db, nip, ksefNumber));
+    const readSyncState = () => store.withDb((db) => getSyncState(db));
+    return {
+      service,
+      store,
+      storageRoot,
+      notifier,
+      outputPath: path.join(tmpDir, "scratch"),
+      readInvoice,
+      readSyncState,
+    };
+  };
+
+  it("leaves an existing canonical row untouched when redownloading to an output path", async () => {
+    const t = await setup();
+    const canonicalRow = {
+      nip,
+      ksef_number: ksefNumber,
+      file_path: path.join(t.storageRoot, "invoices", nip, "canonical"),
+      hash: sha256Base64(Buffer.from(xmlText, "utf-8")),
+      status: "downloaded",
+      downloaded_at: "2026-09-18T10:00:00.000Z",
+      received_at: "2026-09-18T09:59:00.000Z",
+      error: null,
+    };
+    await t.store.withDb((db) => upsertInvoice(db, canonicalRow));
+
+    const result = await t.service.runOnce(
+      ksefNumber,
+      nip,
+      false,
+      undefined,
+      t.outputPath,
+    );
+
+    expect(result.downloaded).toBe(1);
+    const exportedDir = result.items[0]?.path ?? "";
+    expect(exportedDir.startsWith(t.outputPath)).toBe(true);
+    await expect(fs.readdir(exportedDir)).resolves.toContain(
+      "Faktura nr FV-ISO-1.xml",
+    );
+    expect(await t.readInvoice()).toEqual(canonicalRow);
+  });
+
+  it("does not create a canonical row, sync status or notification for an output-path redownload", async () => {
+    const t = await setup();
+
+    const result = await t.service.runOnce(
+      ksefNumber,
+      nip,
+      false,
+      undefined,
+      t.outputPath,
+    );
+
+    expect(result.downloaded).toBe(1);
+    expect(await t.readInvoice()).toBeNull();
+    expect(await t.readSyncState()).toMatchObject({
+      last_sync_at: null,
+      last_success_at: null,
+      last_downloaded_count: null,
+    });
+    expect(t.notifier.notifyUnpaidInvoices).not.toHaveBeenCalled();
+  });
+
+  it("still records the canonical row and sync status for a regular redownload", async () => {
+    const t = await setup();
+
+    const result = await t.service.runOnce(ksefNumber, nip);
+
+    const row = await t.readInvoice();
+    expect(row).toMatchObject({
+      status: "downloaded",
+      file_path: result.items[0]?.path,
+    });
+    expect(
+      row?.file_path.startsWith(path.join(t.storageRoot, "invoices", nip)),
+    ).toBe(true);
+    expect(await t.readSyncState()).toMatchObject({
+      last_downloaded_count: 1,
+    });
+    expect(t.notifier.notifyUnpaidInvoices).toHaveBeenCalledTimes(1);
+  });
+});
