@@ -393,6 +393,7 @@ Testing:
 
 - Use Vitest with `describe`/`it`.
 - Unit tests should be self-contained and avoid shared state.
+- Unit tests run in random order (`sequence.shuffle` in `vitest.config.ts`). Clear or restore mocks, spies, env changes and module state that outlive a test; reproduce an order-dependent failure with `npx vitest run --sequence.seed=<seed>` using the seed Vitest prints.
 - Integration tests use MSW and `beforeAll`/`afterAll` for server lifecycle.
 - Prefer temporary directories via `fs.mkdtemp` + `os.tmpdir`.
 

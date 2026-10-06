@@ -3,7 +3,7 @@ import {
   generateFA2,
   generateFA3,
 } from "@akmf/ksef-fe-invoice-converter";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PdfService } from "../../src/services/pdfService.js";
 
 vi.mock("@akmf/ksef-fe-invoice-converter", () => ({
@@ -19,6 +19,14 @@ vi.mock("@akmf/ksef-fe-invoice-converter", () => ({
 }));
 
 describe("PdfService", () => {
+  beforeEach(() => {
+    // The converter mocks live for the whole file; clear their calls so the
+    // call-count assertions do not depend on which tests ran first.
+    vi.mocked(generateFA1).mockClear();
+    vi.mocked(generateFA2).mockClear();
+    vi.mocked(generateFA3).mockClear();
+  });
+
   it("generates a PDF buffer for FA (1)", async () => {
     const xml =
       "<Faktura><Naglowek><KodFormularza kodSystemowy=\"FA(1)\" /></Naglowek></Faktura>";
