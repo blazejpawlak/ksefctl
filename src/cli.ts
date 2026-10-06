@@ -32,6 +32,19 @@ import { exitCodeFromError } from "./utils/errors.js";
 
 export { formatCliError, logUnexpectedError };
 
+/**
+ * Commander 13+ rejects excess command-arguments by default. Keep the
+ * commander 12 behaviour (extra operands are ignored) for the whole command
+ * tree, including commands attached with `addCommand()`, which do not inherit
+ * settings from their parent.
+ */
+const allowExcessArgumentsRecursively = (command: Command): void => {
+  command.allowExcessArguments();
+  for (const child of command.commands) {
+    allowExcessArgumentsRecursively(child);
+  }
+};
+
 const program = new Command();
 
 program
@@ -59,6 +72,7 @@ registerSystemCompletion(system, program);
 registerSync(program);
 registerDaemon(program);
 registerStatus(program);
+allowExcessArgumentsRecursively(program);
 
 program.addHelpText("after", () => {
   const completionNote =
@@ -159,6 +173,7 @@ if (import.meta.main) {
 }
 
 export {
+  allowExcessArgumentsRecursively,
   buildCompletionSpec,
   formatVersionOutput,
   hasVersionFlag,
