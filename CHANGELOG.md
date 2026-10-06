@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Upgrade zod to 4.x. Config defaults are unchanged: a `config.yaml` that omits optional sections or fields parses to the same values as before.
+- An invalid `config.yaml` now fails with a readable list of every violation and its path (for example `✖ NIP must be exactly 10 digits → at organizations[0].nip`) instead of a raw JSON dump that was cut off at 500 characters. Schema violations now exit with code `4` (config invalid), as documented, instead of `5`.
+
 ### Fixed
 
 - An export that returned no package parts advanced the continuation point to the requested `to` instead of KSeF's `permanentStorageHwmDate`. With `restrictToPermanentStorageHwmDate` the HWM can lag `to` by minutes, so invoices committed inside that gap were never downloaded. Empty and non-empty exports now share one rule: `lastPermanentStorageDate` for a truncated package, otherwise the HWM, never beyond `to`.

@@ -1,4 +1,5 @@
 import YAML from "yaml";
+import { z } from "zod";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { ConfigError } from "../utils/errors";
@@ -148,7 +149,13 @@ export const loadConfig = async (configPath: string): Promise<AppConfig> => {
     logging: { ...logging, file: loggingFile },
   };
 
-  const config = AppConfigSchema.parse(normalized);
+  const result = AppConfigSchema.safeParse(normalized);
+  if (!result.success) {
+    throw new ConfigError(
+      `Invalid config at ${resolvedPath}:\n${z.prettifyError(result.error)}`,
+    );
+  }
+  const config = result.data;
   const { tls } = config.security;
   await validateTlsOptions({
     enablePinning: tls.enablePinning,

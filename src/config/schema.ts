@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+// Zod 4 note: `.default()` short-circuits and returns its value without
+// parsing it, so nested field defaults would not be applied. Object-level
+// fallbacks therefore use `.prefault()`, which parses the fallback value and
+// fills every nested default (the Zod 3 `.default()` behaviour).
+
+const NipSchema = z
+  .string()
+  .regex(/^\d{10}$/, { error: "NIP must be exactly 10 digits" });
+
 export const EnvironmentSchema = z.enum(["test", "prod"]);
 export type Environment = z.infer<typeof EnvironmentSchema>;
 
@@ -42,7 +51,7 @@ const SmtpSchema = z.object({
 
 const SmtpProfileSchema = SmtpSchema.extend({
   label: z.string().min(1),
-  nips: z.array(z.string().regex(/^\d{10}$/)).default([]),
+  nips: z.array(NipSchema).default([]),
 });
 
 const NotificationSchema = z.object({
@@ -55,7 +64,7 @@ const NotificationSchema = z.object({
       smtp: SmtpSchema.optional(),
       smtpProfiles: z.array(SmtpProfileSchema).optional(),
     })
-    .default({ enabled: false }),
+    .prefault({ enabled: false }),
 });
 
 const LogRotationSchema = z.object({
@@ -71,7 +80,7 @@ const LoggingSchema = z.object({
     .default("info"),
   file: z.string().min(1),
   pretty: z.boolean().default(true),
-  rotation: LogRotationSchema.default({}),
+  rotation: LogRotationSchema.prefault({}),
 });
 
 const RetrySchema = z.object({
@@ -89,7 +98,7 @@ const OperationalSchema = z.object({
   exportPollMaxAttempts: z.number().int().min(1).default(120),
   exportCooldownSeconds: z.number().int().min(0).default(2),
   allowInsecureHttp: z.boolean().default(false),
-  retry: RetrySchema.default({}),
+  retry: RetrySchema.prefault({}),
 });
 
 const SecuritySchema = z.object({
@@ -100,7 +109,7 @@ const SecuritySchema = z.object({
       pinningHosts: z.array(z.string().min(1)).default([]),
       caPath: z.string().optional(),
     })
-    .default({ enablePinning: false, pins: [], pinningHosts: [] }),
+    .prefault({ enablePinning: false, pins: [], pinningHosts: [] }),
   allowedHosts: z.array(z.string().min(1)).default([]),
 });
 
@@ -122,20 +131,20 @@ const SyncSchema = z.object({
   pdfGenerationTimeoutMs: z.number().int().min(1_000).default(30_000),
   pdfMaxConsecutiveTimeouts: z.number().int().min(1).default(3),
   flatSync: z.boolean().default(false),
-  initialSyncFrom: z.string().datetime().optional(),
+  initialSyncFrom: z.iso.datetime().optional(),
   maxConcurrentNips: z.number().int().min(1).default(1),
   minExportWindowSeconds: z.number().int().min(0).default(300),
-  adaptivePolling: AdaptivePollingSchema.default({}),
+  adaptivePolling: AdaptivePollingSchema.prefault({}),
 });
 
 export const AppConfigSchema = z.object({
   environment: EnvironmentSchema.default("prod"),
-  apiBaseUrl: z.string().url().optional(),
+  apiBaseUrl: z.url().optional(),
   auth: AuthSchema,
   organizations: z
     .array(
       z.object({
-        nip: z.string().regex(/^\d{10}$/),
+        nip: NipSchema,
         label: z.string().optional(),
         outputPath: z.string().min(1).optional(),
       }),
@@ -145,15 +154,15 @@ export const AppConfigSchema = z.object({
   storage: z.object({
     root: z.string().min(1),
   }),
-  notifications: NotificationSchema.default({
+  notifications: NotificationSchema.prefault({
     macosNotification: true,
     unpaidInvoiceCatchUp: false,
     email: { enabled: false },
   }),
   logging: LoggingSchema,
-  operational: OperationalSchema.default({}),
-  security: SecuritySchema.default({}),
-  sync: SyncSchema.default({}),
+  operational: OperationalSchema.prefault({}),
+  security: SecuritySchema.prefault({}),
+  sync: SyncSchema.prefault({}),
 });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;

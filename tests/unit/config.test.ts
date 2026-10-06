@@ -228,6 +228,157 @@ describe("config schema", () => {
     await expect(loadConfig(configPath)).rejects.toBeInstanceOf(ConfigError);
   });
 
+  it("fills every default for a config with only required fields", () => {
+    const config = AppConfigSchema.parse({
+      auth: {},
+      storage: { root: "/tmp/ksef" },
+      logging: { file: "/tmp/ksef/logs/app.log" },
+    });
+
+    expect(config).toEqual({
+      environment: "prod",
+      auth: { method: "ksefToken" },
+      organizations: [],
+      pollingIntervalSeconds: 300,
+      storage: { root: "/tmp/ksef" },
+      notifications: {
+        macosNotification: true,
+        unpaidInvoiceCatchUp: false,
+        unpaidCatchUpLookbackDays: 30,
+        email: { enabled: false },
+      },
+      logging: {
+        level: "info",
+        file: "/tmp/ksef/logs/app.log",
+        pretty: true,
+        rotation: {
+          enabled: true,
+          maxFileMegabytes: 16,
+          maxFiles: 5,
+          maxAgeDays: 30,
+        },
+      },
+      operational: {
+        maxConcurrency: 2,
+        timeoutSeconds: 60,
+        pollIntervalSeconds: 10,
+        authPollMaxAttempts: 60,
+        exportPollMaxAttempts: 120,
+        exportCooldownSeconds: 2,
+        allowInsecureHttp: false,
+        retry: {
+          maxAttempts: 5,
+          baseDelayMs: 500,
+          maxDelayMs: 10_000,
+          jitter: 0.2,
+        },
+      },
+      security: {
+        tls: { enablePinning: false, pins: [], pinningHosts: [] },
+        allowedHosts: [],
+      },
+      sync: {
+        subjectTypes: ["Subject1", "Subject2", "Subject3", "SubjectAuthorized"],
+        includeMetadataHeader: true,
+        generatePdf: true,
+        pdfGenerationTimeoutMs: 30_000,
+        pdfMaxConsecutiveTimeouts: 3,
+        flatSync: false,
+        maxConcurrentNips: 1,
+        minExportWindowSeconds: 300,
+        adaptivePolling: {
+          enabled: true,
+          minIntervalSeconds: 300,
+          maxIntervalSeconds: 3600,
+          growthFactor: 2,
+          decayFactor: 0.8,
+          respectRetryAfter: true,
+        },
+      },
+    });
+  });
+
+  it("fills nested defaults inside partially specified sections", () => {
+    const config = AppConfigSchema.parse({
+      auth: {},
+      storage: { root: "/tmp/ksef" },
+      logging: { file: "/tmp/ksef/logs/app.log", rotation: { maxFiles: 9 } },
+      notifications: {
+        email: {
+          smtpProfiles: [
+            {
+              label: "billing",
+              host: "smtp",
+              port: 587,
+              user: "user",
+              pass: "pass",
+              from: "from@example.com",
+              to: ["to@example.com"],
+            },
+          ],
+        },
+      },
+      operational: { retry: { maxAttempts: 2 } },
+      security: { tls: {} },
+      sync: { adaptivePolling: { enabled: false } },
+    });
+
+    expect(config.logging.rotation).toEqual({
+      enabled: true,
+      maxFileMegabytes: 16,
+      maxFiles: 9,
+      maxAgeDays: 30,
+    });
+    expect(config.notifications.email.enabled).toBe(false);
+    expect(config.notifications.email.smtpProfiles?.[0]).toMatchObject({
+      secure: false,
+      tlsRejectUnauthorized: true,
+      nips: [],
+    });
+    expect(config.operational.retry).toEqual({
+      maxAttempts: 2,
+      baseDelayMs: 500,
+      maxDelayMs: 10_000,
+      jitter: 0.2,
+    });
+    expect(config.security.tls).toEqual({
+      enablePinning: false,
+      pins: [],
+      pinningHosts: [],
+    });
+    expect(config.sync.adaptivePolling.minIntervalSeconds).toBe(300);
+    expect(config.sync.adaptivePolling.enabled).toBe(false);
+  });
+
+  it("reports every schema violation with its path as a ConfigError", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-config-"));
+    const configPath = path.join(tmpDir, "config.yaml");
+    const yaml = YAML.stringify({
+      environment: "test",
+      auth: { method: "ksefToken" },
+      organizations: [{ nip: "ABC" }],
+      pollingIntervalSeconds: "often",
+      storage: { root: "/tmp/ksef" },
+      logging: { level: "loud", file: "/tmp/ksef/logs/app.log" },
+      sync: { initialSyncFrom: "2024-01-01" },
+    });
+    await fs.writeFile(configPath, yaml, "utf-8");
+
+    const error: unknown = await loadConfig(configPath).catch(
+      (err: unknown) => err,
+    );
+
+    expect(error).toBeInstanceOf(ConfigError);
+    const message = (error as ConfigError).message;
+    expect(message).toContain(`Invalid config at ${configPath}`);
+    expect(message).toContain("NIP must be exactly 10 digits");
+    expect(message).toContain("organizations[0].nip");
+    expect(message).toContain("expected number, received string");
+    expect(message).toContain("pollingIntervalSeconds");
+    expect(message).toContain("logging.level");
+    expect(message).toContain("sync.initialSyncFrom");
+  });
+
   it("redacts sensitive fields", () => {
     const sanitized = sanitizeConfig(
       AppConfigSchema.parse({
