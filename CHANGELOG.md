@@ -8,6 +8,7 @@
 - A missing, invalid or non-advancing HWM no longer falls back silently to `to`; the continuation point is kept and the window is retried in the next cycle.
 - An empty export for an explicit `--time-window` no longer moves the regular continuation point.
 - The continuation point is no longer advanced past a window in which an invoice failed to be written, so the failed invoice is retried in the next cycle instead of being lost.
+- `sync --output-path` (including `--redownload`) no longer writes to the canonical sync state. It used to record the exported copy as the invoice's `file_path`, move continuation points, update the sync status and mark notifications, so deleting a scratch export directory made the next regular sync treat the invoice as missing, and a plain `sync --output-path` could advance the cursor past invoices that never reached the store. Exports now leave invoice records, continuation points, sync status and notification markers untouched, and deduplicate against the export directory instead.
 
 ### Security
 

@@ -10,7 +10,9 @@ import path from "node:path";
 import { syncSubjectType } from "../../src/core/syncSubjectRunner";
 import {
   getContinuationPoint,
+  getInvoice,
   setContinuationPoint,
+  upsertInvoice,
 } from "../../src/db/repository";
 import { SqliteStore } from "../../src/db/sqlite";
 import { encryptAes256Cbc, sha256Base64 } from "../../src/utils/crypto";
@@ -677,5 +679,223 @@ describe("syncSubjectType - HWM continuation point", () => {
     expect(result.downloaded).toBe(1);
     expect(result.skipped).toBe(1);
     expect(await t.readCursor()).toBe(hwmIso);
+  });
+});
+
+describe("syncSubjectType - output-path exports (ksefctl-h40)", () => {
+  const nip = "1234567890";
+  const now = new Date("2026-10-06T15:23:14.445Z");
+  const priorCursor = "2026-10-06T14:00:00.000Z";
+  const hwm = "2026-10-06T15:21:14.514Z";
+
+  const invoicePackage = (ksefNumber: string) => {
+    const xmlText = `<Faktura><P_2>${ksefNumber}</P_2></Faktura>`;
+    const { encrypted, partHash, encryptedPartHash } = buildEncryptedPackage(
+      ksefNumber,
+      xmlText,
+    );
+    return {
+      encrypted,
+      xmlHash: sha256Base64(Buffer.from(xmlText, "utf-8")),
+      status: {
+        status: { code: 200, description: "OK" },
+        package: {
+          invoiceCount: 1,
+          size: encrypted.length,
+          isTruncated: false,
+          permanentStorageHwmDate: hwm,
+          parts: [
+            {
+              ordinalNumber: 1,
+              partName: `${ksefNumber}.zip.aes`,
+              method: "GET",
+              url: `https://example.test/${ksefNumber}`,
+              partHash,
+              encryptedPartHash,
+            },
+          ],
+        },
+      },
+    };
+  };
+
+  const setup = async (cursor: string = priorCursor) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-runner-"));
+    const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
+    await store.withDb((db) => setContinuationPoint(db, nip, "Subject1", cursor));
+    const exportInvoices = vi
+      .fn()
+      .mockResolvedValue({ referenceNumber: "EXPORT-1" });
+    const getExportStatus = vi.fn();
+    const downloadPackagePart = vi.fn();
+    const client = {
+      exportInvoices,
+      getExportStatus,
+      downloadPackagePart,
+    } as unknown as KsefClient;
+    const config = createConfig(path.join(tmpDir, "storage"), {
+      minExportWindowSeconds: 300,
+      initialSyncFrom: "2026-02-01T00:00:00Z",
+    });
+    const deps = createRunnerDeps(client, config, createLogger(), store);
+    const outputPath = path.join(tmpDir, "scratch-export");
+    const readCursor = () =>
+      store.withDb((db) => getContinuationPoint(db, nip, "Subject1"));
+    const readInvoice = (ksefNumber: string) =>
+      store.withDb((db) => getInvoice(db, nip, ksefNumber));
+    const runExport = (forceRedownloadAll = false) =>
+      syncSubjectType(
+        deps,
+        "ACCESS",
+        nip,
+        "Subject1",
+        undefined,
+        false,
+        forceRedownloadAll,
+        false,
+        outputPath,
+      );
+    return {
+      deps,
+      store,
+      config,
+      exportInvoices,
+      getExportStatus,
+      downloadPackagePart,
+      outputPath,
+      readCursor,
+      readInvoice,
+      runExport,
+    };
+  };
+
+  it("does not create a canonical invoice row for an exported invoice", async () => {
+    const t = await setup();
+    const pkg = invoicePackage("KSEF-EXPORT-NEW");
+    t.getExportStatus.mockResolvedValue(pkg.status);
+    t.downloadPackagePart.mockResolvedValue(pkg.encrypted);
+
+    const result = await t.runExport();
+
+    expect(result.downloaded).toBe(1);
+    expect(result.items[0]?.path.startsWith(t.outputPath)).toBe(true);
+    expect(await t.readInvoice("KSEF-EXPORT-NEW")).toBeNull();
+  });
+
+  it("exports an invoice already in the store without touching its canonical row", async () => {
+    const t = await setup();
+    const pkg = invoicePackage("KSEF-EXPORT-KNOWN");
+    t.getExportStatus.mockResolvedValue(pkg.status);
+    t.downloadPackagePart.mockResolvedValue(pkg.encrypted);
+    const canonicalDir = path.join(t.config.storage.root, "invoices", "known");
+    await fs.mkdir(canonicalDir, { recursive: true });
+    await fs.writeFile(
+      path.join(canonicalDir, "KSEF-EXPORT-KNOWN.xml"),
+      "<Faktura><P_2>KSEF-EXPORT-KNOWN</P_2></Faktura>",
+    );
+    const canonicalRow = {
+      nip,
+      ksef_number: "KSEF-EXPORT-KNOWN",
+      file_path: canonicalDir,
+      hash: pkg.xmlHash,
+      status: "downloaded",
+      downloaded_at: "2026-10-01T00:00:00.000Z",
+      received_at: "2026-10-01T00:00:00.000Z",
+      error: null,
+    };
+    await t.store.withDb((db) => upsertInvoice(db, canonicalRow));
+
+    const result = await t.runExport();
+
+    // Deduplication is against the output directory, so a canonical copy
+    // does not suppress the export.
+    expect(result.downloaded).toBe(1);
+    expect(result.skipped).toBe(0);
+    expect(await t.readInvoice("KSEF-EXPORT-KNOWN")).toEqual(canonicalRow);
+  });
+
+  it("does not record a failed canonical row when an export write fails", async () => {
+    const t = await setup();
+    const pkg = invoicePackage("KSEF-EXPORT-FAIL");
+    t.getExportStatus.mockResolvedValue(pkg.status);
+    t.downloadPackagePart.mockResolvedValue(pkg.encrypted);
+    // A regular file where the output directory should be makes the write fail.
+    await fs.writeFile(t.outputPath, "not a directory");
+
+    const result = await t.runExport();
+
+    expect(result.failed).toBe(1);
+    expect(await t.readInvoice("KSEF-EXPORT-FAIL")).toBeNull();
+    expect(await t.readCursor()).toBe(priorCursor);
+  });
+
+  it("skips invoices already present in the output directory", async () => {
+    const t = await setup();
+    const pkg = invoicePackage("KSEF-EXPORT-TWICE");
+    t.getExportStatus.mockResolvedValue(pkg.status);
+    t.downloadPackagePart.mockResolvedValue(pkg.encrypted);
+
+    const first = await t.runExport();
+    const second = await t.runExport();
+    const forced = await t.runExport(true);
+
+    expect(first.downloaded).toBe(1);
+    expect(second).toMatchObject({ downloaded: 0, skipped: 1 });
+    // A forced re-download replays from initialSyncFrom (several windows, each
+    // served the same package here) and rewrites the file every time.
+    expect(forced.skipped).toBe(0);
+    expect(forced.downloaded).toBeGreaterThan(0);
+  });
+
+  it("does not move the regular cursor", async () => {
+    const t = await setup();
+    const pkg = invoicePackage("KSEF-EXPORT-CURSOR");
+    t.getExportStatus.mockResolvedValue(pkg.status);
+    t.downloadPackagePart.mockResolvedValue(pkg.encrypted);
+
+    await t.runExport();
+
+    const range = (
+      t.exportInvoices.mock.calls[0]?.[1] as {
+        filters: { dateRange: { from: string } };
+      }
+    ).filters.dateRange;
+    // The window still starts at the regular cursor ...
+    expect(range.from).toBe(priorCursor);
+    // ... but the cursor is not advanced to the HWM.
+    expect(await t.readCursor()).toBe(priorCursor);
+  });
+
+  it("does not rewrite the cursor when flooring it or forcing a full re-download", async () => {
+    const staleCursor = "2026-01-15T00:00:00.000Z";
+    const t = await setup(staleCursor);
+    const pkg = invoicePackage("KSEF-EXPORT-FLOOR");
+    t.getExportStatus.mockResolvedValue(pkg.status);
+    t.downloadPackagePart.mockResolvedValue(pkg.encrypted);
+
+    await t.runExport();
+    expect(await t.readCursor()).toBe(staleCursor);
+
+    await t.runExport(true);
+    expect(await t.readCursor()).toBe(staleCursor);
+  });
+
+  it("still records canonical state for a regular run (no output path)", async () => {
+    const t = await setup();
+    const pkg = invoicePackage("KSEF-REGULAR");
+    t.getExportStatus.mockResolvedValue(pkg.status);
+    t.downloadPackagePart.mockResolvedValue(pkg.encrypted);
+
+    const result = await syncSubjectType(t.deps, "ACCESS", nip, "Subject1");
+
+    expect(result.downloaded).toBe(1);
+    const row = await t.readInvoice("KSEF-REGULAR");
+    expect(row).toMatchObject({ status: "downloaded", hash: pkg.xmlHash });
+    expect(
+      row?.file_path.startsWith(path.join(t.config.storage.root, "invoices")),
+    ).toBe(true);
+    expect(await t.readCursor()).toBe(hwm);
   });
 });

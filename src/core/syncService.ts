@@ -158,9 +158,21 @@ export class SyncService {
       receivedDate: null,
       sourceEnvironment: this.config.environment,
       metadataMeta: { source: "direct" },
+      // A download to an explicit output path is an ad-hoc export; the
+      // canonical row must keep pointing at the store copy (or stay absent).
+      updateCanonicalState: outputPath === undefined,
     });
   }
 
+  /**
+   * Runs one sync cycle.
+   *
+   * When `outputPath` is set the run is an export to an ad-hoc location: it
+   * writes invoice files there but leaves the shared state untouched — no
+   * `invoices` rows, continuation points, sync status or unpaid-invoice
+   * notification markers are written — so the regular sync still treats the
+   * canonical store as the source of truth.
+   */
   async runOnce(
     forceRedownloadId?: string,
     nipFilter?: string,
@@ -181,6 +193,7 @@ export class SyncService {
         "Custom output path requires --nip or a single configured organization",
       );
     }
+    const exportOnly = outputPath !== undefined;
     const effectiveFlatSync = flatSync ?? this.config.sync.flatSync;
     const maxConcurrent = this.config.sync.maxConcurrentNips ?? 1;
     this.logger.debug(
@@ -270,7 +283,9 @@ export class SyncService {
       this.reportProgress(`Progress: syncing NIP ${nip}`);
       const tokens = await this.auth.getAccessToken(nip);
       const result = await syncSingleNip(nip, tokens);
-      await this.notifier?.notifyUnpaidInvoices(result, this.store);
+      if (!exportOnly) {
+        await this.notifier?.notifyUnpaidInvoices(result, this.store);
+      }
       return result;
     };
 
@@ -286,6 +301,7 @@ export class SyncService {
         summary.items.push(...result.items);
       }
 
+      if (exportOnly) return summary;
       await this.store.withDb((db) => {
         const previous = getSyncState(db);
         const lastSuccessAt =
@@ -308,6 +324,7 @@ export class SyncService {
       const message = (error as Error).message;
       const sanitizedMessage = sanitizeErrorMessage(message);
       this.logger.debug({ err: sanitizedMessage }, "Sync run failed");
+      if (exportOnly) throw error;
       await this.store.withDb((db) => {
         const previous = getSyncState(db);
         setSyncState(db, {

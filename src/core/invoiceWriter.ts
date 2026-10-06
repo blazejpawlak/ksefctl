@@ -247,7 +247,33 @@ export type WriteInvoiceOptions = {
   receivedDate: string | null;
   sourceEnvironment: string;
   metadataMeta: Record<string, unknown> | undefined;
+  /**
+   * Whether the write records the invoice in the shared `invoices` table.
+   * Defaults to `true`. Pass `false` for exports to an ad-hoc location (CLI
+   * `--output-path`): those files live outside the canonical store, so the
+   * canonical row must keep pointing at the store copy (or stay absent).
+   */
+  updateCanonicalState?: boolean;
 };
+
+/**
+ * Returns true when the target location already holds this exact invoice XML,
+ * i.e. `<fileBaseName>.xml` exists with the expected hash. Used to deduplicate
+ * exports that do not consult the canonical `invoices` table.
+ */
+export async function hasMatchingInvoiceXml(
+  storageTarget: InvoiceStorageTarget,
+  expectedHash: string,
+): Promise<boolean> {
+  try {
+    const existing = await fs.readFile(
+      path.join(storageTarget.invoiceDir, `${storageTarget.fileBaseName}.xml`),
+    );
+    return sha256Base64(existing) === expectedHash;
+  } catch {
+    return false;
+  }
+}
 
 export async function writeInvoice(
   deps: InvoiceWriterDeps,
@@ -263,6 +289,7 @@ export async function writeInvoice(
     receivedDate,
     sourceEnvironment,
     metadataMeta,
+    updateCanonicalState = true,
   } = options;
   const hash = sha256Base64(xmlData);
 
@@ -295,18 +322,20 @@ export async function writeInvoice(
     storageTarget.fileBaseName,
   );
 
-  await store.withDb((db) =>
-    upsertInvoice(db, {
-      nip,
-      ksef_number: ksefNumber,
-      file_path: storageTarget.invoiceDir,
-      hash,
-      status: "downloaded",
-      downloaded_at: new Date().toISOString(),
-      received_at: receivedDate,
-      error: null,
-    }),
-  );
+  if (updateCanonicalState) {
+    await store.withDb((db) =>
+      upsertInvoice(db, {
+        nip,
+        ksef_number: ksefNumber,
+        file_path: storageTarget.invoiceDir,
+        hash,
+        status: "downloaded",
+        downloaded_at: new Date().toISOString(),
+        received_at: receivedDate,
+        error: null,
+      }),
+    );
+  }
 
   return createSyncItem(
     nip,
@@ -336,5 +365,9 @@ export async function resolveAndWrite(
     options.metadata,
     options.outputPathOverride,
   );
-  return writeInvoice(deps, { ...options, storageTarget });
+  return writeInvoice(deps, {
+    updateCanonicalState: options.outputPathOverride === undefined,
+    ...options,
+    storageTarget,
+  });
 }
