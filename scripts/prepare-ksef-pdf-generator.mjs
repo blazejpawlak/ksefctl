@@ -4,13 +4,27 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const packageRoot = path.join(
-  scriptDir,
-  "..",
-  "node_modules",
-  "@akmf",
-  "ksef-fe-invoice-converter",
-);
+const converterPath = path.join("node_modules", "@akmf", "ksef-fe-invoice-converter");
+
+// Walk up from this package like Node's resolver does: in a repository
+// checkout or a global install the converter is nested under this package,
+// but npm may hoist it to a parent node_modules when ksefctl is a dependency.
+const findConverterRoot = async () => {
+  let dir = path.join(scriptDir, "..");
+  for (;;) {
+    const candidate = path.join(dir, converterPath);
+    try {
+      await fs.access(path.join(candidate, "package.json"));
+      return candidate;
+    } catch {
+      const parent = path.dirname(dir);
+      if (parent === dir) {
+        throw new Error(`Cannot find ${converterPath} above ${scriptDir}`);
+      }
+      dir = parent;
+    }
+  }
+};
 const filesToCopy = [
   "ksef-fe-invoice-converter.js",
   "ksef-fe-invoice-converter.umd.cjs",
@@ -37,7 +51,7 @@ const runCommand = (command, args, cwd) => {
   throw new Error(`${command} ${args.join(" ")} failed with exit code ${result.status ?? 1}`);
 };
 
-const copyArtifacts = async () => {
+const copyArtifacts = async (packageRoot) => {
   for (const fileName of filesToCopy) {
     await fs.copyFile(
       path.join(packageRoot, "dist", fileName),
@@ -47,7 +61,7 @@ const copyArtifacts = async () => {
 };
 
 const run = async () => {
-  await fs.access(packageRoot);
+  const packageRoot = await findConverterRoot();
   await fs.writeFile(
     path.join(packageRoot, ".npmrc"),
     converterAllowedScripts.map((name) => `allow-scripts[]=${name}\n`).join(""),
@@ -58,7 +72,7 @@ const run = async () => {
     packageRoot,
   );
   runCommand("npm", ["run", "build"], packageRoot);
-  await copyArtifacts();
+  await copyArtifacts(packageRoot);
 };
 
 run().catch((error) => {
