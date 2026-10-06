@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Security
+
+- Upgrade `nodemailer` to 10.0.15 (with `@types/nodemailer` 8), fixing GHSA-6vj9-mwq6-2f5v (SMTP credential disclosure through the process-global DNS cache) and several address-parser denial-of-service advisories. nodemailer 10 requires Node.js 20+, which the existing Node.js 22 baseline already satisfies.
+- Refresh vulnerable transitive dependencies: `brace-expansion`, `fast-copy`, `fast-uri` and `source-map-js`.
+- Override `i18next-http-backend` to `^4.0.2` under `@akmf/ksef-fe-invoice-converter` (GHSA-xvq9-wjp8-hwqf). The converter declares the package but its built bundle never loads it, so PDF rendering is unaffected.
+
 ## [2026.9.21] - 2026-09-21
 
 ### Added
