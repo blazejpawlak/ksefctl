@@ -1,6 +1,6 @@
 const tseslint = require("@typescript-eslint/eslint-plugin");
 const tsParser = require("@typescript-eslint/parser");
-const importPlugin = require("eslint-plugin-import");
+const { importX } = require("eslint-plugin-import-x");
 const nodePlugin = require("eslint-plugin-n");
 const globals = require("globals");
 
@@ -28,7 +28,7 @@ module.exports = [
     },
     plugins: {
       "@typescript-eslint": tseslint,
-      import: importPlugin,
+      "import-x": importX,
       n: nodePlugin,
     },
     rules: {
@@ -55,8 +55,8 @@ module.exports = [
         },
       ],
       "comma-dangle": ["error", "always-multiline"],
-      "import/no-default-export": "error",
-      "import/order": [
+      "import-x/no-default-export": "error",
+      "import-x/order": [
         "error",
         {
           groups: [
