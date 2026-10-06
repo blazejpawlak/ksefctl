@@ -1,15 +1,29 @@
 name: CI
 
 on:
+  # Branch pushes are validated through their pull request; validating main
+  # here keeps a status on every merge commit. Tags are not built here because
+  # publish.yml re-runs the full validation before publishing.
   push:
+    branches:
+      - main
   pull_request:
 
 permissions:
   contents: read
 
+# One run per pull request: a newer push supersedes the in-flight run. Pushes
+# to main are grouped by commit so no merge commit's validation is cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   quality:
     runs-on: ubuntu-latest
+    # A healthy run takes ~2 minutes. Never let a stalled step hold a runner
+    # for the 6-hour default.
+    timeout-minutes: 15
 
     steps:
       - name: Check out repository
@@ -34,9 +48,11 @@ jobs:
         run: npm run build
 
       - name: Run unit tests
+        timeout-minutes: 5
         run: npm run test
 
       - name: Run integration tests
+        timeout-minutes: 5
         run: npm run test:integration
 
       - name: Audit dependencies

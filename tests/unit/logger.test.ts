@@ -1,11 +1,66 @@
 import type { LogRotationOptions } from "../../src/utils/logger";
+import type { Logger } from "pino";
+import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { applyLogRotation, createLogger } from "../../src/utils/logger";
 
 const MEGABYTE = 1024 * 1024;
+
+/**
+ * Compare multi-megabyte log contents by length and digest. A failing
+ * toBe/toContain on the raw string makes Vitest print the whole value, and in
+ * CI its github-actions reporter repeats it as a single ~1 MiB `::error`
+ * workflow-command line, which can stall the Actions runner indefinitely.
+ */
+const summarize = (content: string): { length: number; sha256: string } => ({
+  length: content.length,
+  sha256: createHash("sha256").update(content).digest("hex"),
+});
+
+type ClosableDestination = {
+  end: () => void;
+  once: (event: string, listener: (error?: Error) => void) => unknown;
+};
+
+type MultiStream = {
+  streams: { stream: Partial<ClosableDestination> }[];
+};
+
+/**
+ * Wait until everything the logger wrote has reached disk.
+ *
+ * createLogger writes through an async pino.destination (SonicBoom) wrapped in
+ * pino.multistream. logger.flush(cb) does not wait for that: multistream has no
+ * flush(), so pino invokes cb synchronously, and SonicBoom.flush() is a
+ * documented no-op when minLength is 0. Ending the destination is the
+ * deterministic drain: SonicBoom.end() waits for the async open and any
+ * in-flight write, writes the remaining buffer, and emits "close" only after
+ * the fd is closed.
+ */
+const closeLogger = async (logger: Logger): Promise<void> => {
+  const multi = (logger as unknown as Record<symbol, unknown>)[
+    pino.symbols.streamSym
+  ] as MultiStream;
+  await Promise.all(
+    multi.streams.map(({ stream }) => {
+      const { end, once } = stream;
+      if (typeof end !== "function" || typeof once !== "function") {
+        return Promise.resolve();
+      }
+      return new Promise<void>((resolve, reject) => {
+        once.call(stream, "close", () => resolve());
+        once.call(stream, "error", (error) =>
+          reject(error ?? new Error("log destination failed to close")),
+        );
+        end.call(stream);
+      });
+    }),
+  );
+};
 
 const rotation = (
   overrides: Partial<LogRotationOptions> = {},
@@ -48,7 +103,7 @@ describe("log rotation", () => {
       throw new Error("expected a rotated log file");
     }
     const rotatedContent = await fs.readFile(rotatedPath, "utf-8");
-    expect(rotatedContent).toBe(original);
+    expect(summarize(rotatedContent)).toEqual(summarize(original));
     expect((await fs.stat(rotatedPath)).mode & 0o777).toBe(0o600);
   });
 
@@ -133,7 +188,9 @@ describe("log rotation", () => {
       applyLogRotation(filePath, rotation()),
     ).resolves.toBe(false);
 
-    expect(await fs.readFile(filePath, "utf-8")).toBe(original);
+    expect(summarize(await fs.readFile(filePath, "utf-8"))).toEqual(
+      summarize(original),
+    );
     expect(await listRotated(filePath)).toEqual([]);
   });
 
@@ -150,21 +207,14 @@ describe("log rotation", () => {
       rotation: rotation(),
     });
     logger.info({ event: "after-rotate" }, "hello");
-    await new Promise<void>((resolve, reject) => {
-      logger.flush((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
-      });
-    });
+    await closeLogger(logger);
 
     const rotatedFiles = await listRotated(filePath);
     expect(rotatedFiles).toHaveLength(1);
     const current = await fs.readFile(filePath, "utf-8");
-    expect(current).toContain("after-rotate");
+    // Length first: if rotation did not happen, toContain would print 1 MiB.
     expect(current.length).toBeLessThan(MEGABYTE);
+    expect(current).toContain("after-rotate");
 
     vi.spyOn(fs, "rename").mockRejectedValue(new Error("EIO"));
     vi.spyOn(process.stderr, "write").mockReturnValue(true);
@@ -178,18 +228,13 @@ describe("log rotation", () => {
       rotation: rotation(),
     });
     failingLogger.info({ event: "still-writing" }, "kept going");
-    await new Promise<void>((resolve, reject) => {
-      failingLogger.flush((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
-      });
-    });
+    await closeLogger(failingLogger);
     const failedFile = await fs.readFile(oversizedPath, "utf-8");
-    expect(failedFile.startsWith("y")).toBe(true);
-    expect(failedFile).toContain("still-writing");
+    expect(summarize(failedFile.slice(0, MEGABYTE))).toEqual(
+      summarize("y".repeat(MEGABYTE)),
+    );
+    // Only the appended tail: a failure must not print the 1 MiB prefix.
+    expect(failedFile.slice(MEGABYTE)).toContain("still-writing");
   });
 
   it("skips rotation when it is disabled", async () => {
@@ -204,6 +249,8 @@ describe("log rotation", () => {
     );
 
     expect(rotated).toBe(false);
-    expect(await fs.readFile(filePath, "utf-8")).toBe(original);
+    expect(summarize(await fs.readFile(filePath, "utf-8"))).toEqual(
+      summarize(original),
+    );
   });
 });

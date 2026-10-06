@@ -8,6 +8,9 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Same validation steps as CI; a stalled step must not hold the runner for
+    # the 6-hour default.
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
