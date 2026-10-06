@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
-import { Agent } from "undici";
+import type { Dispatcher } from "undici";
+import { Agent, Dispatcher1Wrapper } from "undici";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import tls from "node:tls";
@@ -116,7 +117,17 @@ export const validateTlsOptions = async (
   }
 };
 
-const createDispatcher = async (security: SecurityOptions): Promise<Agent> => {
+// The dispatcher is handed to Node's built-in fetch, whose bundled undici
+// version follows the Node.js runtime rather than this package. Two undici 8
+// changes are neutralised here so behaviour does not depend on that pairing:
+// - undici 8 dispatchers only accept the v2 handler API, while the fetch built
+//   into Node 22 (undici 6) dispatches with v1 handlers. Dispatcher1Wrapper
+//   adapts v1 handlers and passes v2 handlers through unchanged.
+// - undici 8 negotiates HTTP/2 over ALPN by default; allowH2: false keeps the
+//   HTTP/1.1-only transport the client has always used.
+const createDispatcher = async (
+  security: SecurityOptions,
+): Promise<Dispatcher> => {
   const ca = security.caPath
     ? await fs.readFile(security.caPath, "utf-8")
     : undefined;
@@ -125,7 +136,8 @@ const createDispatcher = async (security: SecurityOptions): Promise<Agent> => {
     value.trim().toLowerCase().replace(/\.$/, "");
   const pinningHosts = security.pinningHosts.map(normalizeHost);
 
-  return new Agent({
+  const agent = new Agent({
+    allowH2: false,
     connect: {
       rejectUnauthorized: true,
       ca,
@@ -155,10 +167,11 @@ const createDispatcher = async (security: SecurityOptions): Promise<Agent> => {
       },
     },
   });
+  return new Dispatcher1Wrapper(agent);
 };
 
 export class HttpClient {
-  private dispatcherPromise: Promise<Agent>;
+  private dispatcherPromise: Promise<Dispatcher>;
   private options: HttpClientOptions;
   private logger?: Logger;
   private progress?: (message: string) => void;
@@ -224,7 +237,7 @@ export class HttpClient {
           body,
           dispatcher,
           signal: controller.signal,
-        } as RequestInit & { dispatcher: Agent });
+        } as RequestInit & { dispatcher: Dispatcher });
 
         if (response.status === 429 || response.status >= 500) {
           const retryAfter = response.headers.get("Retry-After");
