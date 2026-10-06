@@ -45,7 +45,7 @@
     "@akmf/ksef-fe-invoice-converter": "github:CIRFMF/ksef-pdf-generator#fb12569a439a391a8e0c705e7dc331079be8c942",
     "adm-zip": "^0.6.1",
     "cli-spinners": "^3.4.0",
-    "commander": "^12.1.0",
+    "commander": "^15.0.0",
     "keytar": "^7.9.0",
     "node-notifier": "^10.0.1",
     "nodemailer": "^10.0.15",
