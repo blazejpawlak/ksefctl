@@ -23,6 +23,8 @@ const LOG_FILE_MODE = 0o600;
 const BYTES_PER_MEGABYTE = 1024 * 1024;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const LOG_ROTATION_CHECK_INTERVAL_MS = 30_000;
+// Upper bound for closeLogger so a stuck destination can never hang shutdown.
+export const LOG_CLOSE_TIMEOUT_MS = 2_000;
 
 // Matches src/config/schema.ts logging.rotation defaults. Callers should pass
 // config.logging.rotation when available so user overrides take effect.
@@ -224,6 +226,7 @@ const scheduleRotationChecks = (
 
   const timer = setInterval(run, LOG_ROTATION_CHECK_INTERVAL_MS);
   timer.unref();
+  fileStream.once("close", () => clearInterval(timer));
 };
 
 export const createPrettyLogStream = (): pino.DestinationStream =>
@@ -271,5 +274,90 @@ export const createLogger = async (options: LoggerOptions): Promise<Logger> => {
   return pino(
     { level: options.level, redact: redactions },
     pino.multistream(streams),
+  );
+};
+
+type ClosableStream = {
+  end: () => void;
+  once: (event: string, listener: (...args: unknown[]) => void) => unknown;
+};
+
+const isClosableStream = (stream: unknown): stream is ClosableStream =>
+  typeof stream === "object" &&
+  stream !== null &&
+  stream !== process.stdout &&
+  stream !== process.stderr &&
+  typeof (stream as Partial<ClosableStream>).end === "function" &&
+  typeof (stream as Partial<ClosableStream>).once === "function";
+
+const isMultiStream = (stream: unknown): stream is pino.MultiStreamRes =>
+  typeof stream === "object" &&
+  stream !== null &&
+  Array.isArray((stream as Partial<pino.MultiStreamRes>).streams);
+
+const waitForClose = (
+  stream: ClosableStream,
+  timeoutMs: number,
+): Promise<void> =>
+  new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, timeoutMs);
+    timer.unref();
+    const done = (): void => {
+      clearTimeout(timer);
+      resolve();
+    };
+    // A destination that fails while closing has nothing left to deliver;
+    // shutdown must proceed either way.
+    stream.once("close", done);
+    stream.once("error", done);
+    try {
+      stream.end();
+    } catch {
+      done();
+    }
+  });
+
+/**
+ * Drain and close the logger's own destinations before the process exits.
+ *
+ * logger.flush() is not enough for a logger from createLogger: the file
+ * destination is an async pino.destination (SonicBoom) behind
+ * pino.multistream, which has no flush(), so pino calls back immediately and
+ * SonicBoom.flush() is a no-op at minLength 0. A line written just before the
+ * process is killed (or before the file has even been opened) can be lost.
+ * Ending the destination waits for the async open and any in-flight write,
+ * writes the remaining buffer and emits "close" once the fd is closed.
+ *
+ * The closed destinations are detached from the multistream first, so logging
+ * after closeLogger never throws; those lines are dropped. process.stdout and
+ * process.stderr are flushed by Node itself and are never ended. The wait is
+ * bounded by timeoutMs per call, and the returned promise never rejects.
+ */
+export const closeLogger = async (
+  logger: Logger,
+  timeoutMs: number = LOG_CLOSE_TIMEOUT_MS,
+): Promise<void> => {
+  const stream = (logger as unknown as Record<symbol, unknown>)[
+    pino.symbols.streamSym
+  ];
+  if (!isMultiStream(stream)) {
+    logger.flush?.();
+    return;
+  }
+
+  const closable: ClosableStream[] = [];
+  for (let index = stream.streams.length - 1; index >= 0; index -= 1) {
+    const entry = stream.streams[index];
+    if (entry && isClosableStream(entry.stream)) {
+      closable.push(entry.stream);
+      stream.streams.splice(index, 1);
+    }
+  }
+  if (closable.length === 0) {
+    return;
+  }
+
+  await Promise.all(
+    closable.map((destination) => waitForClose(destination, timeoutMs)),
   );
 };

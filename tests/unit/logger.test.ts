@@ -1,12 +1,15 @@
 import type { LogRotationOptions } from "../../src/utils/logger.js";
-import type { Logger } from "pino";
-import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { applyLogRotation, createLogger } from "../../src/utils/logger.js";
+import {
+  applyLogRotation,
+  closeLogger,
+  createLogger,
+} from "../../src/utils/logger.js";
 
 const MEGABYTE = 1024 * 1024;
 
@@ -20,47 +23,6 @@ const summarize = (content: string): { length: number; sha256: string } => ({
   length: content.length,
   sha256: createHash("sha256").update(content).digest("hex"),
 });
-
-type ClosableDestination = {
-  end: () => void;
-  once: (event: string, listener: (error?: Error) => void) => unknown;
-};
-
-type MultiStream = {
-  streams: { stream: Partial<ClosableDestination> }[];
-};
-
-/**
- * Wait until everything the logger wrote has reached disk.
- *
- * createLogger writes through an async pino.destination (SonicBoom) wrapped in
- * pino.multistream. logger.flush(cb) does not wait for that: multistream has no
- * flush(), so pino invokes cb synchronously, and SonicBoom.flush() is a
- * documented no-op when minLength is 0. Ending the destination is the
- * deterministic drain: SonicBoom.end() waits for the async open and any
- * in-flight write, writes the remaining buffer, and emits "close" only after
- * the fd is closed.
- */
-const closeLogger = async (logger: Logger): Promise<void> => {
-  const multi = (logger as unknown as Record<symbol, unknown>)[
-    pino.symbols.streamSym
-  ] as MultiStream;
-  await Promise.all(
-    multi.streams.map(({ stream }) => {
-      const { end, once } = stream;
-      if (typeof end !== "function" || typeof once !== "function") {
-        return Promise.resolve();
-      }
-      return new Promise<void>((resolve, reject) => {
-        once.call(stream, "close", () => resolve());
-        once.call(stream, "error", (error) =>
-          reject(error ?? new Error("log destination failed to close")),
-        );
-        end.call(stream);
-      });
-    }),
-  );
-};
 
 const rotation = (
   overrides: Partial<LogRotationOptions> = {},
@@ -308,5 +270,129 @@ describe("createLogger file output", () => {
     expect(content).not.toContain("secret-");
     expect(content).not.toContain("below-level");
     expect((await fs.stat(filePath)).mode & 0o777).toBe(0o600);
+  });
+});
+
+/**
+ * Hold every SonicBoom write in flight for delayMs (or forever), standing in
+ * for a slow disk. sonic-boom calls fs.write through the shared node:fs module.
+ */
+const delayFileWrites = (delayMs: number | null): void => {
+  const original = fsSync.write;
+  vi.spyOn(fsSync, "write").mockImplementation((...args: unknown[]) => {
+    if (delayMs === null) {
+      return;
+    }
+    setTimeout(() => {
+      Reflect.apply(original, fsSync, args);
+    }, delayMs);
+  });
+};
+
+const createTestLogger = async (
+  filePath: string,
+  suppressConsole = true,
+): Promise<Awaited<ReturnType<typeof createLogger>>> =>
+  createLogger({
+    level: "info",
+    file: filePath,
+    prettyConsole: false,
+    suppressConsole,
+    rotation: rotation({ enabled: false }),
+  });
+
+describe("closeLogger", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("puts the final line on disk where logger.flush() did not", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-logclose-"));
+    const filePath = path.join(tmpDir, "ksefctl.log");
+    delayFileWrites(250);
+    const logger = await createTestLogger(filePath);
+
+    logger.info({ lifecycleStage: "signal_received" }, "final stop line");
+    await new Promise<void>((resolve) => {
+      logger.flush(() => resolve());
+    });
+    // The old shutdown path re-raised the signal here; the line was not
+    // written yet.
+    expect(await fs.readFile(filePath, "utf-8")).toBe("");
+
+    await closeLogger(logger);
+
+    const content = await fs.readFile(filePath, "utf-8");
+    const lines = content.trim().split("\n");
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0] ?? "")).toMatchObject({
+      msg: "final stop line",
+      lifecycleStage: "signal_received",
+    });
+  });
+
+  it("drains a line logged before the destination has opened", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-logclose-"));
+    const filePath = path.join(tmpDir, "ksefctl.log");
+    const logger = await createTestLogger(filePath);
+
+    logger.info("logged before open");
+    await closeLogger(logger);
+
+    expect(await fs.readFile(filePath, "utf-8")).toContain(
+      "logged before open",
+    );
+  });
+
+  it("keeps logging safe after close and leaves stdout open", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-logclose-"));
+    const filePath = path.join(tmpDir, "ksefctl.log");
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const endSpy = vi.spyOn(process.stdout, "end");
+    const logger = await createTestLogger(filePath, false);
+
+    logger.info("before close");
+    await closeLogger(logger);
+
+    expect(() => logger.info("after close")).not.toThrow();
+    await expect(closeLogger(logger)).resolves.toBeUndefined();
+    expect(endSpy).not.toHaveBeenCalled();
+    expect(stdoutWrite).toHaveBeenCalledWith(
+      expect.stringContaining("after close"),
+    );
+    const content = await fs.readFile(filePath, "utf-8");
+    expect(content).toContain("before close");
+    expect(content).not.toContain("after close");
+  });
+
+  it("gives up after the timeout when a destination never drains", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-logclose-"));
+    const filePath = path.join(tmpDir, "ksefctl.log");
+    const logger = await createTestLogger(filePath);
+    // Let the destination open, then make every write hang.
+    logger.info("opened");
+    await vi.waitFor(
+      async () => {
+        expect(await fs.readFile(filePath, "utf-8")).toContain("opened");
+      },
+      { timeout: 5000, interval: 20 },
+    );
+    delayFileWrites(null);
+    logger.info("stuck");
+
+    const startedAt = Date.now();
+    await closeLogger(logger, 50);
+
+    expect(Date.now() - startedAt).toBeLessThan(2000);
+  });
+
+  it("falls back to logger.flush() for loggers without a multistream", async () => {
+    const logger = { flush: vi.fn() };
+
+    await closeLogger(logger as never);
+
+    expect(logger.flush).toHaveBeenCalledOnce();
   });
 });
