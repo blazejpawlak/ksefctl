@@ -7,7 +7,7 @@ Keep changes consistent with existing patterns and conventions.
 
 - Project: KSeFctl inbox sync CLI (macOS + Linux)
 - Language: TypeScript (CommonJS output)
-- Node requirement: >= 22
+- Node requirement: >= 26
 - OS support: darwin, linux
 - API: KSeF API v2 (base URL includes /v2)
 - Versioning: yyyy-MM-dd (e.g., 2026.02.17)
