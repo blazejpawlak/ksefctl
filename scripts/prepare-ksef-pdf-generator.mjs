@@ -17,6 +17,11 @@ const filesToCopy = [
   "index.d.ts",
 ];
 
+// npm 11 gates dependency install scripts behind an allowlist. The converter is
+// installed as its own project, so the root package.json allowScripts does not
+// apply; its Vite build needs esbuild's postinstall (fsevents is macOS-only).
+const converterAllowedScripts = ["esbuild", "fsevents"];
+
 const runCommand = (command, args, cwd) => {
   const result = spawnSync(command, args, {
     cwd,
@@ -43,6 +48,10 @@ const copyArtifacts = async () => {
 
 const run = async () => {
   await fs.access(packageRoot);
+  await fs.writeFile(
+    path.join(packageRoot, ".npmrc"),
+    converterAllowedScripts.map((name) => `allow-scripts[]=${name}\n`).join(""),
+  );
   runCommand(
     "npm",
     ["install", "--package-lock=false", "--no-fund", "--no-audit"],
