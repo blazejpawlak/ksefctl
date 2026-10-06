@@ -38,8 +38,8 @@ export type InvoiceExportStatusResponse = {
     invoiceCount?: number;
     size?: number;
     isTruncated?: boolean;
-    lastPermanentStorageDate?: string;
-    permanentStorageHwmDate?: string;
+    lastPermanentStorageDate?: string | null;
+    permanentStorageHwmDate?: string | null;
     parts?: {
       ordinalNumber: number;
       partName: string;
