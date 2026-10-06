@@ -28,7 +28,6 @@ import { downloadAndDecryptParts, waitForExport } from "./invoicePackageClient";
 import { resolveInvoiceStorageTarget, writeInvoice } from "./invoiceWriter";
 import {
   addUtcMonths,
-  advanceWindow,
   isBelowMinExportWindow,
   isOutOfRangeError,
   ksefStartDateIso,
@@ -36,8 +35,8 @@ import {
   minDate,
   parseIsoDate,
   resolveConfiguredStart,
+  resolveContinuation,
   resolveDefaultStart,
-  resolveNextCursor,
 } from "./window";
 
 export type SyncSubjectRunnerDeps = {
@@ -241,26 +240,50 @@ export async function syncSubjectType(
     }
 
     const packageInfo = status.package;
-    const parts = packageInfo?.parts;
-    if (!parts || parts.length === 0) {
-      logger.debug({ nip, subjectType }, "No package parts available");
-      reportProgress("Progress: no package parts");
-      await store.withDb((db) =>
-        setContinuationPoint(db, nip, subjectType, toDate),
-      );
-      const { nextStart, stalled } = advanceWindow(windowStart, toDate);
-      if (stalled) {
+    const parts = packageInfo?.parts ?? [];
+    const continuation = resolveContinuation(
+      packageInfo,
+      windowStart,
+      windowEnd,
+    );
+    // Persist the continuation point and move to the next window. Returns
+    // false when the loop must stop and the stored cursor stay put.
+    const advance = async (): Promise<boolean> => {
+      if (continuation.kind === "hold") {
         logger.warn(
-          { nip, subjectType, nextCursor: toDate },
-          "Continuation point did not advance",
+          { nip, subjectType, fromDate, toDate, reason: continuation.reason },
+          "Continuation point not advanced",
+        );
+        return false;
+      }
+      // An explicit window is a one-off export; it must never move the
+      // regular sync cursor.
+      if (!explicitWindow) {
+        await store.withDb((db) =>
+          setContinuationPoint(db, nip, subjectType, continuation.cursor),
+        );
+      }
+      windowStart = continuation.cursorDate;
+      return true;
+    };
+
+    if (parts.length === 0) {
+      const invoiceCount = packageInfo?.invoiceCount ?? 0;
+      logger.debug(
+        { nip, subjectType, invoiceCount },
+        "No package parts available",
+      );
+      reportProgress("Progress: no package parts");
+      if (invoiceCount > 0) {
+        logger.warn(
+          { nip, subjectType, fromDate, toDate, invoiceCount },
+          "Export reported invoices without package parts; continuation point not advanced",
         );
         break;
       }
-      windowStart = nextStart;
+      if (!(await advance())) break;
       continue;
     }
-
-    const nextCursor = resolveNextCursor(packageInfo, toDate);
 
     logger.debug(
       { nip, subjectType, partCount: parts.length },
@@ -425,24 +448,16 @@ export async function syncSubjectType(
       `Progress: window complete (downloaded=${downloaded}, skipped=${skipped}, failed=${failed}, pdfFailed=${pdfFailed})`,
     );
 
-    if (!explicitWindow) {
-      await store.withDb((db) =>
-        setContinuationPoint(db, nip, subjectType, nextCursor),
-      );
-    }
-
     if (failed > 0) {
+      // Failed writes are only retried when a later export covers them
+      // again, so the cursor must not move past this window.
+      logger.warn(
+        { nip, subjectType, fromDate, toDate, failed },
+        "Invoice writes failed; continuation point not advanced",
+      );
       return summary;
     }
-    const { nextStart, stalled } = advanceWindow(windowStart, nextCursor);
-    if (stalled) {
-      logger.warn(
-        { nip, subjectType, nextCursor },
-        "Continuation point did not advance",
-      );
-      break;
-    }
-    windowStart = nextStart;
+    if (!(await advance())) break;
   }
 
   return summary;

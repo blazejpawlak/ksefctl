@@ -1030,7 +1030,7 @@ describe("SyncService", () => {
     ]);
   });
 
-  it("advances continuation point after partial export failures", async () => {
+  it("keeps the continuation point after partial export failures so they are retried", async () => {
     const now = new Date("2026-05-10T12:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
@@ -1128,23 +1128,31 @@ describe("SyncService", () => {
     const continuation = await store.withDb((db) =>
       getContinuationPoint(db, "1234567890", "Subject1"),
     );
-    const secondRun = await service.runOnce();
     writeFileSpy.mockRestore();
+    const secondRun = await service.runOnce();
+    const retriedInvoice = await store.withDb((db) =>
+      getInvoice(db, "1234567890", "KSEF-BAD"),
+    );
+    const continuationAfterRetry = await store.withDb((db) =>
+      getContinuationPoint(db, "1234567890", "Subject1"),
+    );
 
     expect(firstRun.downloaded).toBe(1);
     expect(firstRun.failed).toBe(1);
     expect(failedInvoice?.error).toBe(
       "HTTP 500 GET /download (requestId=req-1)",
     );
-    expect(continuation).toBe(now.toISOString());
-    expect(exportInvoices).toHaveBeenCalledTimes(1);
-    expect(secondRun).toEqual({
-      downloaded: 0,
-      skipped: 0,
+    // The failed write must stay reachable: the cursor is not persisted.
+    expect(continuation).toBeNull();
+    // The next cycle re-exports the same window and retries the failed one.
+    expect(exportInvoices).toHaveBeenCalledTimes(2);
+    expect(secondRun).toMatchObject({
+      downloaded: 1,
+      skipped: 1,
       failed: 0,
-      pdfFailed: 0,
-      items: [],
     });
+    expect(retriedInvoice?.status).toBe("downloaded");
+    expect(continuationAfterRetry).toBe(now.toISOString());
   });
 
   it("stores sanitized sync errors when a run fails", async () => {

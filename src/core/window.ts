@@ -35,17 +35,49 @@ export const parseIsoDate = (value: string, label: string): Date => {
   return parsed;
 };
 
-export const resolveNextCursor = (
+export type ContinuationDecision =
+  | { kind: "advance"; cursor: string; cursorDate: Date }
+  | { kind: "hold"; reason: string };
+
+/**
+ * Resolve the continuation point after a completed export, following the
+ * KSeF HWM rules: `lastPermanentStorageDate` for a truncated package,
+ * otherwise `permanentStorageHwmDate`. Empty and non-empty packages are
+ * treated alike.
+ *
+ * There is deliberately no fallback to the requested `to`: with
+ * `restrictToPermanentStorageHwmDate` KSeF may cap the export below `to`, and
+ * invoices committed later inside (HWM, to] would be skipped for good. When
+ * KSeF returns no usable date, or the date does not move past `windowStart`,
+ * the caller must keep its current cursor and retry in a later cycle.
+ *
+ * The cursor never exceeds `windowEnd`, since nothing beyond it was exported.
+ */
+export const resolveContinuation = (
   packageInfo: InvoiceExportStatusResponse["package"] | undefined,
-  fallback: string,
-): string => {
-  if (packageInfo?.isTruncated && packageInfo.lastPermanentStorageDate) {
-    return packageInfo.lastPermanentStorageDate;
+  windowStart: Date,
+  windowEnd: Date,
+): ContinuationDecision => {
+  const truncated = packageInfo?.isTruncated === true;
+  const field = truncated
+    ? "lastPermanentStorageDate"
+    : "permanentStorageHwmDate";
+  const raw = packageInfo?.[field];
+  if (!raw) {
+    return { kind: "hold", reason: `missing ${field}` };
   }
-  if (packageInfo?.permanentStorageHwmDate) {
-    return packageInfo.permanentStorageHwmDate;
+  const parsed = new Date(raw);
+  if (!Number.isFinite(parsed.getTime())) {
+    return { kind: "hold", reason: `invalid ${field}: ${raw}` };
   }
-  return fallback;
+  const cursorDate = minDate(parsed, windowEnd);
+  if (cursorDate.getTime() <= windowStart.getTime()) {
+    return {
+      kind: "hold",
+      reason: `${field} ${raw} does not advance past ${windowStart.toISOString()}`,
+    };
+  }
+  return { kind: "advance", cursor: cursorDate.toISOString(), cursorDate };
 };
 
 export type MetadataFile = {
@@ -177,21 +209,6 @@ export const isBelowMinExportWindow = (
 ): boolean =>
   (windowEnd.getTime() - windowStart.getTime()) / 1000 <
   minExportWindowSeconds;
-
-/**
- * Advance the window to the next cursor position.
- * Returns null when the cursor has not moved (indicating a potential stall).
- */
-export const advanceWindow = (
-  currentStart: Date,
-  nextCursor: string,
-): { nextStart: Date; stalled: boolean } => {
-  const nextStart = parseIsoDate(nextCursor, "continuation point");
-  return {
-    nextStart,
-    stalled: nextStart.getTime() <= currentStart.getTime(),
-  };
-};
 
 /**
  * Resolve the configured start date from config, respecting the KSeF epoch.

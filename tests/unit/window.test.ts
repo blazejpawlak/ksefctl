@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   addUtcMonths,
-  advanceWindow,
   computeSyncWindow,
   isBelowMinExportWindow,
   maxDate,
   minDate,
   parseCliTimeWindow,
   resolveConfiguredStart,
+  resolveContinuation,
   resolveDefaultStart,
 } from "../../src/core/window";
 import { ConfigError } from "../../src/utils/errors";
@@ -214,29 +214,108 @@ describe("isBelowMinExportWindow", () => {
   });
 });
 
-describe("advanceWindow", () => {
-  it("advances when the next cursor is after the current start", () => {
-    const currentStart = new Date("2026-05-01T00:00:00Z");
-    const nextCursor = "2026-05-05T00:00:00Z";
-    const result = advanceWindow(currentStart, nextCursor);
-    expect(result.stalled).toBe(false);
-    expect(result.nextStart.toISOString()).toBe(
-      new Date(nextCursor).toISOString(),
+describe("resolveContinuation", () => {
+  const windowStart = new Date("2026-10-06T14:00:00.000Z");
+  const windowEnd = new Date("2026-10-06T15:23:14.445Z");
+  const basePackage = {
+    invoiceCount: 0,
+    size: 0,
+    parts: [],
+    isTruncated: false,
+  };
+
+  it("uses the HWM, not the requested end, for an empty package", () => {
+    const result = resolveContinuation(
+      {
+        ...basePackage,
+        permanentStorageHwmDate: "2026-10-06T15:21:14.51463+00:00",
+      },
+      windowStart,
+      windowEnd,
     );
+    expect(result).toEqual({
+      kind: "advance",
+      cursor: "2026-10-06T15:21:14.514Z",
+      cursorDate: new Date("2026-10-06T15:21:14.514Z"),
+    });
   });
 
-  it("reports stalled when the next cursor does not move forward", () => {
-    const currentStart = new Date("2026-05-05T00:00:00Z");
-    const nextCursor = "2026-05-05T00:00:00Z";
-    const result = advanceWindow(currentStart, nextCursor);
-    expect(result.stalled).toBe(true);
+  it("uses lastPermanentStorageDate for a truncated package", () => {
+    const result = resolveContinuation(
+      {
+        ...basePackage,
+        invoiceCount: 10000,
+        isTruncated: true,
+        lastPermanentStorageDate: "2026-10-06T14:30:00.123456+00:00",
+        permanentStorageHwmDate: "2026-10-06T15:21:14.51463+00:00",
+      },
+      windowStart,
+      windowEnd,
+    );
+    expect(result).toMatchObject({
+      kind: "advance",
+      cursor: "2026-10-06T14:30:00.123Z",
+    });
   });
 
-  it("reports stalled when the next cursor moves backward", () => {
-    const currentStart = new Date("2026-05-05T00:00:00Z");
-    const nextCursor = "2026-05-01T00:00:00Z";
-    const result = advanceWindow(currentStart, nextCursor);
-    expect(result.stalled).toBe(true);
+  it("holds a truncated package without lastPermanentStorageDate instead of using the HWM", () => {
+    const result = resolveContinuation(
+      {
+        ...basePackage,
+        isTruncated: true,
+        permanentStorageHwmDate: "2026-10-06T15:21:14.51463+00:00",
+      },
+      windowStart,
+      windowEnd,
+    );
+    expect(result).toEqual({
+      kind: "hold",
+      reason: "missing lastPermanentStorageDate",
+    });
+  });
+
+  it.each([
+    ["no package", undefined],
+    ["null HWM", { ...basePackage, permanentStorageHwmDate: null }],
+    ["empty HWM", { ...basePackage, permanentStorageHwmDate: "" }],
+  ])("holds when the HWM is missing (%s)", (_label, packageInfo) => {
+    expect(resolveContinuation(packageInfo, windowStart, windowEnd)).toEqual({
+      kind: "hold",
+      reason: "missing permanentStorageHwmDate",
+    });
+  });
+
+  it("holds when the HWM is not a valid date", () => {
+    const result = resolveContinuation(
+      { ...basePackage, permanentStorageHwmDate: "not-a-date" },
+      windowStart,
+      windowEnd,
+    );
+    expect(result.kind).toBe("hold");
+  });
+
+  it.each([
+    ["equal to", "2026-10-06T14:00:00.000Z"],
+    ["before", "2026-10-06T13:59:59.999Z"],
+  ])("holds when the HWM is %s the window start", (_label, hwm) => {
+    const result = resolveContinuation(
+      { ...basePackage, permanentStorageHwmDate: hwm },
+      windowStart,
+      windowEnd,
+    );
+    expect(result.kind).toBe("hold");
+  });
+
+  it("caps the cursor at the window end", () => {
+    const result = resolveContinuation(
+      { ...basePackage, permanentStorageHwmDate: "2026-10-06T16:00:00Z" },
+      windowStart,
+      windowEnd,
+    );
+    expect(result).toMatchObject({
+      kind: "advance",
+      cursor: windowEnd.toISOString(),
+    });
   });
 });
 

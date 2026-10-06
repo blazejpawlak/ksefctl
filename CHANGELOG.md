@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- An export that returned no package parts advanced the continuation point to the requested `to` instead of KSeF's `permanentStorageHwmDate`. With `restrictToPermanentStorageHwmDate` the HWM can lag `to` by minutes, so invoices committed inside that gap were never downloaded. Empty and non-empty exports now share one rule: `lastPermanentStorageDate` for a truncated package, otherwise the HWM, never beyond `to`.
+- A missing, invalid or non-advancing HWM no longer falls back silently to `to`; the continuation point is kept and the window is retried in the next cycle.
+- An empty export for an explicit `--time-window` no longer moves the regular continuation point.
+- The continuation point is no longer advanced past a window in which an invoice failed to be written, so the failed invoice is retried in the next cycle instead of being lost.
+
 ### Security
 
 - Upgrade `nodemailer` to 10.0.15 (with `@types/nodemailer` 8), fixing GHSA-6vj9-mwq6-2f5v (SMTP credential disclosure through the process-global DNS cache) and several address-parser denial-of-service advisories. nodemailer 10 requires Node.js 20+, which the existing Node.js 22 baseline already satisfies.
