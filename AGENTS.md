@@ -6,7 +6,7 @@ Keep changes consistent with existing patterns and conventions.
 ## Repo overview
 
 - Project: KSeFctl inbox sync CLI (macOS + Linux)
-- Language: TypeScript (CommonJS output)
+- Language: TypeScript (ES module output, `"type": "module"`, `NodeNext` resolution)
 - Node requirement: >= 26
 - OS support: darwin, linux
 - API: KSeF API v2 (base URL includes /v2)
@@ -329,6 +329,10 @@ General:
 Imports:
 
 - Use `node:` prefix for built-in modules (e.g., `node:path`).
+- The package is ESM: relative imports (and `vi.mock` paths) must use the
+  emitted `.js` extension (e.g., `import { x } from "./utils/paths.js"`).
+  Use `import.meta.dirname` / `import.meta.resolve` instead of `__dirname` /
+  `require.resolve`.
 - Order imports as:
   1. type-only imports
   2. external packages

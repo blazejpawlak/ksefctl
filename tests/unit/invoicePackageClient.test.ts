@@ -1,12 +1,12 @@
-import type { KsefClient } from "../../src/api/ksefClient";
-import type { AppConfig } from "../../src/config/schema";
+import type { KsefClient } from "../../src/api/ksefClient.js";
+import type { AppConfig } from "../../src/config/schema.js";
 import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
 import {
   downloadAndDecryptParts,
   waitForExport,
-} from "../../src/core/invoicePackageClient";
-import { encryptAes256Cbc, sha256Base64 } from "../../src/utils/crypto";
+} from "../../src/core/invoicePackageClient.js";
+import { encryptAes256Cbc, sha256Base64 } from "../../src/utils/crypto.js";
 
 const makeLogger = (): Logger =>
   ({

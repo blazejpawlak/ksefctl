@@ -1,16 +1,14 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
-import { createRequire } from "node:module";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { buildNodeOptionsWithLocalstorage } from "../utils/nodeOptions";
-import { defaultDataRoot, ensureDir } from "../utils/paths";
+import { buildNodeOptionsWithLocalstorage } from "../utils/nodeOptions.js";
+import { defaultDataRoot, ensureDir } from "../utils/paths.js";
 
 // Module-level result caches — persist across calls within a process lifetime
 let packageVersionPromise: Promise<string> | null = null;
 let versionOutputPromise: Promise<string> | null = null;
-
-const requireFromHere = createRequire(__filename);
 
 export type BuildDependencyInfo = {
   name: string;
@@ -25,8 +23,8 @@ export const resolveLocalstoragePath = (): string =>
 const execFileAsync = promisify(execFile);
 
 const PackageVersionPathCandidates = [
-  path.join(__dirname, "..", "..", "package.json"),
-  path.join(__dirname, "..", "package.json"),
+  path.join(import.meta.dirname, "..", "..", "package.json"),
+  path.join(import.meta.dirname, "..", "package.json"),
 ];
 
 const PdfBuilderPackageName = "@akmf/ksef-fe-invoice-converter";
@@ -107,7 +105,9 @@ export const readPdfBuilderInfo =
       projectPackage?.dependencies?.[PdfBuilderPackageName] ?? "unknown";
 
     try {
-      const entrypoint = requireFromHere.resolve(PdfBuilderPackageName);
+      const entrypoint = fileURLToPath(
+        import.meta.resolve(PdfBuilderPackageName),
+      );
       const packageJsonPath = path.join(
         path.dirname(entrypoint),
         "package.json",
@@ -137,7 +137,7 @@ export const readShortCommit = async (): Promise<string> => {
       "git",
       ["rev-parse", "--short", "HEAD"],
       {
-        cwd: path.join(__dirname, ".."),
+        cwd: path.join(import.meta.dirname, ".."),
         encoding: "utf-8",
       },
     );

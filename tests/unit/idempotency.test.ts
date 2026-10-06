@@ -7,8 +7,8 @@ import {
   hasInvoiceNotification,
   markInvoiceNotification,
   upsertInvoice,
-} from "../../src/db/repository";
-import { SqliteStore } from "../../src/db/sqlite";
+} from "../../src/db/repository.js";
+import { SqliteStore } from "../../src/db/sqlite.js";
 
 describe("idempotency", () => {
   it("upserts invoice records", async () => {

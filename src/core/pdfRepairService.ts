@@ -1,12 +1,12 @@
-import type { AppConfig } from "../config/schema";
+import type { AppConfig } from "../config/schema.js";
 import type {
   PdfGenerationFailureReason,
   PdfService,
-} from "../services/pdfService";
+} from "../services/pdfService.js";
 import type { Logger } from "pino";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { atomicWriteFile, resolveInvoiceOutputRoot } from "./storage";
+import { atomicWriteFile, resolveInvoiceOutputRoot } from "./storage.js";
 
 export type PdfRepairItem = {
   nip: string;

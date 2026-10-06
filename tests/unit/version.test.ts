@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { readPackageVersion, readPdfBuilderInfo } from "../../src/cli/version";
+import { readPackageVersion, readPdfBuilderInfo } from "../../src/cli/version.js";
 
 describe("version helpers", () => {
   it("reads package version from project metadata", async () => {

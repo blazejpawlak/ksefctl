@@ -3,7 +3,7 @@ import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { defaultDataRoot, ensureDir } from "../utils/paths";
+import { defaultDataRoot, ensureDir } from "../utils/paths.js";
 
 export type OptionMeta = {
   short?: string;

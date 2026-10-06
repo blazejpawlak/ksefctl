@@ -2,7 +2,7 @@ import type { Logger } from "pino";
 import pino from "pino";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { ensureDir } from "./paths";
+import { ensureDir } from "./paths.js";
 
 export type LogRotationOptions = {
   enabled: boolean;

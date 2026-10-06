@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { describe, expect, it } from "vitest";
-import { registerSystemNotifications } from "../../src/cli/commands/systemNotifications";
+import { registerSystemNotifications } from "../../src/cli/commands/systemNotifications.js";
 
 describe("system notifications command", () => {
   it("registers the notifications backfill command and safety options", () => {

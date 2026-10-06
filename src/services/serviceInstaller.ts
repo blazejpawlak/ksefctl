@@ -4,9 +4,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { KSEFCTL_SERVICE_MODE } from "../cli/serviceMode";
-import { buildNodeOptionsWithLocalstorage } from "../utils/nodeOptions";
-import { APP_NAME, defaultDataRoot, ensureDir } from "../utils/paths";
+import { KSEFCTL_SERVICE_MODE } from "../cli/serviceMode.js";
+import { buildNodeOptionsWithLocalstorage } from "../utils/nodeOptions.js";
+import { APP_NAME, defaultDataRoot, ensureDir } from "../utils/paths.js";
 
 const execFileAsync = promisify(execFile);
 

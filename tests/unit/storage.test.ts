@@ -5,8 +5,8 @@ import path from "node:path";
 import {
   getFlatInvoiceDir,
   getInvoiceDir,
-} from "../../src/core/storage";
-import { atomicWriteFile } from "../../src/utils/paths";
+} from "../../src/core/storage.js";
+import { atomicWriteFile } from "../../src/utils/paths.js";
 
 describe("storage paths", () => {
   it("creates deterministic invoice directory", () => {

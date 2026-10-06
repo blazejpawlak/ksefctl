@@ -1,11 +1,11 @@
 import type { Command } from "commander";
-import { ConfigError } from "../../utils/errors";
+import { ConfigError } from "../../utils/errors.js";
 import {
   buildCompletionSpec,
   renderBashCompletion,
   renderFishCompletion,
   renderZshCompletion,
-} from "../completion";
+} from "../completion.js";
 
 export function registerSystemCompletion(
   system: Command,

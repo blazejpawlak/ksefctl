@@ -1,14 +1,14 @@
-const tseslint = require("@typescript-eslint/eslint-plugin");
-const tsParser = require("@typescript-eslint/parser");
-const { importX } = require("eslint-plugin-import-x");
-const nodePlugin = require("eslint-plugin-n");
-const globals = require("globals");
+import tseslint from "@typescript-eslint/eslint-plugin";
+import tsParser from "@typescript-eslint/parser";
+import { importX } from "eslint-plugin-import-x";
+import nodePlugin from "eslint-plugin-n";
+import globals from "globals";
 
 const typeCheckedRules =
   tseslint.configs["recommended-type-checked"]?.rules ?? {};
 const stylisticRules = tseslint.configs["stylistic-type-checked"]?.rules ?? {};
 
-module.exports = [
+export default [
   {
     ignores: ["dist/**", "node_modules/**", "src/api/types.ts", "vendor/**"],
   },
@@ -18,7 +18,7 @@ module.exports = [
       parser: tsParser,
       parserOptions: {
         project: ["./tsconfig.json"],
-        tsconfigRootDir: __dirname,
+        tsconfigRootDir: import.meta.dirname,
         sourceType: "module",
       },
       globals: {

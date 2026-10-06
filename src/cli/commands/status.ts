@@ -1,10 +1,10 @@
 import type { Command } from "commander";
-import { StatusService } from "../../core/statusService";
-import { ensureInitialized } from "../bootstrap";
-import { createContext } from "../context";
-import { getLifecycleStatusEntries } from "../lifecycleStatus";
-import { printHeader, printKeyValues } from "../ui";
-import { runCommand, type RootOptions } from "./runCommand";
+import { StatusService } from "../../core/statusService.js";
+import { ensureInitialized } from "../bootstrap.js";
+import { createContext } from "../context.js";
+import { getLifecycleStatusEntries } from "../lifecycleStatus.js";
+import { printHeader, printKeyValues } from "../ui.js";
+import { runCommand, type RootOptions } from "./runCommand.js";
 
 type StatusOptions = {
   json?: boolean;

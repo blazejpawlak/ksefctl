@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { describe, expect, it } from "vitest";
-import { formatCliError } from "../../src/cli";
-import { registerSync } from "../../src/cli/commands/sync";
+import { registerSync } from "../../src/cli/commands/sync.js";
+import { formatCliError } from "../../src/cli.js";
 
 describe("cli error formatting", () => {
   it("sanitizes terminal-facing CLI errors", () => {

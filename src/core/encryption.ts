@@ -1,10 +1,10 @@
-import type { KsefClient } from "../api/ksefClient";
+import type { KsefClient } from "../api/ksefClient.js";
 import {
   createPublicKeyFromCertificate,
   generateAes256Key,
   generateIv,
   rsaOaepSha256Encrypt,
-} from "../utils/crypto";
+} from "../utils/crypto.js";
 
 export type EncryptionData = {
   key: Buffer;

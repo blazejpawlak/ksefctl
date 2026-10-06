@@ -4,7 +4,7 @@ import {
   installServiceStopSignalLogging,
   logServiceLifecycle,
   resolveServiceInitiator,
-} from "../../src/utils/serviceLifecycle";
+} from "../../src/utils/serviceLifecycle.js";
 
 const originalEnv = {
   SUDO_USER: process.env.SUDO_USER,

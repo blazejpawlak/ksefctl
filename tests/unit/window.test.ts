@@ -9,8 +9,8 @@ import {
   resolveConfiguredStart,
   resolveContinuation,
   resolveDefaultStart,
-} from "../../src/core/window";
-import { ConfigError } from "../../src/utils/errors";
+} from "../../src/core/window.js";
+import { ConfigError } from "../../src/utils/errors.js";
 
 describe("parseCliTimeWindow", () => {
   it("parses a valid DD-MM-YYYY:DD-MM-YYYY time window", () => {

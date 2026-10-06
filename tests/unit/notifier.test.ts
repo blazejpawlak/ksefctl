@@ -1,18 +1,18 @@
-import type { AppConfig } from "../../src/config/schema";
-import type { SyncResult } from "../../src/core/syncService";
+import type { AppConfig } from "../../src/config/schema.js";
+import type { SyncResult } from "../../src/core/syncService.js";
 import type { Logger } from "pino";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { backfillUnpaidInvoiceNotifications } from "../../src/cli/commands/systemNotifications";
+import { backfillUnpaidInvoiceNotifications } from "../../src/cli/commands/systemNotifications.js";
 import {
   hasInvoiceNotification,
   markInvoiceNotification,
   upsertInvoice,
-} from "../../src/db/repository";
-import { SqliteStore } from "../../src/db/sqlite";
-import { Notifier } from "../../src/notifications/notifier";
+} from "../../src/db/repository.js";
+import { SqliteStore } from "../../src/db/sqlite.js";
+import { Notifier } from "../../src/notifications/notifier.js";
 
 var notifyMock: ReturnType<typeof vi.fn>;
 

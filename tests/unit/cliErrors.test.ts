@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { logUnexpectedError } from "../../src/cli";
+import { logUnexpectedError } from "../../src/cli.js";
 import {
   AuthError,
   ConfigError,
   NetworkError,
-} from "../../src/utils/errors";
+} from "../../src/utils/errors.js";
 
 const makeLogger = () => ({
   error: vi.fn(),

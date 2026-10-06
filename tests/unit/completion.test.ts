@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { escapeFishDescription } from "../../src/cli/completion.js";
 import {
   buildCompletionSpec,
   formatVersionOutput,
@@ -11,9 +12,8 @@ import {
   renderBashCompletion,
   renderFishCompletion,
   shouldRunFirstRun,
-} from "../../src/cli";
-import { escapeFishDescription } from "../../src/cli/completion";
-import { defaultDataRoot } from "../../src/utils/paths";
+} from "../../src/cli.js";
+import { defaultDataRoot } from "../../src/utils/paths.js";
 
 const setTty = (value: boolean) => {
   Object.defineProperty(process.stdin, "isTTY", {

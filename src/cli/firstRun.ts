@@ -1,16 +1,16 @@
 import type { Command } from "commander";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { defaultDataRoot, ensureDir } from "../utils/paths";
-import { bootstrapInteractive } from "./bootstrap";
+import { defaultDataRoot, ensureDir } from "../utils/paths.js";
+import { bootstrapInteractive } from "./bootstrap.js";
 import {
   buildCompletionSpec,
   detectShell,
   installCompletion,
   type ShellType,
-} from "./completion";
-import { promptText } from "./prompt";
-import { printHeader, printKeyValues } from "./ui";
+} from "./completion.js";
+import { promptText } from "./prompt.js";
+import { printHeader, printKeyValues } from "./ui.js";
 
 export const firstRunMarkerPath = (): string =>
   path.join(defaultDataRoot(), "first-run.json");

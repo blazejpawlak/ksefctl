@@ -3,7 +3,7 @@ import {
   formatInvoiceToPay,
   formatInvoicesToPay,
   getInvoicesToPay,
-} from "../../src/cli/paymentSummary";
+} from "../../src/cli/paymentSummary.js";
 
 const nullFields = {
   sellerName: null,

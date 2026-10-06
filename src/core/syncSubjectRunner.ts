@@ -1,11 +1,11 @@
-import type { StoredInvoiceMetadata } from "./invoiceWriter";
-import type { PdfGenerationCircuitBreaker } from "./invoiceWriter";
-import type { SyncResult } from "./syncService";
-import type { ExplicitSyncWindow, MetadataFile } from "./window";
-import type { KsefClient } from "../api/ksefClient";
-import type { AppConfig, SubjectType } from "../config/schema";
-import type { SqliteStore } from "../db/sqlite";
-import type { PdfService } from "../services/pdfService";
+import type { StoredInvoiceMetadata } from "./invoiceWriter.js";
+import type { PdfGenerationCircuitBreaker } from "./invoiceWriter.js";
+import type { SyncResult } from "./syncService.js";
+import type { ExplicitSyncWindow, MetadataFile } from "./window.js";
+import type { KsefClient } from "../api/ksefClient.js";
+import type { AppConfig, SubjectType } from "../config/schema.js";
+import type { SqliteStore } from "../db/sqlite.js";
+import type { PdfService } from "../services/pdfService.js";
 import type { Logger } from "pino";
 import AdmZip from "adm-zip";
 import path from "node:path";
@@ -14,23 +14,23 @@ import {
   getInvoice,
   setContinuationPoint,
   upsertInvoice,
-} from "../db/repository";
-import { sha256Base64 } from "../utils/crypto";
-import { sanitizeErrorMessage } from "../utils/errors";
-import { formatDuration } from "../utils/time";
-import { createEncryptionData } from "./encryption";
+} from "../db/repository.js";
+import { sha256Base64 } from "../utils/crypto.js";
+import { sanitizeErrorMessage } from "../utils/errors.js";
+import { formatDuration } from "../utils/time.js";
+import { createEncryptionData } from "./encryption.js";
 import {
   hasValidInvoiceXml,
   maxZipEntries,
   maxZipEntryBytes,
   maxZipTotalBytes,
-} from "./invoiceExtractor";
-import { downloadAndDecryptParts, waitForExport } from "./invoicePackageClient";
+} from "./invoiceExtractor.js";
+import { downloadAndDecryptParts, waitForExport } from "./invoicePackageClient.js";
 import {
   hasMatchingInvoiceXml,
   resolveInvoiceStorageTarget,
   writeInvoice,
-} from "./invoiceWriter";
+} from "./invoiceWriter.js";
 import {
   addUtcMonths,
   isBelowMinExportWindow,
@@ -42,7 +42,7 @@ import {
   resolveConfiguredStart,
   resolveContinuation,
   resolveDefaultStart,
-} from "./window";
+} from "./window.js";
 
 export type SyncSubjectRunnerDeps = {
   client: KsefClient;

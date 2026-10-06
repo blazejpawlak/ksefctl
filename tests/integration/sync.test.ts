@@ -8,9 +8,9 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createContext } from "../../src/cli/context";
-import { SyncService } from "../../src/core/syncService";
-import { encryptAes256Cbc, sha256Base64 } from "../../src/utils/crypto";
+import { createContext } from "../../src/cli/context.js";
+import { SyncService } from "../../src/core/syncService.js";
+import { encryptAes256Cbc, sha256Base64 } from "../../src/utils/crypto.js";
 
 const keychainEntries = vi.hoisted(() => new Map<string, string>());
 

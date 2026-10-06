@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   isManagedServiceMode,
   KSEFCTL_SERVICE_MODE,
-} from "../../src/cli/serviceMode";
+} from "../../src/cli/serviceMode.js";
 
 describe("isManagedServiceMode", () => {
   const originalValue = process.env[KSEFCTL_SERVICE_MODE];

@@ -5,7 +5,7 @@ import {
   extractTextValue,
   maxExtractedTextValueLength,
   resolveFlatInvoiceFileBase,
-} from "../../src/core/invoiceExtractor";
+} from "../../src/core/invoiceExtractor.js";
 
 describe("invoiceExtractor", () => {
   it("limits oversized extracted text values", () => {

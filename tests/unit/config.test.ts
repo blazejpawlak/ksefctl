@@ -3,9 +3,9 @@ import YAML from "yaml";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { loadConfig, sanitizeConfig } from "../../src/config/loadConfig";
-import { AppConfigSchema } from "../../src/config/schema";
-import { ConfigError } from "../../src/utils/errors";
+import { loadConfig, sanitizeConfig } from "../../src/config/loadConfig.js";
+import { AppConfigSchema } from "../../src/config/schema.js";
+import { ConfigError } from "../../src/utils/errors.js";
 
 describe("config schema", () => {
   it("validates a minimal config", () => {

@@ -3,7 +3,7 @@ import YAML from "yaml";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { initConfig } from "../../src/cli/init";
+import { initConfig } from "../../src/cli/init.js";
 
 describe("initConfig", () => {
   it("writes a config template with 0600 permissions", async () => {

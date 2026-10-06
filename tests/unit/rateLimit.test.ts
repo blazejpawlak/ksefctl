@@ -10,7 +10,7 @@ import {
   resolveRateLimitStatePath,
   writeRateLimitState,
   type AdaptivePollingOptions,
-} from "../../src/utils/rateLimit";
+} from "../../src/utils/rateLimit.js";
 
 const options = (
   overrides: Partial<AdaptivePollingOptions> = {},

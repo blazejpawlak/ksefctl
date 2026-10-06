@@ -3,7 +3,8 @@ import lockfile from "proper-lockfile";
 import initSqlJs from "sql.js";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { ensureDir } from "../utils/paths";
+import { fileURLToPath } from "node:url";
+import { ensureDir } from "../utils/paths.js";
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS invoices (
@@ -50,7 +51,9 @@ CREATE TABLE IF NOT EXISTS invoice_notifications (
 `;
 
 const resolveSqlWasmPath = () => {
-  const wasmPath = require.resolve("sql.js/dist/sql-wasm.wasm");
+  const wasmPath = fileURLToPath(
+    import.meta.resolve("sql.js/dist/sql-wasm.wasm"),
+  );
   return path.dirname(wasmPath);
 };
 

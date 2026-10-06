@@ -1,42 +1,42 @@
-import type { ShutdownController } from "../../utils/serviceLifecycle";
+import type { ShutdownController } from "../../utils/serviceLifecycle.js";
 import type { Command } from "commander";
 import type { Logger } from "pino";
 import { Option } from "commander";
 import path from "node:path";
-import { repairMissingInvoicePdfs } from "../../core/pdfRepairService";
-import { StatusService } from "../../core/statusService";
-import { SyncService } from "../../core/syncService";
-import { parseCliTimeWindow } from "../../core/window";
-import { Notifier } from "../../notifications/notifier";
-import { PdfService } from "../../services/pdfService";
-import { ConfigError, exitCodeFromError } from "../../utils/errors";
-import { expandHome } from "../../utils/paths";
+import { repairMissingInvoicePdfs } from "../../core/pdfRepairService.js";
+import { StatusService } from "../../core/statusService.js";
+import { SyncService } from "../../core/syncService.js";
+import { parseCliTimeWindow } from "../../core/window.js";
+import { Notifier } from "../../notifications/notifier.js";
+import { PdfService } from "../../services/pdfService.js";
+import { ConfigError, exitCodeFromError } from "../../utils/errors.js";
+import { expandHome } from "../../utils/paths.js";
 import {
   clampIntervalSeconds,
   computeNextIntervalSeconds,
   readRateLimitState,
   resolveRateLimitStatePath,
   writeRateLimitState,
-} from "../../utils/rateLimit";
+} from "../../utils/rateLimit.js";
 import {
   installShutdownController,
   logServiceLifecycle,
-} from "../../utils/serviceLifecycle";
-import { formatDuration, sleep, sleepWithCountdown } from "../../utils/time";
-import { ensureInitialized } from "../bootstrap";
-import { sanitizeForTerminal } from "../commandTree";
-import { createContext } from "../context";
-import { isValidNip } from "../keychain";
-import { getLifecycleEventEntries } from "../lifecycleStatus";
-import { formatInvoicesToPay, getInvoicesToPay } from "../paymentSummary";
-import { createProgressRenderer } from "../progress";
-import { printHeader, printKeyValues, printList } from "../ui";
-import { readVersionOutput } from "../version";
+} from "../../utils/serviceLifecycle.js";
+import { formatDuration, sleep, sleepWithCountdown } from "../../utils/time.js";
+import { ensureInitialized } from "../bootstrap.js";
+import { sanitizeForTerminal } from "../commandTree.js";
+import { createContext } from "../context.js";
+import { isValidNip } from "../keychain.js";
+import { getLifecycleEventEntries } from "../lifecycleStatus.js";
+import { formatInvoicesToPay, getInvoicesToPay } from "../paymentSummary.js";
+import { createProgressRenderer } from "../progress.js";
+import { printHeader, printKeyValues, printList } from "../ui.js";
+import { readVersionOutput } from "../version.js";
 import {
   formatCliError,
   logUnexpectedError,
   type RootOptions,
-} from "./runCommand";
+} from "./runCommand.js";
 
 type SyncOptions = {
   nip?: string;

@@ -1,14 +1,14 @@
 import type {
   InvoiceExportStatusResponse,
   KsefClient,
-} from "../api/ksefClient";
-import type { AppConfig } from "../config/schema";
+} from "../api/ksefClient.js";
+import type { AppConfig } from "../config/schema.js";
 import type { Logger } from "pino";
-import { sanitizeForTerminal } from "../cli/commandTree";
-import { resolveBaseUrl } from "../config/environment";
-import { decryptAes256Cbc, sha256Base64 } from "../utils/crypto";
-import { formatDuration } from "../utils/time";
-import { maxDecryptedPackageBytes } from "./invoiceExtractor";
+import { sanitizeForTerminal } from "../cli/commandTree.js";
+import { resolveBaseUrl } from "../config/environment.js";
+import { decryptAes256Cbc, sha256Base64 } from "../utils/crypto.js";
+import { formatDuration } from "../utils/time.js";
+import { maxDecryptedPackageBytes } from "./invoiceExtractor.js";
 
 export type PackageClientDeps = {
   client: KsefClient;

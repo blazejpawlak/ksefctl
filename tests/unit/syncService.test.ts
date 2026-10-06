@@ -1,26 +1,26 @@
-import type { KsefClient } from "../../src/api/ksefClient";
-import type { AuthService } from "../../src/auth/authService";
-import type { AppConfig } from "../../src/config/schema";
+import type { KsefClient } from "../../src/api/ksefClient.js";
+import type { AuthService } from "../../src/auth/authService.js";
+import type { AppConfig } from "../../src/config/schema.js";
 import type { Logger } from "pino";
 import AdmZip from "adm-zip";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { SyncService } from "../../src/core/syncService";
+import { SyncService } from "../../src/core/syncService.js";
 import {
   getContinuationPoint,
   getInvoice,
   getSyncState,
   upsertInvoice,
-} from "../../src/db/repository";
-import { SqliteStore } from "../../src/db/sqlite";
-import { encryptAes256Cbc, sha256Base64 } from "../../src/utils/crypto";
+} from "../../src/db/repository.js";
+import { SqliteStore } from "../../src/db/sqlite.js";
+import { encryptAes256Cbc, sha256Base64 } from "../../src/utils/crypto.js";
 
 const testKey = Buffer.alloc(32, 1);
 const testIv = Buffer.alloc(16, 2);
 
-vi.mock("../../src/core/encryption", () => ({
+vi.mock("../../src/core/encryption.js", () => ({
   createEncryptionData: vi.fn().mockResolvedValue({
     key: Buffer.alloc(32, 1),
     iv: Buffer.alloc(16, 2),

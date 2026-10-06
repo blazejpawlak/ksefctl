@@ -1,4 +1,4 @@
-import type { SyncItem } from "../core/syncService";
+import type { SyncItem } from "../core/syncService.js";
 import path from "node:path";
 
 const sanitizeText = (value: string): string =>

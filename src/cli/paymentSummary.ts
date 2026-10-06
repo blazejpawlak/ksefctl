@@ -1,4 +1,4 @@
-import type { SyncItem } from "../core/syncService";
+import type { SyncItem } from "../core/syncService.js";
 
 const sanitizeForTerminal = (value: string): string =>
   value.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");

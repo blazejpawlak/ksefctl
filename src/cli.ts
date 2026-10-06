@@ -1,34 +1,34 @@
 #!/usr/bin/env node
 import { Command, Option } from "commander";
-import { registerDaemon } from "./cli/commands/daemon";
-import { formatCliError, logUnexpectedError } from "./cli/commands/runCommand";
-import { registerStatus } from "./cli/commands/status";
-import { registerSync } from "./cli/commands/sync";
-import { registerSystemCompletion } from "./cli/commands/systemCompletion";
-import { registerSystemConfig } from "./cli/commands/systemConfig";
-import { registerSystemInit } from "./cli/commands/systemInit";
-import { registerSystemNotifications } from "./cli/commands/systemNotifications";
-import { registerSystemPin } from "./cli/commands/systemPin";
-import { registerSystemSecret } from "./cli/commands/systemSecret";
+import { registerDaemon } from "./cli/commands/daemon.js";
+import { formatCliError, logUnexpectedError } from "./cli/commands/runCommand.js";
+import { registerStatus } from "./cli/commands/status.js";
+import { registerSync } from "./cli/commands/sync.js";
+import { registerSystemCompletion } from "./cli/commands/systemCompletion.js";
+import { registerSystemConfig } from "./cli/commands/systemConfig.js";
+import { registerSystemInit } from "./cli/commands/systemInit.js";
+import { registerSystemNotifications } from "./cli/commands/systemNotifications.js";
+import { registerSystemPin } from "./cli/commands/systemPin.js";
+import { registerSystemSecret } from "./cli/commands/systemSecret.js";
 import {
   registerSystemService,
   showServiceLogs,
-} from "./cli/commands/systemService";
-import { registerSystemVerify } from "./cli/commands/systemVerify";
+} from "./cli/commands/systemService.js";
+import { registerSystemVerify } from "./cli/commands/systemVerify.js";
 import {
   buildCompletionSpec,
   installCompletion,
   renderBashCompletion,
   renderFishCompletion,
   renderZshCompletion,
-} from "./cli/completion";
-import { handleFirstRun, shouldRunFirstRun } from "./cli/firstRun";
+} from "./cli/completion.js";
+import { handleFirstRun, shouldRunFirstRun } from "./cli/firstRun.js";
 import {
   ensureLocalstorageNodeOption,
   formatVersionOutput,
   printVersion,
-} from "./cli/version";
-import { exitCodeFromError } from "./utils/errors";
+} from "./cli/version.js";
+import { exitCodeFromError } from "./utils/errors.js";
 
 export { formatCliError, logUnexpectedError };
 
@@ -154,7 +154,7 @@ const main = async () => {
   }
 };
 
-if (require.main === module) {
+if (import.meta.main) {
   void main();
 }
 

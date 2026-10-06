@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildNodeOptionsWithLocalstorage,
   sanitizeNodeOptions,
-} from "../../src/utils/nodeOptions";
+} from "../../src/utils/nodeOptions.js";
 
 describe("node options", () => {
   it("allowlists only localstorage option", () => {

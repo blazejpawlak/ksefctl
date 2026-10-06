@@ -1,7 +1,7 @@
 import type { Command } from "commander";
-import { clearSecret, setSecret, showSecrets } from "../keychain";
-import { printHeader, printKeyValues } from "../ui";
-import { runCommand, type RootOptions } from "./runCommand";
+import { clearSecret, setSecret, showSecrets } from "../keychain.js";
+import { printHeader, printKeyValues } from "../ui.js";
+import { runCommand, type RootOptions } from "./runCommand.js";
 
 type SecretSetOptions = {
   nip?: string;

@@ -1,26 +1,26 @@
-import type { InvoiceFileMetadata } from "./invoiceExtractor";
-import type { SyncItem } from "./invoiceExtractor";
-import type { AppConfig } from "../config/schema";
-import type { SqliteStore } from "../db/sqlite";
-import type { PdfService } from "../services/pdfService";
+import type { InvoiceFileMetadata } from "./invoiceExtractor.js";
+import type { SyncItem } from "./invoiceExtractor.js";
+import type { AppConfig } from "../config/schema.js";
+import type { SqliteStore } from "../db/sqlite.js";
+import type { PdfService } from "../services/pdfService.js";
 import type { Logger } from "pino";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { upsertInvoice } from "../db/repository";
-import { sha256Base64 } from "../utils/crypto";
+import { upsertInvoice } from "../db/repository.js";
+import { sha256Base64 } from "../utils/crypto.js";
 import {
   createSyncItem,
   maxInvoicePdfXmlBytes,
   resolveFlatInvoiceFileBase,
   resolveInvoiceFileBase,
   sanitizeFileName,
-} from "./invoiceExtractor";
+} from "./invoiceExtractor.js";
 import {
   atomicWriteFile,
   getFlatInvoiceDirForRoot,
   getInvoiceDirForRoot,
   resolveInvoiceOutputRoot,
-} from "./storage";
+} from "./storage.js";
 
 export type { SyncItem };
 

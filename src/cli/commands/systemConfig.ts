@@ -1,9 +1,9 @@
 import type { Command } from "commander";
 import YAML from "yaml";
-import { sanitizeConfig } from "../../config/loadConfig";
-import { ensureInitialized } from "../bootstrap";
-import { createContext } from "../context";
-import { runCommand, type RootOptions } from "./runCommand";
+import { sanitizeConfig } from "../../config/loadConfig.js";
+import { ensureInitialized } from "../bootstrap.js";
+import { createContext } from "../context.js";
+import { runCommand, type RootOptions } from "./runCommand.js";
 
 export function registerSystemConfig(
   system: Command,

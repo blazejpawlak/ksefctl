@@ -1,8 +1,8 @@
 import type { Command } from "commander";
-import { ConfigError } from "../../utils/errors";
-import { fetchTlsPin } from "../pin";
-import { printHeader, printKeyValues } from "../ui";
-import { runCommand } from "./runCommand";
+import { ConfigError } from "../../utils/errors.js";
+import { fetchTlsPin } from "../pin.js";
+import { printHeader, printKeyValues } from "../ui.js";
+import { runCommand } from "./runCommand.js";
 
 export function registerSystemPin(system: Command): void {
   system

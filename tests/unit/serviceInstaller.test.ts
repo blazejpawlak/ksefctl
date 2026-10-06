@@ -7,7 +7,7 @@ import {
   buildSystemdUnit,
   resolveLaunchdTarget,
   ServiceInstaller,
-} from "../../src/services/serviceInstaller";
+} from "../../src/services/serviceInstaller.js";
 
 type ExecCallback = (
   error: Error | null,
