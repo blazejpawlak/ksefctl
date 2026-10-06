@@ -35,6 +35,12 @@ Build:
 npm run build
 ```
 
+Type-check sources and tests (the build only covers `src/`):
+
+```bash
+npm run typecheck
+```
+
 Clean build output:
 
 ```bash
