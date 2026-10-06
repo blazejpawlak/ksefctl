@@ -32,8 +32,11 @@ Releases are published as `@blazejpawlak/ksefctl` on GitHub Packages. GitHub's n
 
 ```bash
 npm login --scope=@blazejpawlak --auth-type=legacy --registry=https://npm.pkg.github.com
-npm install --global @blazejpawlak/ksefctl --registry=https://npm.pkg.github.com
+npm install --global @blazejpawlak/ksefctl --registry=https://npm.pkg.github.com \
+  --allow-scripts=@blazejpawlak/ksefctl,keytar
 ```
+
+The install runs two scripts: ksefctl's `postinstall` builds the pinned PDF converter, and `keytar` installs its keychain binding. npm 11 gates dependency install scripts behind an allowlist; `--allow-scripts` approves exactly these two (on npm 10 and earlier, omit the flag).
 
 Do not put the token in this repository or commit it to an `.npmrc` file.
 

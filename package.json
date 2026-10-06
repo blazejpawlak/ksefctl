@@ -25,6 +25,7 @@
     "bin",
     "dist",
     "docs",
+    "scripts/prepare-ksef-pdf-generator.mjs",
     "README.md",
     "CHANGELOG.md"
   ],

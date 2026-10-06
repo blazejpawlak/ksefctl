@@ -13,6 +13,7 @@
 
 ### Fixed
 
+- Installing the published package (`npm install --global`) no longer fails in `postinstall`: the converter preparation script is now shipped in the package and finds the converter even when npm hoists it to a parent `node_modules`.
 - An export that returned no package parts advanced the continuation point to the requested `to` instead of KSeF's `permanentStorageHwmDate`. With `restrictToPermanentStorageHwmDate` the HWM can lag `to` by minutes, so invoices committed inside that gap were never downloaded. Empty and non-empty exports now share one rule: `lastPermanentStorageDate` for a truncated package, otherwise the HWM, never beyond `to`.
 - A missing, invalid or non-advancing HWM no longer falls back silently to `to`; the continuation point is kept and the window is retried in the next cycle.
 - An empty export for an explicit `--time-window` no longer moves the regular continuation point.
