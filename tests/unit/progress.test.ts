@@ -38,6 +38,9 @@ const createStream = (isTTY: boolean): WritableStub => {
 };
 
 beforeEach(() => {
+  // The ora mock lives for the whole file; clear its calls so the call-count
+  // assertions below do not depend on which tests ran first.
+  vi.mocked(ora).mockClear();
   spinner = {
     text: "",
     isSpinning: false,
