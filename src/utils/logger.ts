@@ -234,7 +234,7 @@ export const createPrettyLogStream = (): pino.DestinationStream =>
       translateTime: "SYS:standard",
       ignore: "pid,hostname",
     },
-  }) as pino.DestinationStream;
+  });
 
 export const createLogger = async (options: LoggerOptions): Promise<Logger> => {
   const rotation = options.rotation ?? DEFAULT_LOG_ROTATION;

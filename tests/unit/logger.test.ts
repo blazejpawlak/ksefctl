@@ -254,3 +254,59 @@ describe("log rotation", () => {
     );
   });
 });
+
+describe("createLogger file output", () => {
+  it("writes redacted JSON lines to a 0600 file and honours the level", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-logout-"));
+    const filePath = path.join(tmpDir, "ksefctl.log");
+    const logger = await createLogger({
+      level: "info",
+      file: filePath,
+      prettyConsole: false,
+      suppressConsole: true,
+      rotation: rotation({ enabled: false }),
+    });
+
+    logger.debug({ event: "below-level" }, "dropped");
+    logger.info(
+      {
+        event: "redaction",
+        headers: { authorization: "Bearer secret-a" },
+        req: { headers: { Authorization: "Bearer secret-b" } },
+        Authorization: "Bearer secret-c",
+        session: { accessToken: "secret-d", refreshToken: "secret-e" },
+        notifications: { email: { smtp: { pass: "secret-f" } } },
+      },
+      "redacted",
+    );
+
+    // Poll instead of flush(): the async destination may not have opened yet.
+    const content = await vi.waitFor(
+      async () => {
+        const text = await fs.readFile(filePath, "utf-8");
+        if (!text.includes("redaction")) {
+          throw new Error("log line not written yet");
+        }
+        return text;
+      },
+      { timeout: 5000, interval: 20 },
+    );
+
+    const lines = content.trim().split("\n");
+    expect(lines).toHaveLength(1);
+    const entry = JSON.parse(lines[0] ?? "") as Record<string, unknown>;
+    expect(entry).toMatchObject({
+      level: 30,
+      msg: "redacted",
+      event: "redaction",
+      headers: { authorization: "***" },
+      req: { headers: { Authorization: "***" } },
+      Authorization: "***",
+      session: { accessToken: "***", refreshToken: "***" },
+      notifications: { email: { smtp: { pass: "***" } } },
+    });
+    expect(content).not.toContain("secret-");
+    expect(content).not.toContain("below-level");
+    expect((await fs.stat(filePath)).mode & 0o777).toBe(0o600);
+  });
+});
