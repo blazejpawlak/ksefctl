@@ -410,3 +410,272 @@ describe("syncSubjectType - normal path unaffected", () => {
     expect(continuation).toBe(hwmDate);
   });
 });
+
+describe("syncSubjectType - HWM continuation point", () => {
+  const nip = "1234567890";
+  // Reproduced on production 2026-10-06: an empty export whose HWM lags
+  // the requested `to` by about two minutes.
+  const now = new Date("2026-10-06T15:23:14.445Z");
+  const priorCursor = "2026-10-06T14:00:00.000Z";
+  const hwm = "2026-10-06T15:21:14.51463+00:00";
+  const hwmIso = "2026-10-06T15:21:14.514Z";
+
+  const emptyPackage = (permanentStorageHwmDate?: string | null) => ({
+    status: { code: 200, description: "OK" },
+    package: {
+      invoiceCount: 0,
+      size: 0,
+      isTruncated: false,
+      permanentStorageHwmDate,
+      parts: [],
+    },
+  });
+
+  const invoicePackage = (
+    ksefNumber: string,
+    packageFields: Record<string, unknown>,
+  ) => {
+    const { encrypted, partHash, encryptedPartHash } = buildEncryptedPackage(
+      ksefNumber,
+      `<Faktura><P_2>${ksefNumber}</P_2></Faktura>`,
+    );
+    return {
+      encrypted,
+      status: {
+        status: { code: 200, description: "OK" },
+        package: {
+          invoiceCount: 1,
+          size: encrypted.length,
+          isTruncated: false,
+          parts: [
+            {
+              ordinalNumber: 1,
+              partName: `${ksefNumber}.zip.aes`,
+              method: "GET",
+              url: `https://example.test/${ksefNumber}`,
+              partHash,
+              encryptedPartHash,
+            },
+          ],
+          ...packageFields,
+        },
+      },
+    };
+  };
+
+  const setup = async (cursor: string | null = priorCursor) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-runner-"));
+    const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
+    if (cursor) {
+      await store.withDb((db) =>
+        setContinuationPoint(db, nip, "Subject1", cursor),
+      );
+    }
+    const exportInvoices = vi
+      .fn()
+      .mockResolvedValue({ referenceNumber: "EXPORT-1" });
+    const getExportStatus = vi.fn();
+    const downloadPackagePart = vi.fn();
+    const client = {
+      exportInvoices,
+      getExportStatus,
+      downloadPackagePart,
+    } as unknown as KsefClient;
+    const config = createConfig(path.join(tmpDir, "storage"), {
+      minExportWindowSeconds: 300,
+      initialSyncFrom: "2026-02-01T00:00:00Z",
+    });
+    const logger = createLogger();
+    const deps = createRunnerDeps(client, config, logger, store);
+    const readCursor = () =>
+      store.withDb((db) => getContinuationPoint(db, nip, "Subject1"));
+    const requestedRange = (call: number) =>
+      (
+        exportInvoices.mock.calls[call]?.[1] as {
+          filters: { dateRange: { from: string; to: string } };
+        }
+      ).filters.dateRange;
+    return {
+      store,
+      deps,
+      logger,
+      exportInvoices,
+      getExportStatus,
+      downloadPackagePart,
+      readCursor,
+      requestedRange,
+    };
+  };
+
+  it("stores the HWM, not the requested end, for an empty package", async () => {
+    const t = await setup();
+    t.getExportStatus.mockResolvedValue(emptyPackage(hwm));
+
+    await syncSubjectType(t.deps, "ACCESS", nip, "Subject1");
+
+    expect(t.requestedRange(0)).toMatchObject({
+      from: priorCursor,
+      to: now.toISOString(),
+    });
+    expect(await t.readCursor()).toBe(hwmIso);
+    expect(t.exportInvoices).toHaveBeenCalledTimes(1);
+  });
+
+  it("fetches an invoice committed between the previous HWM and the previous end in the next cycle", async () => {
+    const t = await setup();
+    t.getExportStatus.mockResolvedValueOnce(emptyPackage(hwm));
+    await syncSubjectType(t.deps, "ACCESS", nip, "Subject1");
+
+    // The invoice lands in (HWM, previous `to`] after the first export.
+    const later = new Date(now.getTime() + 15 * 60_000);
+    vi.setSystemTime(later);
+    const ksefNumber = "KSEF-LATE-COMMIT";
+    const { encrypted, status } = invoicePackage(ksefNumber, {
+      permanentStorageHwmDate: "2026-10-06T15:36:00.000+00:00",
+    });
+    t.getExportStatus.mockResolvedValueOnce(status);
+    t.downloadPackagePart.mockResolvedValueOnce(encrypted);
+
+    const result = await syncSubjectType(t.deps, "ACCESS", nip, "Subject1");
+
+    expect(t.requestedRange(1).from).toBe(hwmIso);
+    expect(result.downloaded).toBe(1);
+    expect(result.items[0]?.ksefNumber).toBe(ksefNumber);
+    expect(await t.readCursor()).toBe("2026-10-06T15:36:00.000Z");
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["null", null],
+    ["invalid", "not-a-date"],
+    ["equal to the window start", priorCursor],
+    ["before the window start", "2026-10-06T13:00:00.000Z"],
+  ])(
+    "keeps the cursor and stops when the HWM is %s",
+    async (_label, hwmValue) => {
+      const t = await setup();
+      t.getExportStatus.mockResolvedValue(emptyPackage(hwmValue));
+
+      const result = await syncSubjectType(t.deps, "ACCESS", nip, "Subject1");
+
+      expect(result.failed).toBe(0);
+      expect(t.exportInvoices).toHaveBeenCalledTimes(1);
+      expect(await t.readCursor()).toBe(priorCursor);
+      expect(t.logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: expect.any(String) as string }),
+        "Continuation point not advanced",
+      );
+    },
+  );
+
+  it("keeps the cursor when a non-empty package has no HWM", async () => {
+    const t = await setup();
+    const { encrypted, status } = invoicePackage("KSEF-NO-HWM", {});
+    t.getExportStatus.mockResolvedValue(status);
+    t.downloadPackagePart.mockResolvedValue(encrypted);
+
+    const result = await syncSubjectType(t.deps, "ACCESS", nip, "Subject1");
+
+    expect(result.downloaded).toBe(1);
+    expect(t.exportInvoices).toHaveBeenCalledTimes(1);
+    expect(await t.readCursor()).toBe(priorCursor);
+  });
+
+  it("keeps the cursor when KSeF reports invoices but no package parts", async () => {
+    const t = await setup();
+    t.getExportStatus.mockResolvedValue({
+      ...emptyPackage(hwm),
+      package: { ...emptyPackage(hwm).package, invoiceCount: 3 },
+    });
+
+    await syncSubjectType(t.deps, "ACCESS", nip, "Subject1");
+
+    expect(t.exportInvoices).toHaveBeenCalledTimes(1);
+    expect(await t.readCursor()).toBe(priorCursor);
+  });
+
+  it("does not move the regular cursor for an empty explicit-window export", async () => {
+    const t = await setup();
+    t.getExportStatus.mockResolvedValue(
+      emptyPackage("2026-09-30T23:59:59.999+00:00"),
+    );
+
+    await syncSubjectType(
+      t.deps,
+      "ACCESS",
+      nip,
+      "Subject1",
+      undefined,
+      false,
+      false,
+      false,
+      undefined,
+      {
+        from: new Date("2026-09-01T00:00:00.000Z"),
+        to: new Date("2026-09-30T23:59:59.999Z"),
+      },
+    );
+
+    expect(t.exportInvoices).toHaveBeenCalledTimes(1);
+    expect(await t.readCursor()).toBe(priorCursor);
+  });
+
+  it("does not move the regular cursor for a non-empty explicit-window export", async () => {
+    const t = await setup();
+    const { encrypted, status } = invoicePackage("KSEF-EXPLICIT", {
+      permanentStorageHwmDate: "2026-09-30T23:59:59.999+00:00",
+    });
+    t.getExportStatus.mockResolvedValue(status);
+    t.downloadPackagePart.mockResolvedValue(encrypted);
+
+    const result = await syncSubjectType(
+      t.deps,
+      "ACCESS",
+      nip,
+      "Subject1",
+      undefined,
+      false,
+      false,
+      false,
+      undefined,
+      {
+        from: new Date("2026-09-01T00:00:00.000Z"),
+        to: new Date("2026-09-30T23:59:59.999Z"),
+      },
+    );
+
+    expect(result.downloaded).toBe(1);
+    expect(await t.readCursor()).toBe(priorCursor);
+  });
+
+  it("continues a truncated package from lastPermanentStorageDate and deduplicates the overlap", async () => {
+    const t = await setup();
+    const lastStored = "2026-10-06T14:30:00.123456+00:00";
+    const first = invoicePackage("KSEF-OVERLAP", {
+      invoiceCount: 10000,
+      isTruncated: true,
+      lastPermanentStorageDate: lastStored,
+      permanentStorageHwmDate: hwm,
+    });
+    // KSeF repeats the invoice stored at lastPermanentStorageDate.
+    const second = invoicePackage("KSEF-OVERLAP", {
+      permanentStorageHwmDate: hwm,
+    });
+    t.getExportStatus
+      .mockResolvedValueOnce(first.status)
+      .mockResolvedValueOnce(second.status);
+    t.downloadPackagePart
+      .mockResolvedValueOnce(first.encrypted)
+      .mockResolvedValueOnce(second.encrypted);
+
+    const result = await syncSubjectType(t.deps, "ACCESS", nip, "Subject1");
+
+    expect(t.exportInvoices).toHaveBeenCalledTimes(2);
+    expect(t.requestedRange(1).from).toBe("2026-10-06T14:30:00.123Z");
+    expect(result.downloaded).toBe(1);
+    expect(result.skipped).toBe(1);
+    expect(await t.readCursor()).toBe(hwmIso);
+  });
+});
