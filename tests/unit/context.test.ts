@@ -3,8 +3,8 @@ import YAML from "yaml";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createContext } from "../../src/cli/context";
-import { ConfigError } from "../../src/utils/errors";
+import { createContext } from "../../src/cli/context.js";
+import { ConfigError } from "../../src/utils/errors.js";
 
 describe("context", () => {
   it("rejects insecure apiBaseUrl without allowInsecureHttp", async () => {

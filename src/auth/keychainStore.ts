@@ -1,4 +1,4 @@
-import type { AppConfig } from "../config/schema";
+import type { AppConfig } from "../config/schema.js";
 import type { Logger } from "pino";
 
 type KeytarModule = {

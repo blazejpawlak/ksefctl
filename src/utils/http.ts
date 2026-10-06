@@ -4,14 +4,14 @@ import { Agent, Dispatcher1Wrapper } from "undici";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import tls from "node:tls";
-import { calculateBackoff } from "./backoff";
+import { calculateBackoff } from "./backoff.js";
 import {
   AuthError,
   ConfigError,
   NetworkError,
   sanitizeErrorMessage,
-} from "./errors";
-import { formatDuration, sleep, sleepWithCountdown } from "./time";
+} from "./errors.js";
+import { formatDuration, sleep, sleepWithCountdown } from "./time.js";
 
 export type RetryOptions = {
   maxAttempts: number;

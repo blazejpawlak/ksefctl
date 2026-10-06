@@ -1,7 +1,7 @@
 import cliSpinners from "cli-spinners";
 import ora from "ora";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createProgressRenderer } from "../../src/cli/progress";
+import { createProgressRenderer } from "../../src/cli/progress.js";
 
 type SpinnerStub = {
   text: string;

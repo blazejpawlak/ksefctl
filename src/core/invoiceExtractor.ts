@@ -1,11 +1,11 @@
 import { xml2js } from "xml-js";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { sha256Base64 } from "../utils/crypto";
+import { sha256Base64 } from "../utils/crypto.js";
 import {
   analyzeInvoicePayment,
   isEligibleForNotification,
-} from "./invoicePaymentAnalyzer";
+} from "./invoicePaymentAnalyzer.js";
 export type SyncItem = {
   nip: string;
   ksefNumber: string;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateBackoff } from "../../src/utils/backoff";
+import { calculateBackoff } from "../../src/utils/backoff.js";
 
 describe("backoff", () => {
   it("respects max delay", () => {

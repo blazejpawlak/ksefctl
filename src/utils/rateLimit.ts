@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { atomicWriteFile } from "./paths";
+import { atomicWriteFile } from "./paths.js";
 
 export type AdaptivePollingOptions = {
   enabled: boolean;

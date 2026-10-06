@@ -5,8 +5,8 @@ import {
   NetworkError,
   exitCodeFromError,
   formatErrorMessage,
-} from "../../utils/errors";
-import { sanitizeForTerminal } from "../commandTree";
+} from "../../utils/errors.js";
+import { sanitizeForTerminal } from "../commandTree.js";
 
 export type RootOptions = {
   config?: string;

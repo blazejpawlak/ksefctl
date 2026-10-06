@@ -8,8 +8,8 @@ import {
   NetworkError,
   sanitizeErrorMessage,
   ConfigError,
-} from "../../src/utils/errors";
-import { HttpClient, validateTlsOptions } from "../../src/utils/http";
+} from "../../src/utils/errors.js";
+import { HttpClient, validateTlsOptions } from "../../src/utils/http.js";
 
 const createClient = (
   overrides: Partial<ConstructorParameters<typeof HttpClient>[0]> = {},

@@ -1,7 +1,7 @@
 import YAML from "yaml";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { ensureStorageDirs } from "../core/storage";
+import { ensureStorageDirs } from "../core/storage.js";
 import {
   atomicWriteFile,
   defaultConfigPath,
@@ -9,7 +9,7 @@ import {
   defaultLogPath,
   ensureDir,
   expandHome,
-} from "../utils/paths";
+} from "../utils/paths.js";
 
 export const initConfig = async (
   configPathOverride?: string,

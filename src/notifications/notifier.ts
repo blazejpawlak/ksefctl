@@ -1,24 +1,24 @@
-import type { AppConfig } from "../config/schema";
-import type { SyncItem, SyncResult } from "../core/syncService";
-import type { InvoiceNotificationCandidate } from "../db/repository";
-import type { SqliteStore } from "../db/sqlite";
+import type { AppConfig } from "../config/schema.js";
+import type { SyncItem, SyncResult } from "../core/syncService.js";
+import type { InvoiceNotificationCandidate } from "../db/repository.js";
+import type { SqliteStore } from "../db/sqlite.js";
 import type { Logger } from "pino";
 import type { Database } from "sql.js";
 import notifier from "node-notifier";
 import nodemailer from "nodemailer";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { createSyncItem } from "../core/invoiceExtractor";
+import { createSyncItem } from "../core/invoiceExtractor.js";
 import {
   hasInvoiceNotification,
   listInvoicesMissingNotification,
   markInvoiceNotification,
-} from "../db/repository";
+} from "../db/repository.js";
 import {
   formatEmailNotificationContent,
   formatMacNotificationContent,
   type OrgLabels,
-} from "./unpaidNotificationContent";
+} from "./unpaidNotificationContent.js";
 
 const unpaidDueNotificationKind = "unpaid_due";
 

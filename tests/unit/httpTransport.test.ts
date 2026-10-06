@@ -4,9 +4,9 @@ import fs from "node:fs/promises";
 import http2 from "node:http2";
 import os from "node:os";
 import path from "node:path";
-import { NetworkError } from "../../src/utils/errors";
-import { HttpClient, type SecurityOptions } from "../../src/utils/http";
-import { EXPECTED_PIN, TEST_CERT, TEST_KEY } from "../fixtures/tlsCert";
+import { NetworkError } from "../../src/utils/errors.js";
+import { HttpClient, type SecurityOptions } from "../../src/utils/http.js";
+import { EXPECTED_PIN, TEST_CERT, TEST_KEY } from "../fixtures/tlsCert.js";
 
 // Exercises HttpClient against a real local TLS server so the undici dispatcher
 // (TLS options, certificate pinning, protocol selection) and the abort-based

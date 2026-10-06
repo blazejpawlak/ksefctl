@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatEmailNotificationContent,
   formatMacNotificationContent,
-} from "../../src/notifications/unpaidNotificationContent";
+} from "../../src/notifications/unpaidNotificationContent.js";
 
 const nullFields = {
   sellerName: null,

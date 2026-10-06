@@ -1,6 +1,6 @@
 import path from "node:path";
-import { ensureDir } from "../utils/paths";
-export { atomicWriteFile } from "../utils/paths";
+import { ensureDir } from "../utils/paths.js";
+export { atomicWriteFile } from "../utils/paths.js";
 
 const assertSafePathSegment = (value: string, label: string): void => {
   if (!value || value === "." || value === "..") {

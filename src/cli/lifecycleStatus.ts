@@ -1,5 +1,5 @@
-import type { StatusInfo } from "../core/statusService";
-import type { ServiceLifecycleEvent } from "../utils/serviceLifecycle";
+import type { StatusInfo } from "../core/statusService.js";
+import type { ServiceLifecycleEvent } from "../utils/serviceLifecycle.js";
 
 type StatusEntry = [string, string | number | null];
 

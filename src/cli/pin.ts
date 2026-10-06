@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import net from "node:net";
 import tls from "node:tls";
-import { NetworkError } from "../utils/errors";
+import { NetworkError } from "../utils/errors.js";
 
 export type TlsPinResult = {
   host: string;

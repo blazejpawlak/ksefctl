@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import crypto from "node:crypto";
 import tls from "node:tls";
-import { fetchTlsPin } from "../../src/cli/pin";
-import { NetworkError } from "../../src/utils/errors";
-import { EXPECTED_PIN, TEST_CERT, TEST_KEY } from "../fixtures/tlsCert";
+import { fetchTlsPin } from "../../src/cli/pin.js";
+import { NetworkError } from "../../src/utils/errors.js";
+import { EXPECTED_PIN, TEST_CERT, TEST_KEY } from "../fixtures/tlsCert.js";
 
 const startTlsServer = (): Promise<{ port: number; close: () => Promise<void> }> =>
   new Promise((resolve, reject) => {

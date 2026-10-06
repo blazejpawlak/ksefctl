@@ -1,4 +1,4 @@
-import type { HttpClient } from "../utils/http";
+import type { HttpClient } from "../utils/http.js";
 
 export type AuthenticationChallengeResponse = {
   challenge: string;

@@ -1,33 +1,33 @@
-import type { ShutdownController } from "../../utils/serviceLifecycle";
+import type { ShutdownController } from "../../utils/serviceLifecycle.js";
 import type { Logger } from "pino";
 import { Command } from "commander";
-import { StatusService } from "../../core/statusService";
-import { SyncService } from "../../core/syncService";
-import { Notifier } from "../../notifications/notifier";
-import { ConfigError, exitCodeFromError } from "../../utils/errors";
+import { StatusService } from "../../core/statusService.js";
+import { SyncService } from "../../core/syncService.js";
+import { Notifier } from "../../notifications/notifier.js";
+import { ConfigError, exitCodeFromError } from "../../utils/errors.js";
 import {
   clampIntervalSeconds,
   computeNextIntervalSeconds,
   readRateLimitState,
   resolveRateLimitStatePath,
   writeRateLimitState,
-} from "../../utils/rateLimit";
+} from "../../utils/rateLimit.js";
 import {
   installShutdownController,
   logServiceLifecycle,
-} from "../../utils/serviceLifecycle";
-import { formatDuration, sleep, sleepWithCountdown } from "../../utils/time";
-import { ensureInitialized } from "../bootstrap";
-import { createContext } from "../context";
-import { getLifecycleEventEntries } from "../lifecycleStatus";
-import { formatInvoicesToPay, getInvoicesToPay } from "../paymentSummary";
-import { createProgressRenderer } from "../progress";
-import { printHeader, printKeyValues, printList } from "../ui";
+} from "../../utils/serviceLifecycle.js";
+import { formatDuration, sleep, sleepWithCountdown } from "../../utils/time.js";
+import { ensureInitialized } from "../bootstrap.js";
+import { createContext } from "../context.js";
+import { getLifecycleEventEntries } from "../lifecycleStatus.js";
+import { formatInvoicesToPay, getInvoicesToPay } from "../paymentSummary.js";
+import { createProgressRenderer } from "../progress.js";
+import { printHeader, printKeyValues, printList } from "../ui.js";
 import {
   formatCliError,
   logUnexpectedError,
   type RootOptions,
-} from "./runCommand";
+} from "./runCommand.js";
 
 // Bounds the drain of an in-flight cycle after a stop signal so a hung KSeF
 // call cannot keep the service alive indefinitely.

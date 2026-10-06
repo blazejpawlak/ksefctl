@@ -2,12 +2,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { StatusService } from "../../src/core/statusService";
-import { SqliteStore } from "../../src/db/sqlite";
+import { StatusService } from "../../src/core/statusService.js";
+import { SqliteStore } from "../../src/db/sqlite.js";
 import {
   resolveRateLimitStatePath,
   writeRateLimitState,
-} from "../../src/utils/rateLimit";
+} from "../../src/utils/rateLimit.js";
 
 const tempDirs: string[] = [];
 

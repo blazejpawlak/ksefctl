@@ -1,4 +1,4 @@
-import type { LogRotationOptions } from "../../src/utils/logger";
+import type { LogRotationOptions } from "../../src/utils/logger.js";
 import type { Logger } from "pino";
 import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { applyLogRotation, createLogger } from "../../src/utils/logger";
+import { applyLogRotation, createLogger } from "../../src/utils/logger.js";
 
 const MEGABYTE = 1024 * 1024;
 

@@ -1,15 +1,15 @@
 import path from "node:path";
-import { KsefClient } from "../api/ksefClient";
-import { AuthService } from "../auth/authService";
-import { KeychainStore } from "../auth/keychainStore";
-import { resolveBaseUrl } from "../config/environment";
-import { loadConfig, resolveConfigPath } from "../config/loadConfig";
-import { SqliteStore } from "../db/sqlite";
-import { ConfigError } from "../utils/errors";
-import { HttpClient, validateTlsOptions } from "../utils/http";
-import { createLogger } from "../utils/logger";
-import { RateLimitTracker } from "../utils/rateLimit";
-import { isManagedServiceMode } from "./serviceMode";
+import { KsefClient } from "../api/ksefClient.js";
+import { AuthService } from "../auth/authService.js";
+import { KeychainStore } from "../auth/keychainStore.js";
+import { resolveBaseUrl } from "../config/environment.js";
+import { loadConfig, resolveConfigPath } from "../config/loadConfig.js";
+import { SqliteStore } from "../db/sqlite.js";
+import { ConfigError } from "../utils/errors.js";
+import { HttpClient, validateTlsOptions } from "../utils/http.js";
+import { createLogger } from "../utils/logger.js";
+import { RateLimitTracker } from "../utils/rateLimit.js";
+import { isManagedServiceMode } from "./serviceMode.js";
 
 type ContextOptions = {
   verbose?: boolean;

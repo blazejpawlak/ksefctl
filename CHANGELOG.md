@@ -9,6 +9,7 @@
 - Upgrade `undici` from 6 to 8 (requires Node.js 22.19+). The KSeF HTTP client keeps its previous transport behaviour: requests stay on HTTP/1.1 (undici 8 would otherwise negotiate HTTP/2), and the dispatcher is wrapped so Node's built-in `fetch` can use it on every supported Node.js release. TLS options, certificate pinning, timeouts and retries are unchanged and are now covered by tests against a real local TLS server.
 - Upgrade `pino` to 10.4.0 and `pino-pretty` to 13.2.0. The only breaking changes upstream are dropped support for Node.js 18 (pino) and Node.js 14/16 (pino-pretty), which the Node.js 22 baseline already covers. pino now redacts through `@pinojs/redact` instead of `fast-redact`; the log file format, redaction, `0600` permissions, rotation and pretty console output are unchanged, and a unit test now pins the redacted JSON-line output.
 - Node.js 26 is now the minimum supported runtime (`engines.node`, CI, publish workflow, `.nvmrc`, `@types/node` 26). Node.js 22 and 24 are no longer supported.
+- The package is now an ES module (`"type": "module"`, TypeScript `module`/`moduleResolution` `NodeNext`), and `dist/` is emitted as ESM. The `ksefctl` command, its configuration, and installed launchd/systemd services (which run `node dist/cli.js`) work as before. Anyone importing `dist/` modules programmatically must switch from `require()` to `import` / `import()`. The PDF converter is now loaded through its ESM build instead of its UMD build. Both builds produce the same PDF output.
 
 ### Fixed
 

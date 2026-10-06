@@ -1,11 +1,11 @@
-import type { AppConfig } from "../../src/config/schema";
-import type { PdfService } from "../../src/services/pdfService";
+import type { AppConfig } from "../../src/config/schema.js";
+import type { PdfService } from "../../src/services/pdfService.js";
 import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { repairMissingInvoicePdfs } from "../../src/core/pdfRepairService";
+import { repairMissingInvoicePdfs } from "../../src/core/pdfRepairService.js";
 
 const createLogger = (): Logger => ({ warn: vi.fn() }) as unknown as Logger;
 

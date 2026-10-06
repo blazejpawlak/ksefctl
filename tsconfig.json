@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "CommonJS",
-    "moduleResolution": "Node",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "lib": ["ES2022", "DOM"],
     "declaration": false,
     "sourceMap": true,
@@ -16,9 +16,6 @@
     "noUncheckedIndexedAccess": true,
     "resolveJsonModule": true,
     "types": ["node"],
-    "paths": {
-      "msw/node": ["./node_modules/msw/lib/node/index.d.ts"]
-    },
     "skipLibCheck": true
   },
   "include": ["src/**/*.ts", "tests/**/*.ts"],

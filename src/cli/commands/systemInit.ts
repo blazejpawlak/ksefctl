@@ -1,14 +1,14 @@
 import type { Command } from "commander";
-import { exitCodeFromError } from "../../utils/errors";
+import { exitCodeFromError } from "../../utils/errors.js";
 import {
   bootstrapInteractive,
   getInitializationStatus,
   resetAndBootstrap,
-} from "../bootstrap";
-import { initConfig } from "../init";
-import { promptText } from "../prompt";
-import { printHeader, printKeyValues } from "../ui";
-import { formatCliError, type RootOptions } from "./runCommand";
+} from "../bootstrap.js";
+import { initConfig } from "../init.js";
+import { promptText } from "../prompt.js";
+import { printHeader, printKeyValues } from "../ui.js";
+import { formatCliError, type RootOptions } from "./runCommand.js";
 
 type InitOptions = {
   force?: boolean;

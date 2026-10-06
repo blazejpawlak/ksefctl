@@ -1,15 +1,15 @@
-import type { KeychainStore } from "./keychainStore";
-import type { AuthenticationTokensResponse } from "../api/ksefClient";
-import type { KsefClient } from "../api/ksefClient";
-import type { AppConfig } from "../config/schema";
+import type { KeychainStore } from "./keychainStore.js";
+import type { AuthenticationTokensResponse } from "../api/ksefClient.js";
+import type { KsefClient } from "../api/ksefClient.js";
+import type { AppConfig } from "../config/schema.js";
 import type { Logger } from "pino";
 import {
   createPublicKeyFromCertificate,
   rsaOaepSha256Encrypt,
-} from "../utils/crypto";
-import { AuthError } from "../utils/errors";
-import { formatDuration, sleep, sleepWithCountdown } from "../utils/time";
-import { type KeychainEntry } from "./keychainStore";
+} from "../utils/crypto.js";
+import { AuthError } from "../utils/errors.js";
+import { formatDuration, sleep, sleepWithCountdown } from "../utils/time.js";
+import { type KeychainEntry } from "./keychainStore.js";
 
 export type AuthTokens = Required<
   Pick<

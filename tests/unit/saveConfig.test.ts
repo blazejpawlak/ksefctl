@@ -3,7 +3,7 @@ import YAML from "yaml";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { updateConfigFile } from "../../src/config/saveConfig";
+import { updateConfigFile } from "../../src/config/saveConfig.js";
 
 const writeYaml = async (
   filePath: string,

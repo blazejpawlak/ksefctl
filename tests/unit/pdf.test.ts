@@ -4,7 +4,7 @@ import {
   generateFA3,
 } from "@akmf/ksef-fe-invoice-converter";
 import { describe, expect, it, vi } from "vitest";
-import { PdfService } from "../../src/services/pdfService";
+import { PdfService } from "../../src/services/pdfService.js";
 
 vi.mock("@akmf/ksef-fe-invoice-converter", () => ({
   generateFA1: vi.fn(() => ({

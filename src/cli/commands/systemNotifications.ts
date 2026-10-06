@@ -1,15 +1,15 @@
-import type { SqliteStore } from "../../db/sqlite";
+import type { SqliteStore } from "../../db/sqlite.js";
 import type { Command } from "commander";
 import {
   countInvoicesMissingNotification,
   markInvoicesMissingNotification,
-} from "../../db/repository";
-import { ConfigError } from "../../utils/errors";
-import { ensureInitialized } from "../bootstrap";
-import { createContext } from "../context";
-import { promptText } from "../prompt";
-import { printHeader, printKeyValues } from "../ui";
-import { runCommand, type RootOptions } from "./runCommand";
+} from "../../db/repository.js";
+import { ConfigError } from "../../utils/errors.js";
+import { ensureInitialized } from "../bootstrap.js";
+import { createContext } from "../context.js";
+import { promptText } from "../prompt.js";
+import { printHeader, printKeyValues } from "../ui.js";
+import { runCommand, type RootOptions } from "./runCommand.js";
 
 const unpaidDueNotificationKind = "unpaid_due";
 

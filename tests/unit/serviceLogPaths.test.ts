@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import path from "node:path";
-import { resolveServiceLogPaths } from "../../src/cli/serviceLogPaths";
+import { resolveServiceLogPaths } from "../../src/cli/serviceLogPaths.js";
 
 describe("resolveServiceLogPaths", () => {
   it("returns only the lifecycle log path by default", () => {

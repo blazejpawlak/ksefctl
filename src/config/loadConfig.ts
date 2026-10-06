@@ -2,15 +2,15 @@ import YAML from "yaml";
 import { z } from "zod";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { ConfigError } from "../utils/errors";
-import { validateTlsOptions } from "../utils/http";
+import { ConfigError } from "../utils/errors.js";
+import { validateTlsOptions } from "../utils/http.js";
 import {
   defaultConfigPath,
   defaultDataRoot,
   defaultLogPath,
   expandHome,
-} from "../utils/paths";
-import { AppConfigSchema, type AppConfig } from "./schema";
+} from "../utils/paths.js";
+import { AppConfigSchema, type AppConfig } from "./schema.js";
 
 export const resolveConfigPath = (overridePath?: string): string => {
   const envPath = process.env.KSEFCTL_CONFIG;

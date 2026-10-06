@@ -1,6 +1,6 @@
-import type { AppConfig } from "../../src/config/schema";
-import type { PdfGenerationCircuitBreaker } from "../../src/core/invoiceWriter";
-import type { PdfService } from "../../src/services/pdfService";
+import type { AppConfig } from "../../src/config/schema.js";
+import type { PdfGenerationCircuitBreaker } from "../../src/core/invoiceWriter.js";
+import type { PdfService } from "../../src/services/pdfService.js";
 import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
@@ -10,7 +10,7 @@ import {
   getMetadataFileName,
   maybeWritePdf,
   resolveInvoiceStorageTarget,
-} from "../../src/core/invoiceWriter";
+} from "../../src/core/invoiceWriter.js";
 
 const baseConfig = (root: string): AppConfig =>
   ({

@@ -1,5 +1,5 @@
-import type { InvoiceExportStatusResponse } from "../api/ksefClient";
-import { ConfigError } from "../utils/errors";
+import type { InvoiceExportStatusResponse } from "../api/ksefClient.js";
+import { ConfigError } from "../utils/errors.js";
 
 export const ksefStartDateIso = "2026-02-01T00:00:00Z";
 export const maxDateRangeMonths = 3;

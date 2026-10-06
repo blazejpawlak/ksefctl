@@ -1,11 +1,11 @@
 import type { Command } from "commander";
-import { ConfigError, exitCodeFromError } from "../../utils/errors";
-import { ensureInitialized } from "../bootstrap";
-import { createContext } from "../context";
-import { isValidNip } from "../keychain";
-import { createProgressRenderer } from "../progress";
-import { printHeader, printKeyValues } from "../ui";
-import { formatCliError, type RootOptions } from "./runCommand";
+import { ConfigError, exitCodeFromError } from "../../utils/errors.js";
+import { ensureInitialized } from "../bootstrap.js";
+import { createContext } from "../context.js";
+import { isValidNip } from "../keychain.js";
+import { createProgressRenderer } from "../progress.js";
+import { printHeader, printKeyValues } from "../ui.js";
+import { formatCliError, type RootOptions } from "./runCommand.js";
 
 type VerifyOptions = {
   nip?: string;

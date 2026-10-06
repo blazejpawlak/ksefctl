@@ -1,14 +1,14 @@
-import type { SqliteStore } from "../db/sqlite";
-import type { ServiceLifecycleEvent } from "../utils/serviceLifecycle";
+import type { SqliteStore } from "../db/sqlite.js";
+import type { ServiceLifecycleEvent } from "../utils/serviceLifecycle.js";
 import {
   getServiceLifecycleState,
   getSyncState,
   setServiceLifecycleState,
-} from "../db/repository";
+} from "../db/repository.js";
 import {
   readRateLimitState,
   resolveRateLimitStatePath,
-} from "../utils/rateLimit";
+} from "../utils/rateLimit.js";
 
 export type StatusInfo = {
   lastSyncAt: string | null;

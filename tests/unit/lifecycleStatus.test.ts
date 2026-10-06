@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   getLifecycleEventEntries,
   getLifecycleStatusEntries,
-} from "../../src/cli/lifecycleStatus";
+} from "../../src/cli/lifecycleStatus.js";
 
 describe("lifecycleStatus", () => {
   it("returns empty status entries when no lifecycle event exists", () => {

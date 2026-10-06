@@ -1,8 +1,8 @@
 import lockfile from "proper-lockfile";
 import YAML from "yaml";
 import fs from "node:fs/promises";
-import { atomicWriteFile } from "../utils/paths";
-import { resolveConfigPath } from "./loadConfig";
+import { atomicWriteFile } from "../utils/paths.js";
+import { resolveConfigPath } from "./loadConfig.js";
 
 export const updateConfigFile = async (
   configPath: string,

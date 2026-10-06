@@ -1,10 +1,10 @@
 import fs from "node:fs/promises";
-import { resolveConfigPath } from "../config/loadConfig";
-import { updateConfigFile } from "../config/saveConfig";
-import { ConfigError } from "../utils/errors";
-import { createContext } from "./context";
-import { initConfig } from "./init";
-import { promptHidden, promptText } from "./prompt";
+import { resolveConfigPath } from "../config/loadConfig.js";
+import { updateConfigFile } from "../config/saveConfig.js";
+import { ConfigError } from "../utils/errors.js";
+import { createContext } from "./context.js";
+import { initConfig } from "./init.js";
+import { promptHidden, promptText } from "./prompt.js";
 
 const PROD_URL = "https://api.ksef.mf.gov.pl/v2";
 const TEST_URL = "https://api-test.ksef.mf.gov.pl/v2";

@@ -4,20 +4,20 @@ import { execFile, spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { StatusService } from "../../core/statusService";
-import { ServiceInstaller } from "../../services/serviceInstaller";
-import { createPrettyLogStream } from "../../utils/logger";
-import { APP_NAME } from "../../utils/paths";
-import { logServiceLifecycle } from "../../utils/serviceLifecycle";
-import { ensureInitialized } from "../bootstrap";
-import { createContext } from "../context";
+import { StatusService } from "../../core/statusService.js";
+import { ServiceInstaller } from "../../services/serviceInstaller.js";
+import { createPrettyLogStream } from "../../utils/logger.js";
+import { APP_NAME } from "../../utils/paths.js";
+import { logServiceLifecycle } from "../../utils/serviceLifecycle.js";
+import { ensureInitialized } from "../bootstrap.js";
+import { createContext } from "../context.js";
 import {
   getLifecycleEventEntries,
   getLifecycleStatusEntries,
-} from "../lifecycleStatus";
-import { resolveServiceLogPaths } from "../serviceLogPaths";
-import { printHeader, printKeyValues } from "../ui";
-import { runCommand, type RootOptions } from "./runCommand";
+} from "../lifecycleStatus.js";
+import { resolveServiceLogPaths } from "../serviceLogPaths.js";
+import { printHeader, printKeyValues } from "../ui.js";
+import { runCommand, type RootOptions } from "./runCommand.js";
 
 const execFileAsync = promisify(execFile);
 const serviceLabel = `com.${APP_NAME}`;

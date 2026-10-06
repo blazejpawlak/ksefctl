@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   analyzeInvoicePayment,
   isEligibleForNotification,
-} from "../../src/core/invoicePaymentAnalyzer";
+} from "../../src/core/invoicePaymentAnalyzer.js";
 
 describe("invoicePaymentAnalyzer", () => {
   it("classifies payable unpaid invoice with due date from Platnosc", () => {
