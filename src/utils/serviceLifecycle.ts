@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 import os from "node:os";
+import { closeLogger } from "./logger.js";
 
 export type ServiceLifecycleAction = "start" | "stop" | "restart";
 export type ServiceLifecycleStage =
@@ -139,8 +140,10 @@ export const installServiceStopSignalLogging = (
         signal,
       });
       cleanup();
-      logger.flush?.();
-      process.kill(process.pid, signal);
+      // Re-raise only once the stop line has reached the log file.
+      void closeLogger(logger).then(() => {
+        process.kill(process.pid, signal);
+      });
     };
 
     handlers.set(signal, handler);
@@ -155,8 +158,11 @@ export type ShutdownController = {
   readonly stopRequested: boolean;
   /** Resolves as soon as a stop is requested. */
   readonly whenStopRequested: Promise<NodeJS.Signals>;
-  /** Re-raise the original signal after draining. Safe to call more than once. */
-  finalize: () => void;
+  /**
+   * Close the log destinations, then re-raise the original signal after
+   * draining. Safe to call more than once.
+   */
+  finalize: () => Promise<void>;
   /** Remove the installed handlers without exiting. */
   dispose: () => void;
 };
@@ -185,10 +191,10 @@ export const installShutdownController = (
     handlers.clear();
   };
 
-  const finalize = (): void => {
+  const finalize = async (): Promise<void> => {
     const signal = received ?? "SIGTERM";
     dispose();
-    logger.flush?.();
+    await closeLogger(logger);
     process.kill(process.pid, signal);
   };
 

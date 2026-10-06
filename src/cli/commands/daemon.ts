@@ -158,7 +158,7 @@ export function registerDaemon(program: Command): void {
                 "Shutdown drain timed out; abandoning in-flight sync cycle",
               );
               renderer?.done();
-              stopController.finalize();
+              await stopController.finalize();
               break;
             }
           }
@@ -219,7 +219,7 @@ export function registerDaemon(program: Command): void {
           }
 
           if (stopController.stopRequested) {
-            stopController.finalize();
+            await stopController.finalize();
             break;
           }
           if (progress) {
@@ -243,7 +243,7 @@ export function registerDaemon(program: Command): void {
             ]);
           }
           if (stopController.stopRequested) {
-            stopController.finalize();
+            await stopController.finalize();
             break;
           }
         }

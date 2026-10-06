@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import fsSync from "node:fs";
+import fs from "node:fs/promises";
 import os from "node:os";
+import path from "node:path";
+import { createLogger } from "../../src/utils/logger.js";
 import {
   installServiceStopSignalLogging,
+  installShutdownController,
   logServiceLifecycle,
   resolveServiceInitiator,
 } from "../../src/utils/serviceLifecycle.js";
@@ -111,7 +116,7 @@ describe("serviceLifecycle", () => {
     expect(typeof payload.lifecycleAt).toBe("string");
   });
 
-  it("logs stop signal metadata and re-sends the signal", () => {
+  it("logs stop signal metadata and re-sends the signal", async () => {
     setEnv({
       SUDO_USER: undefined,
       USER: "service-user",
@@ -164,6 +169,54 @@ describe("serviceLifecycle", () => {
     );
     expect(logger.flush).toHaveBeenCalledOnce();
     expect(offSpy).toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(killSpy).toHaveBeenCalledWith(process.pid, "SIGTERM");
+    });
+  });
+
+  it("writes the stop line to the log file before re-raising the signal", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-lifecycle-"));
+    const filePath = path.join(tmpDir, "ksefctl.log");
+    const logger = await createLogger({
+      level: "info",
+      file: filePath,
+      prettyConsole: false,
+      suppressConsole: true,
+      rotation: {
+        enabled: false,
+        maxFileMegabytes: 1,
+        maxFiles: 1,
+        maxAgeDays: 1,
+      },
+    });
+    const handlers = new Map<string, () => void>();
+    vi.spyOn(process, "on").mockImplementation(((
+      event: string | symbol,
+      listener: () => void,
+    ) => {
+      if (typeof event === "string") {
+        handlers.set(event, listener);
+      }
+      return process;
+    }) as typeof process.on);
+    vi.spyOn(process, "off").mockImplementation(
+      ((_: string | symbol, __: () => void) => process) as typeof process.off,
+    );
+    // Read synchronously at kill time: anything not on disk by then is lost.
+    let contentAtKill: string | null = null;
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(((
+      _: number,
+      __: NodeJS.Signals | number,
+    ) => {
+      contentAtKill = fsSync.readFileSync(filePath, "utf-8");
+      return true;
+    }) as typeof process.kill);
+
+    const controller = installShutdownController(logger);
+    handlers.get("SIGTERM")?.();
+    await controller.finalize();
+
     expect(killSpy).toHaveBeenCalledWith(process.pid, "SIGTERM");
+    expect(contentAtKill).toContain("Service stop signal received");
   });
 });
