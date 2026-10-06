@@ -28,6 +28,7 @@ npm ci
 Notes:
 
 - `npm ci` runs the repo `postinstall` hook, which prepares the pinned `@akmf/ksef-fe-invoice-converter` dependency for local use.
+- npm 11 only runs dependency install scripts listed in `allowScripts` (package.json). `keytar` needs its install script for the keychain binding; `esbuild`, `unrs-resolver` and `fsevents` are dev tooling. The converter's nested install gets its own allowlist from `scripts/prepare-ksef-pdf-generator.mjs`. When `npm ci` warns about an uncovered package, review it and run `npm install-scripts approve <pkg>` or `deny`.
 
 Build:
 
