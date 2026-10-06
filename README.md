@@ -19,7 +19,7 @@ CLI background service for KSeF API 2.0 inbox synchronization (macOS + Linux). N
 
 ## Prerequisites
 
-- Node.js >= 22 (nvm recommended)
+- Node.js >= 26 (nvm recommended; `nvm use` reads `.nvmrc`)
 - macOS or Linux (x64/arm64)
 - For keychain storage on Linux: libsecret (keytar backend)
 - Git, when building from source

@@ -55,7 +55,7 @@ export const fetchTlsPin = async (
     socket.on("error", (err) => {
       reject(
         new NetworkError(
-          `TLS connection to ${host}:${port} failed: ${(err as Error).message}`,
+          `TLS connection to ${host}:${port} failed: ${err.message}`,
         ),
       );
     });
