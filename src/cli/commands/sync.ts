@@ -89,9 +89,13 @@ export function registerSync(program: Command): void {
         "explicit date range as DD-MM-YYYY:DD-MM-YYYY (requires --redownload, --redownload-all, or --flat-sync)",
       ).conflicts("watch"),
     )
-    .option(
-      "--output-path <path>",
-      "export invoices to this directory instead of the invoice store, without updating sync state (requires --nip when multiple orgs configured)",
+    .addOption(
+      // An export never advances the continuation point, so a watch loop
+      // would re-export the same growing window every cycle.
+      new Option(
+        "--output-path <path>",
+        "export invoices to this directory instead of the invoice store, without updating sync state (requires --nip when multiple orgs configured)",
+      ).conflicts("watch"),
     )
     .option(
       "--watch",
