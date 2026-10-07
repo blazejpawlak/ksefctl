@@ -11,3 +11,4 @@ tmp/
 :memory:
 *.sqlite
 *.db
+vendor/ksef-pdf-generator/

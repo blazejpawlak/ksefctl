@@ -1,36 +1,35 @@
-import {
-  generateFA1,
-  generateFA2,
-  generateFA3,
-} from "@akmf/ksef-fe-invoice-converter";
+import type { PdfGeneratorModule } from "../../src/types/ksef-pdf-generator.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { PdfService } from "../../src/services/pdfService.js";
 
-vi.mock("@akmf/ksef-fe-invoice-converter", () => ({
-  generateFA1: vi.fn(() => ({
-    getBuffer: (cb: (buffer: Buffer) => void) => cb(Buffer.from("pdf1")),
-  })),
-  generateFA2: vi.fn(() => ({
-    getBuffer: (cb: (buffer: Buffer) => void) => cb(Buffer.from("pdf2")),
-  })),
-  generateFA3: vi.fn(() => ({
-    getBuffer: (cb: (buffer: Buffer) => void) => cb(Buffer.from("pdf3")),
-  })),
+const generateFA1 = vi.fn(() => ({
+  getBuffer: (cb: (buffer: Buffer) => void) => cb(Buffer.from("pdf1")),
 }));
+const generateFA2 = vi.fn(() => ({
+  getBuffer: (cb: (buffer: Buffer) => void) => cb(Buffer.from("pdf2")),
+}));
+const generateFA3 = vi.fn(() => ({
+  getBuffer: (cb: (buffer: Buffer) => void) => cb(Buffer.from("pdf3")),
+}));
+
+const loader = (): Promise<PdfGeneratorModule> =>
+  Promise.resolve({ generateFA1, generateFA2, generateFA3 });
 
 describe("PdfService", () => {
   beforeEach(() => {
     // The converter mocks live for the whole file; clear their calls so the
     // call-count assertions do not depend on which tests ran first.
-    vi.mocked(generateFA1).mockClear();
-    vi.mocked(generateFA2).mockClear();
-    vi.mocked(generateFA3).mockClear();
+    generateFA1.mockClear();
+    generateFA2.mockClear();
+    generateFA3.mockClear();
   });
 
   it("generates a PDF buffer for FA (1)", async () => {
     const xml =
       "<Faktura><Naglowek><KodFormularza kodSystemowy=\"FA(1)\" /></Naglowek></Faktura>";
-    const service = new PdfService();
+    const service = new PdfService({ loader });
     const result = await service.generateInvoicePdf(xml, "KSEF-1");
 
     expect(result.status).toBe("ok");
@@ -46,7 +45,7 @@ describe("PdfService", () => {
   it("normalizes FA (2) and generates PDF", async () => {
     const xml =
       "<Faktura><Naglowek><KodFormularza kodSystemowy=\"FA (2)\" /></Naglowek></Faktura>";
-    const service = new PdfService();
+    const service = new PdfService({ loader });
     const result = await service.generateInvoicePdf(xml, "KSEF-4");
 
     expect(result.status).toBe("ok");
@@ -56,7 +55,7 @@ describe("PdfService", () => {
   it("returns failure for unsupported schemas", async () => {
     const xml =
       "<Faktura><Naglowek><KodFormularza kodSystemowy=\"FA (9)\" /></Naglowek></Faktura>";
-    const service = new PdfService();
+    const service = new PdfService({ loader });
     const result = await service.generateInvoicePdf(xml, "KSEF-2");
 
     expect(result.status).toBe("failed");
@@ -68,7 +67,7 @@ describe("PdfService", () => {
 
   it("returns failure when Faktura element is missing", async () => {
     const xml = "<Root></Root>";
-    const service = new PdfService();
+    const service = new PdfService({ loader });
     const result = await service.generateInvoicePdf(xml, "KSEF-3");
 
     expect(result.status).toBe("failed");
@@ -124,6 +123,34 @@ describe("PdfService", () => {
     expect(result.status).toBe("ok");
     if (result.status === "ok") {
       expect(result.buffer.toString("utf-8")).toBe("pdf-promise");
+    }
+  });
+
+  it("loads the vendored converter bundle and renders a real invoice PDF", async () => {
+    const xml = await fs.readFile(
+      path.join(import.meta.dirname, "..", "fixtures", "invoices", "fa3.xml"),
+      "utf-8",
+    );
+    const result = await new PdfService().generateInvoicePdf(xml, "KSEF-7");
+
+    expect(result.status).toBe("ok");
+    if (result.status === "ok") {
+      expect(result.buffer.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+    }
+  });
+
+  it("reports the generator as unavailable when the loader rejects", async () => {
+    const xml =
+      "<Faktura><Naglowek><KodFormularza kodSystemowy=\"FA (3)\" /></Naglowek></Faktura>";
+    const service = new PdfService({
+      loader: () => Promise.reject(new Error("bundle missing")),
+    });
+
+    const result = await service.generateInvoicePdf(xml, "KSEF-8");
+
+    expect(result.status).toBe("failed");
+    if (result.status === "failed") {
+      expect(result.reason).toBe("generator-unavailable");
     }
   });
 });

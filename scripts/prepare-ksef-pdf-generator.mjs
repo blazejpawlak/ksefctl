@@ -2,34 +2,28 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  bundleFileName,
+  converterPackageName,
+  findVendorProblems,
+  licenseFileName,
+  metadataFileName,
+  readPin,
+  sha256,
+  vendorDir,
+} from "./vendored-converter.mjs";
 
-const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const converterPath = path.join("node_modules", "@akmf", "ksef-fe-invoice-converter");
-
-// Walk up from this package like Node's resolver does: in a repository
-// checkout or a global install the converter is nested under this package,
-// but npm may hoist it to a parent node_modules when ksefctl is a dependency.
-const findConverterRoot = async () => {
-  let dir = path.join(scriptDir, "..");
-  for (;;) {
-    const candidate = path.join(dir, converterPath);
-    try {
-      await fs.access(path.join(candidate, "package.json"));
-      return candidate;
-    } catch {
-      const parent = path.dirname(dir);
-      if (parent === dir) {
-        throw new Error(`Cannot find ${converterPath} above ${scriptDir}`);
-      }
-      dir = parent;
-    }
-  }
-};
-const filesToCopy = [
-  "ksef-fe-invoice-converter.js",
-  "ksef-fe-invoice-converter.umd.cjs",
-  "index.d.ts",
-];
+// Development-time step, run from the `prepare` lifecycle (local `npm install`
+// and `npm ci`, and before pack/publish; npm does not run it when a consumer
+// installs the registry tarball). It builds the commit-pinned converter
+// devDependency and vendors the ESM bundle that ksefctl ships and loads.
+// Pass --force to rebuild a vendored copy that is already up to date.
+const packageRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+const converterRoot = path.join(
+  packageRoot,
+  "node_modules",
+  ...converterPackageName.split("/"),
+);
 
 // npm 11 gates dependency install scripts behind an allowlist. The converter is
 // installed as its own project, so the root package.json allowScripts does not
@@ -127,12 +121,40 @@ const writeAllowScriptsConfig = async (packageRoot) => {
   );
 };
 
-const copyArtifacts = async (packageRoot) => {
-  for (const fileName of filesToCopy) {
+// The upstream license (MIT) must ship with the vendored bundle. The copy is
+// staged next to the final directory and renamed into place, so an interrupted
+// run never leaves a half-written vendor directory that looks complete.
+const vendorArtifacts = async (version, pin) => {
+  const bundle = await fs.readFile(path.join(converterRoot, "dist", bundleFileName));
+  const target = vendorDir(packageRoot);
+  const staging = `${target}.staging-${process.pid}`;
+  await fs.rm(staging, { recursive: true, force: true });
+  await fs.mkdir(staging, { recursive: true });
+  try {
+    await fs.writeFile(path.join(staging, bundleFileName), bundle);
     await fs.copyFile(
-      path.join(packageRoot, "dist", fileName),
-      path.join(packageRoot, fileName),
+      path.join(converterRoot, licenseFileName),
+      path.join(staging, licenseFileName),
     );
+    await fs.writeFile(
+      path.join(staging, metadataFileName),
+      `${JSON.stringify(
+        {
+          name: converterPackageName,
+          version,
+          source: pin.source,
+          commit: pin.commit,
+          bundleSha256: sha256(bundle),
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await fs.rm(target, { recursive: true, force: true });
+    await fs.rename(staging, target);
+  } catch (error) {
+    await fs.rm(staging, { recursive: true, force: true });
+    throw error;
   }
 };
 
@@ -146,11 +168,25 @@ const printLogTail = async (logPath) => {
 };
 
 const run = async () => {
-  const packageRoot = await findConverterRoot();
-  const logPath = path.join(packageRoot, logFileName);
+  const pin = await readPin(packageRoot);
+  if (
+    !process.argv.includes("--force") &&
+    (await findVendorProblems(packageRoot)).length === 0
+  ) {
+    console.log(`Vendored ${converterPackageName} is up to date`);
+    return;
+  }
+  try {
+    await fs.access(path.join(converterRoot, "package.json"));
+  } catch {
+    throw new Error(
+      `Cannot find ${converterPackageName} in ${path.join(packageRoot, "node_modules")}. It is a devDependency used to build the vendored PDF converter; install with dev dependencies (npm ci).`,
+    );
+  }
+  const logPath = path.join(converterRoot, logFileName);
   await fs.writeFile(logPath, "");
   try {
-    await writeAllowScriptsConfig(packageRoot);
+    await writeAllowScriptsConfig(converterRoot);
     await runLogged(
       "npm",
       [
@@ -160,31 +196,31 @@ const run = async () => {
         "--no-audit",
         ...localInstallFlags,
       ],
-      packageRoot,
+      converterRoot,
       logPath,
     );
     await runLogged(
       "npm",
       ["run", "build", "--global=false", "--location=project"],
-      packageRoot,
+      converterRoot,
       logPath,
     );
-    await copyArtifacts(packageRoot);
+    const { version } = JSON.parse(
+      await fs.readFile(path.join(converterRoot, "package.json"), "utf-8"),
+    );
+    await vendorArtifacts(version, pin);
+    console.log(
+      `Vendored ${converterPackageName} ${version} (build log: ${logPath})`,
+    );
   } catch (error) {
     await printLogTail(logPath);
     console.error(`Full log: ${logPath}`);
     throw error;
   }
-  const { version } = JSON.parse(
-    await fs.readFile(path.join(packageRoot, "package.json"), "utf-8"),
-  );
-  console.log(
-    `Prepared @akmf/ksef-fe-invoice-converter ${version} (build log: ${logPath})`,
-  );
 };
 
 run().catch((error) => {
-  console.error("Failed to prepare ksef-pdf-generator artifacts");
+  console.error("Failed to vendor the ksef-pdf-generator converter");
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
 });

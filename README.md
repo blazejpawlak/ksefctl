@@ -33,10 +33,10 @@ Releases are published as `@blazejpawlak/ksefctl` on GitHub Packages. GitHub's n
 ```bash
 npm login --scope=@blazejpawlak --auth-type=legacy --registry=https://npm.pkg.github.com
 npm install --global @blazejpawlak/ksefctl --registry=https://npm.pkg.github.com \
-  --allow-scripts=@blazejpawlak/ksefctl,keytar
+  --allow-scripts=keytar
 ```
 
-The install runs two scripts: ksefctl's `postinstall` builds the pinned PDF converter, and `keytar` installs its keychain binding. npm 11 gates dependency install scripts behind an allowlist; `--allow-scripts` approves exactly these two (on npm 10 and earlier, omit the flag).
+The only install script is `keytar`'s, which installs its keychain binding. npm 11 gates dependency install scripts behind an allowlist; `--allow-scripts=keytar` approves exactly that (on npm 10 and earlier, omit the flag). The PDF converter ships prebuilt inside the package: the install fetches nothing from git and builds nothing, so it works on npm 12, which refuses git dependencies by default.
 
 Do not put the token in this repository or commit it to an `.npmrc` file.
 
@@ -50,7 +50,7 @@ npm run build
 npm link
 ```
 
-`npm ci` runs the repo `postinstall` hook, which prepares the pinned `@akmf/ksef-fe-invoice-converter` dependency for local use. Use `ksefctl --version` to see the app version and the pinned upstream PDF builder version/commit; compare it with the upstream `CIRFMF/ksef-pdf-generator` releases when troubleshooting PDF rendering.
+`npm ci` runs the repo `prepare` hook, which builds the pinned `@akmf/ksef-fe-invoice-converter` devDependency and vendors its ESM bundle into `vendor/ksef-pdf-generator/` (git-ignored; it is what ksefctl loads and what the published package ships). The build output goes to `node_modules/@akmf/ksef-fe-invoice-converter/ksefctl-prepare.log` and is printed only if the build fails; `node scripts/prepare-ksef-pdf-generator.mjs --force` rebuilds a vendored copy that is already current. Installing from source needs the dev dependencies (no `--omit=dev`), and the repo `.npmrc` sets `allow-git=root` so npm 12 may fetch the converter's git pin. Use `ksefctl --version` to see the app version and the pinned upstream PDF builder version/commit; compare it with the upstream `CIRFMF/ksef-pdf-generator` releases when troubleshooting PDF rendering.
 
 ## Quick start
 
