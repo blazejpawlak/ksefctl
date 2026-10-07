@@ -573,7 +573,7 @@ If `organizations[].outputPath` is set, or `--output-path` is passed on the CLI,
 `organizations[].outputPath` is the canonical location for that NIP: the regular sync records invoices there and tracks them in `db/state.sqlite`. `--output-path` is different — it is a one-off export to an ad-hoc location:
 
 - Invoice records in `db/state.sqlite` are neither created nor updated, so deleting the export directory later never makes the regular sync think an invoice is missing.
-- Continuation points do not move. The export window starts at the regular cursor (or `sync.initialSyncFrom` with `--redownload-all`, or `--time-window`), and the next regular sync still downloads the same invoices into the store.
+- Continuation points do not move. The export window starts at the regular cursor, however old when `sync.initialSyncFrom` is unset (or `sync.initialSyncFrom` with `--redownload-all`, or `--time-window`), and the next regular sync still downloads the same invoices into the store.
 - Deduplication is against the export directory: an invoice whose XML is already there with the same content is skipped. `--redownload`/`--redownload-all` always rewrite.
 - `ksefctl status` (last sync, last success, last downloaded count) and unpaid-invoice notification markers are left unchanged, and no notifications are sent.
 
