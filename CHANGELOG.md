@@ -4,6 +4,7 @@
 
 ### Changed
 
+- The install step that builds the pinned PDF converter is quiet on success: its upstream build output goes to `node_modules/@akmf/ksef-fe-invoice-converter/ksefctl-prepare.log`, and is printed only if the build fails. npm versions without `allowScripts` support no longer warn about an unknown `allow-scripts` config.
 - Upgrade zod to 4.x. Config defaults are unchanged: a `config.yaml` that omits optional sections or fields parses to the same values as before.
 - An invalid `config.yaml` now fails with a readable list of every violation and its path (for example `✖ NIP must be exactly 10 digits → at organizations[0].nip`) instead of a raw JSON dump that was cut off at 500 characters. Schema violations now exit with code `4` (config invalid), as documented, instead of `5`.
 - Upgrade `undici` from 6 to 8 (requires Node.js 22.19+). The KSeF HTTP client keeps its previous transport behaviour: requests stay on HTTP/1.1 (undici 8 would otherwise negotiate HTTP/2), and the dispatcher is wrapped so Node's built-in `fetch` can use it on every supported Node.js release. TLS options, certificate pinning, timeouts and retries are unchanged and are now covered by tests against a real local TLS server.
