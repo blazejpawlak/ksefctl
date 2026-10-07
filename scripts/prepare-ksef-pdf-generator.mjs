@@ -130,6 +130,11 @@ const writeAllowScriptsConfig = async (packageRoot) => {
 // run never leaves a half-written vendor directory that looks complete.
 const vendorArtifacts = async (version, pin) => {
   const bundle = await fs.readFile(path.join(converterRoot, "dist", bundleFileName));
+  // The upstream license must carry text, not just exist.
+  const license = await fs.readFile(path.join(converterRoot, licenseFileName), "utf-8");
+  if (license.trim().length === 0) {
+    throw new Error(`${converterPackageName} ships a blank ${licenseFileName}`);
+  }
   // The hidden map lists every module the bundle contains; it is not shipped.
   const mapPath = path.join(converterRoot, "dist", `${bundleFileName}.map`);
   try {
@@ -149,10 +154,7 @@ const vendorArtifacts = async (version, pin) => {
   await fs.mkdir(staging, { recursive: true });
   try {
     await fs.writeFile(path.join(staging, bundleFileName), bundle);
-    await fs.copyFile(
-      path.join(converterRoot, licenseFileName),
-      path.join(staging, licenseFileName),
-    );
+    await fs.writeFile(path.join(staging, licenseFileName), license);
     await fs.writeFile(path.join(staging, noticesFileName), notices.text);
     await fs.writeFile(
       path.join(staging, metadataFileName),
@@ -165,6 +167,7 @@ const vendorArtifacts = async (version, pin) => {
           bundleSha256: sha256(bundle),
           noticesSha256: sha256(notices.text),
           components: notices.components,
+          extraLicenses: notices.extraLicenses,
         },
         null,
         2,

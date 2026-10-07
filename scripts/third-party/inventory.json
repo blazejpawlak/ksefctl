@@ -310,5 +310,17 @@
       "source": "https://github.com/inspect-js/which-typed-array",
       "file": "which-typed-array.txt"
     }
-  }
+  },
+  "headerLicenses": [
+    {
+      "component": "sax",
+      "contains": "mths.be/fromcodepoint",
+      "license": "MIT",
+      "file": "licenses/headers/sax-fromcodepoint-MIT.txt",
+      "source": "https://github.com/mathiasbynens/String.fromCodePoint",
+      "reason": "sax 1.6.1 inlines Mathias Bynens' String.fromCodePoint polyfill under a banner that names no license; the polyfill is MIT (README: https://mths.be/mit) and sax's own BlueOak-1.0.0 notice does not carry that permission notice"
+    }
+  ],
+  "headerAllowlist": [],
+  "prebuiltInputs": {}
 }

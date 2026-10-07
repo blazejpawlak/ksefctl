@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  collapse,
   detectEmbeddedAssets,
   findNoticesProblems,
   noticesFileName,
@@ -96,7 +97,11 @@ export const findVendorProblems = async (packageRoot) => {
   for (const fileName of [bundleFileName, licenseFileName, noticesFileName]) {
     try {
       const content = await fs.readFile(path.join(dir, fileName));
-      if (content.length === 0) {
+      // License artifacts must carry text; whitespace does not count.
+      if (
+        content.length === 0 ||
+        (fileName !== bundleFileName && content.toString("utf-8").trim().length === 0)
+      ) {
         problems.push(`${path.join(vendorDirName, fileName)} is empty`);
       } else if (fileName === bundleFileName) {
         bundle = content;
@@ -169,7 +174,13 @@ export const findVendorProblems = async (packageRoot) => {
     if (!Array.isArray(metadata.components) || metadata.components.length === 0) {
       problems.push("metadata.json records no bundled components");
     } else {
-      problems.push(...findNoticesProblems(notices, metadata.components));
+      problems.push(
+        ...(await findNoticesProblems(
+          notices,
+          metadata.components,
+          Array.isArray(metadata.extraLicenses) ? metadata.extraLicenses : [],
+        )),
+      );
     }
   }
   // The notices must cover every font/profile the bundle embeds.
@@ -179,6 +190,10 @@ export const findVendorProblems = async (packageRoot) => {
     for (const asset of embedded.assets) {
       if (!notices.includes(asset.heading)) {
         problems.push(`${noticesFileName} has no notice for embedded ${asset.id}`);
+      } else if (!collapse(notices).includes(collapse(asset.text))) {
+        problems.push(
+          `${noticesFileName} does not carry the license text of embedded ${asset.id}`,
+        );
       }
     }
   }

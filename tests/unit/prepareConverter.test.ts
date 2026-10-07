@@ -19,6 +19,7 @@ const bundleSource = "export const built = true;\n";
 const defaultMap = {
   version: 3,
   sources: ["../src/index.ts", "../node_modules/dep-a/index.js"],
+  sourcesContent: ["export {};", "module.exports = 1;"],
   mappings: "",
 };
 
@@ -263,6 +264,7 @@ describe("prepare-ksef-pdf-generator", () => {
         .update(await fs.readFile(path.join(vendorDir, "THIRD_PARTY_NOTICES.txt")))
         .digest("hex"),
       components: ["### dep-a@1.0.0"],
+      extraLicenses: [],
     });
     expect(runGuard().status).toBe(0);
     const notices = await fs.readFile(
@@ -440,8 +442,27 @@ describe("prepare-ksef-pdf-generator", () => {
   };
 
   const mapWith = (...sources: string[]) => ({
-    PREPARE_TEST_MAP: JSON.stringify({ ...defaultMap, sources }),
+    PREPARE_TEST_MAP: JSON.stringify({
+      ...defaultMap,
+      sources,
+      sourcesContent: sources.map(() => "module.exports = 1;"),
+    }),
   });
+
+  // The converter map with dep-a's module source replaced by `content`.
+  const mapWithDepAContent = (content: string) => ({
+    PREPARE_TEST_MAP: JSON.stringify({
+      ...defaultMap,
+      sourcesContent: ["export {};", content],
+    }),
+  });
+
+  // The converter's copy of the reviewed third-party data, edited per test.
+  const writeInventory = async (changes: Record<string, unknown>) => {
+    const file = path.join(root, "pkg", "scripts", "third-party", "inventory.json");
+    const inventory = JSON.parse(await fs.readFile(file, "utf-8")) as Record<string, unknown>;
+    await fs.writeFile(file, JSON.stringify({ ...inventory, ...changes }));
+  };
 
   it("fails when the bundle contains a module no package or component accounts for", async () => {
     const { result } = await runScriptWith(
@@ -619,6 +640,200 @@ describe("prepare-ksef-pdf-generator", () => {
       const { result } = await runScriptWith("ok", { PREPARE_TEST_BUNDLE: bundle });
 
       expect(result.status, result.stderr).toBe(0);
+    });
+  });
+
+  describe("prebuilt inputs without their inner source map", () => {
+    const prebuiltContent = "var x = 1;\n//# sourceMappingURL=dep-b.js.map\n";
+    const prebuiltEnv = () => ({
+      PREPARE_TEST_MAP: JSON.stringify({
+        ...defaultMap,
+        sources: ["../src/index.ts", "../node_modules/dep-b/build/dep-b.js"],
+        sourcesContent: ["export {};", prebuiltContent],
+      }),
+    });
+
+    const installBuild = async () => {
+      await addDependency("dep-b", "2.0.0", "MIT", "License text of dep-b\n");
+      const file = path.join(converterDir, "node_modules", "dep-b", "build", "dep-b.js");
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, prebuiltContent);
+      return file;
+    };
+
+    it("fails instead of certifying a partial inventory", async () => {
+      await installBuild();
+
+      const { result } = await runScriptWith("ok", prebuiltEnv());
+
+      await expectRefused(result, [
+        "is itself a prebuilt bundle but its source map dep-b.js.map is missing",
+      ]);
+    });
+
+    it("accepts it through a reviewed entry bound to the file's sha256", async () => {
+      const file = await installBuild();
+      const sha256 = createHash("sha256").update(await fs.readFile(file)).digest("hex");
+      await writeInventory({
+        prebuiltInputs: { "dep-b/build/dep-b.js": { sha256, components: ["dep-a"] } },
+      });
+
+      const { result } = await runScriptWith("ok", prebuiltEnv());
+
+      expect(result.status, result.stderr).toBe(0);
+      const notices = await fs.readFile(path.join(vendorDir, "THIRD_PARTY_NOTICES.txt"), "utf-8");
+      expect(notices).toContain("listed by the reviewed entry for dep-b/build/dep-b.js");
+      expect(runGuard().status).toBe(0);
+    });
+
+    it("rejects a reviewed entry once the file's content changed", async () => {
+      const file = await installBuild();
+      await writeInventory({
+        prebuiltInputs: { "dep-b/build/dep-b.js": { sha256: "0".repeat(64), components: ["dep-a"] } },
+      });
+      expect(await fs.readFile(file, "utf-8")).toBe(prebuiltContent);
+
+      const { result } = await runScriptWith("ok", prebuiltEnv());
+
+      await expectRefused(result, ["no reviewed prebuiltInputs entry", "matches its sha256"]);
+    });
+  });
+
+  describe("blank license artifacts", () => {
+    it("fails when a reviewed asset license text is blank", async () => {
+      await fs.writeFile(
+        path.join(root, "pkg", "scripts", "third-party", "assets", "roboto-OFL-1.1.txt"),
+        "  \n\n",
+      );
+      const bundle = fakeFontBundle(
+        "Copyright 2011 The Roboto Project Authors SIL Open Font License, Version 1.1.",
+      );
+
+      const { result } = await runScriptWith("ok", { PREPARE_TEST_BUNDLE: bundle });
+
+      await expectRefused(result, [
+        "reviewed license text for embedded Roboto is missing or blank",
+      ]);
+    });
+
+    it("fails when the converter's own LICENSE is blank", async () => {
+      await fs.writeFile(path.join(converterDir, "LICENSE"), "  \n\n");
+
+      const { result } = await runScript("ok");
+
+      await expectRefused(result, ["ships a blank LICENSE"]);
+    });
+
+    it("fails when a reviewed inventory license text is blank", async () => {
+      await fs.rm(path.join(converterDir, "node_modules", "dep-a", "LICENSE"));
+      await writeInventory({
+        components: {
+          "dep-a": {
+            version: "1.0.0",
+            license: "MIT",
+            source: "https://example.test/dep-a",
+            file: "dep-a.txt",
+          },
+        },
+      });
+      await fs.writeFile(
+        path.join(root, "pkg", "scripts", "third-party", "licenses", "dep-a.txt"),
+        "\n \n",
+      );
+
+      const { result } = await runScript("ok");
+
+      await expectRefused(result, ["dep-a is bundled but has no non-empty license text"]);
+    });
+  });
+
+  describe("file-level license headers inside bundled modules", () => {
+    const apacheHeader = `/* Copyright 2020 Foo Corp. All Rights Reserved.
+   Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. */
+module.exports = 1;`;
+
+    it("includes a header the package notice does not carry, with the full license text", async () => {
+      const { result } = await runScriptWith("ok", mapWithDepAContent(apacheHeader));
+
+      expect(result.status, result.stderr).toBe(0);
+      const notices = await fs.readFile(path.join(vendorDir, "THIRD_PARTY_NOTICES.txt"), "utf-8");
+      expect(notices).toContain("File-level license notices inside bundled modules");
+      expect(notices).toContain("Copyright 2020 Foo Corp.");
+      expect(notices).toContain("--- Apache-2.0 (full text; applies to the file-level notices above) ---");
+      expect(notices).toContain("TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION");
+      expect(runGuard().status).toBe(0);
+    });
+
+    it("does not repeat a header whose holder and license the notice already carries", async () => {
+      const { result } = await runScriptWith(
+        "ok",
+        mapWithDepAContent("/* Copyright (c) dep-a authors. MIT */\nmodule.exports = 1;"),
+      );
+
+      expect(result.status, result.stderr).toBe(0);
+      const notices = await fs.readFile(path.join(vendorDir, "THIRD_PARTY_NOTICES.txt"), "utf-8");
+      expect(notices).not.toContain("File-level license notices");
+    });
+
+    it.each([
+      [
+        "a holder and no license terms",
+        "/* Copyright 2020 Foo Corp. All Rights Reserved. */\nmodule.exports = 1;",
+        "names a holder the component's notice does not carry and no license terms",
+      ],
+      [
+        "neither a holder nor a license",
+        "/*! preserved banner */\nmodule.exports = 1;",
+        "names neither a holder nor a license",
+      ],
+      [
+        "a license nothing reviewed carries the text of",
+        "/* Copyright 2020 Foo Corp.\n   Redistribution and use in source and binary forms, with or without modification, are permitted. */\nmodule.exports = 1;",
+        "scripts/third-party/spdx/ has no reviewed text for",
+      ],
+    ])("fails on a header with %s", async (_label, content, expected) => {
+      const { result } = await runScriptWith("ok", mapWithDepAContent(content));
+
+      await expectRefused(result, [expected]);
+    });
+
+    it("accepts a header covered by a reviewed allowlist entry that gives a reason", async () => {
+      await writeInventory({
+        headerAllowlist: [
+          { component: "dep-a", contains: "preserved banner", reason: "reviewed: generated banner" },
+        ],
+      });
+
+      const { result } = await runScriptWith(
+        "ok",
+        mapWithDepAContent("/*! preserved banner */\nmodule.exports = 1;"),
+      );
+
+      expect(result.status, result.stderr).toBe(0);
+    });
+
+    it("rejects an allowlist entry without a reason", async () => {
+      await writeInventory({
+        headerAllowlist: [{ component: "dep-a", contains: "preserved banner", reason: " " }],
+      });
+
+      const { result } = await runScriptWith(
+        "ok",
+        mapWithDepAContent("/*! preserved banner */\nmodule.exports = 1;"),
+      );
+
+      await expectRefused(result, ["names neither a holder nor a license"]);
+    });
+
+    it("fails when a bundled module's source content is unavailable", async () => {
+      const { result } = await runScriptWith("ok", {
+        PREPARE_TEST_MAP: JSON.stringify({
+          ...defaultMap,
+          sourcesContent: undefined,
+        }),
+      });
+
+      await expectRefused(result, ["has no source content"]);
     });
   });
 });

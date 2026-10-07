@@ -261,9 +261,13 @@ describe("check-vendored-converter (prepack guard)", () => {
   });
 
   it("passes when the notices cover the embedded font", async () => {
+    const ofl = await fs.readFile(
+      path.join(scriptsSource, "third-party", "assets", "roboto-OFL-1.1.txt"),
+      "utf-8",
+    );
     await writeBundle(
       robotoBundle,
-      `${notices}\nRoboto fonts (pdfmake's built-in virtual file system)\n`,
+      `${notices}\nRoboto fonts (pdfmake's built-in virtual file system)\n${ofl}`,
     );
 
     const result = runGuard();
@@ -364,6 +368,90 @@ describe("check-vendored-converter (prepack guard)", () => {
       expect(vendored).toContain(expected);
     }
     expect(vendored).not.toMatch(/License: UNKNOWN/);
+  });
+
+  it("fails when the converter's own LICENSE is only whitespace", async () => {
+    await fs.writeFile(path.join(vendorDir, "LICENSE"), "  \n\n");
+
+    const result = runGuard();
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("LICENSE is empty");
+  });
+
+  it("fails when the notices carry an embedded asset's heading but not its license text", async () => {
+    await writeBundle(
+      robotoBundle,
+      `${notices}\nRoboto fonts (pdfmake's built-in virtual file system)\nLicense: OFL-1.1\n`,
+    );
+
+    const result = runGuard();
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("does not carry the license text of embedded Roboto");
+  });
+
+  it("fails when a reviewed asset license text is blank", async () => {
+    await fs.writeFile(
+      path.join(pkg, "scripts", "third-party", "assets", "roboto-OFL-1.1.txt"),
+      "\n  \n",
+    );
+    await writeBundle(
+      robotoBundle,
+      `${notices}\nRoboto fonts (pdfmake's built-in virtual file system)\n`,
+    );
+
+    const result = runGuard();
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("embedded Roboto is missing or blank");
+  });
+
+  it("fails when a file-level notice's full license text is missing from the notices", async () => {
+    await writeNotices(notices, [component]);
+    await writeMetadata({
+      extraLicenses: [{ component, license: "Apache-2.0", file: "spdx/Apache-2.0.txt" }],
+    });
+
+    const result = runGuard();
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("lacks the full Apache-2.0 text for the file-level notices of dep-a@1.0.0");
+  });
+
+  it("passes when the file-level notice's full license text is in the notices", async () => {
+    const apache = await fs.readFile(
+      path.join(scriptsSource, "third-party", "spdx", "Apache-2.0.txt"),
+      "utf-8",
+    );
+    const text = `${notices}\n--- Apache-2.0 (full text; applies to the file-level notices above) ---\n${apache}`;
+    await writeNotices(text, [component]);
+    await writeMetadata({
+      noticesSha256: createHash("sha256").update(text).digest("hex"),
+      extraLicenses: [{ component, license: "Apache-2.0", file: "spdx/Apache-2.0.txt" }],
+    });
+
+    const result = runGuard();
+
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it("carries Google's brotli decoder attribution and the Apache-2.0 text in the repository's notices", async () => {
+    const vendored = await fs.readFile(
+      path.join(import.meta.dirname, "..", "..", "vendor", "ksef-pdf-generator", "THIRD_PARTY_NOTICES.txt"),
+      "utf-8",
+    );
+    const brotli = vendored.slice(vendored.indexOf("### brotli@"), vendored.indexOf("### browserify-zlib@"));
+
+    expect(brotli).toContain("Copyright 2013 Google Inc. All Rights Reserved.");
+    expect(brotli).toContain("Licensed under the Apache License, Version 2.0");
+    expect(brotli).toContain("--- Apache-2.0 (full text");
+    expect(brotli).toContain("TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION");
+    expect(brotli).toContain("Copyright (c) Devon Govett");
+    // The other file-level notices found beyond brotli's decoder.
+    for (const expected of ["Thomas Robinson", "Copyright Joyent, Inc.", "Mathias Bynens"]) {
+      expect(vendored).toContain(expected);
+    }
   });
 
   it("accepts the repository's own vendored converter", () => {
