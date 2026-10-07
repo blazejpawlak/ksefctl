@@ -42,10 +42,46 @@ const converterAllowedScripts = ["esbuild", "fsevents"];
 const logFileName = "ksefctl-prepare.log";
 const failureTailLines = 80;
 
+// The converter must be installed as a local project with its dev dependencies,
+// whatever mode the outer install runs in. During `npm install --global` npm
+// exports npm_config_global=true (plus prefix and location) to lifecycle
+// scripts, which would make the nested `npm install` put the converter into the
+// global prefix instead, and production installs omit the devDependencies the
+// build needs. The README's `--allow-scripts=...` is exported too, and npm 11
+// rejects it in a project-scoped install (EALLOWSCRIPTS); dropping it also lets
+// the converter's own .npmrc allowlist govern rather than a blanket
+// --dangerously-allow-all-scripts. Registry, auth, proxy and cache settings are
+// left inherited.
+const inheritedInstallModeVariables = new Set([
+  "npm_config_global",
+  "npm_config_location",
+  "npm_config_prefix",
+  "npm_config_local_prefix",
+  "npm_config_omit",
+  "npm_config_only",
+  "npm_config_production",
+  "npm_config_dev",
+  "npm_config_allow_scripts",
+  "npm_config_dangerously_allow_all_scripts",
+]);
+const localInstallEnv = () => {
+  const env = {};
+  for (const [name, value] of Object.entries(process.env)) {
+    if (!inheritedInstallModeVariables.has(name.toLowerCase().replaceAll("-", "_"))) {
+      env[name] = value;
+    }
+  }
+  if (env.NODE_ENV === "production") {
+    delete env.NODE_ENV;
+  }
+  return env;
+};
+const localInstallFlags = ["--global=false", "--location=project", "--include=dev"];
+
 const runLogged = async (command, args, cwd, logPath) => {
   const result = spawnSync(command, args, {
     cwd,
-    env: process.env,
+    env: localInstallEnv(),
     encoding: "utf-8",
     maxBuffer: 64 * 1024 * 1024,
   });
@@ -64,10 +100,20 @@ const runLogged = async (command, args, cwd, logPath) => {
 };
 
 // npm versions without allowScripts warn about an unknown "allow-scripts"
-// config key, so only write it where npm understands it.
-const supportsAllowScripts = (cwd) =>
-  spawnSync("npm", ["install-scripts", "ls"], { cwd, stdio: "ignore" })
-    .status === 0;
+// config key, so only write it where npm understands it. Only an unknown
+// command means "unsupported": any other probe failure is left for the install
+// step to report rather than silently dropping the allowlist.
+const supportsAllowScripts = (cwd) => {
+  const probe = spawnSync(
+    "npm",
+    ["install-scripts", "ls", ...localInstallFlags],
+    { cwd, env: localInstallEnv(), encoding: "utf-8" },
+  );
+  return !(
+    probe.status !== 0 &&
+    /unknown command/i.test(`${probe.stdout ?? ""}${probe.stderr ?? ""}`)
+  );
+};
 
 const writeAllowScriptsConfig = async (packageRoot) => {
   const npmrcPath = path.join(packageRoot, ".npmrc");
@@ -107,11 +153,22 @@ const run = async () => {
     await writeAllowScriptsConfig(packageRoot);
     await runLogged(
       "npm",
-      ["install", "--package-lock=false", "--no-fund", "--no-audit"],
+      [
+        "install",
+        "--package-lock=false",
+        "--no-fund",
+        "--no-audit",
+        ...localInstallFlags,
+      ],
       packageRoot,
       logPath,
     );
-    await runLogged("npm", ["run", "build"], packageRoot, logPath);
+    await runLogged(
+      "npm",
+      ["run", "build", "--global=false", "--location=project"],
+      packageRoot,
+      logPath,
+    );
     await copyArtifacts(packageRoot);
   } catch (error) {
     await printLogTail(logPath);
