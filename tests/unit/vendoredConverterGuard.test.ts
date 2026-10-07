@@ -8,7 +8,18 @@ import path from "node:path";
 const scriptsSource = path.join(import.meta.dirname, "..", "..", "scripts");
 const pinnedCommit = "f59fc4e2addcf42c74b1674e7c1d534085bc3a84";
 const bundle = "export const built = true;\n";
-const notices = "THIRD-PARTY NOTICES\n";
+const component = "### dep-a@1.0.0";
+const notices = `THIRD-PARTY NOTICES
+
+${component}
+License: MIT
+
+--- LICENSE ---
+License text of dep-a
+`;
+// A one-pixel PNG: far below any size threshold, and not a font or profile.
+const tinyPng =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 const robotoBundle = `export const font = "${Buffer.concat([
   Buffer.from([0, 1, 0, 0]),
   Buffer.from(
@@ -31,6 +42,7 @@ describe("check-vendored-converter (prepack guard)", () => {
         commit: pinnedCommit,
         bundleSha256: createHash("sha256").update(bundle).digest("hex"),
         noticesSha256: createHash("sha256").update(notices).digest("hex"),
+        components: [component],
         ...overrides,
       }),
     );
@@ -98,8 +110,8 @@ describe("check-vendored-converter (prepack guard)", () => {
       );
     }
     await fs.cp(
-      path.join(scriptsSource, "third-party-assets"),
-      path.join(pkg, "scripts", "third-party-assets"),
+      path.join(scriptsSource, "third-party"),
+      path.join(pkg, "scripts", "third-party"),
       { recursive: true },
     );
     await fs.writeFile(
@@ -249,7 +261,10 @@ describe("check-vendored-converter (prepack guard)", () => {
   });
 
   it("passes when the notices cover the embedded font", async () => {
-    await writeBundle(robotoBundle, "Roboto fonts (pdfmake's built-in virtual file system)\n");
+    await writeBundle(
+      robotoBundle,
+      `${notices}\nRoboto fonts (pdfmake's built-in virtual file system)\n`,
+    );
 
     const result = runGuard();
 
@@ -272,6 +287,83 @@ describe("check-vendored-converter (prepack guard)", () => {
     const result = runGuard();
 
     expect(result.status, result.stderr).toBe(0);
+  });
+
+  const writeNotices = async (text: string, components = [component]) => {
+    await fs.writeFile(path.join(vendorDir, "THIRD_PARTY_NOTICES.txt"), text);
+    await writeMetadata({
+      noticesSha256: createHash("sha256").update(text).digest("hex"),
+      components,
+    });
+  };
+
+  it("fails when a recorded component's license section is empty", async () => {
+    await writeNotices(`THIRD-PARTY NOTICES\n\n${component}\nLicense: MIT\n\n--- LICENSE ---\n   \n`);
+
+    const result = runGuard();
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("no license text for dep-a@1.0.0");
+  });
+
+  it("fails when a component the build recorded has no section in the notices", async () => {
+    await writeNotices(notices, [component, "### unlisted-package@3.0.0"]);
+
+    const result = runGuard();
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("no section for unlisted-package@3.0.0");
+  });
+
+  it("fails when the metadata records no bundled components", async () => {
+    await writeNotices(notices, []);
+
+    const result = runGuard();
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("records no bundled components");
+  });
+
+  it.each([
+    ["a data: URL image", `export const a = "data:image/png;base64,${tinyPng}";\n`, "embedded image"],
+    ["a bare base64 image", `export const a = "${tinyPng}";\n`, "embedded image"],
+    [
+      "an opaque data: URL",
+      "export const a = \"data:application/octet-stream;base64,AAECAwQFBgcICQ==\";\n",
+      "data: URL of media type application/octet-stream",
+    ],
+  ])("fails when the bundle embeds %s no notice covers", async (_label, content, expected) => {
+    await writeBundle(content);
+
+    const result = runGuard();
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(expected);
+  });
+
+  it("names the holders of code pre-bundled inside pdfmake in the repository's notices", async () => {
+    const vendored = await fs.readFile(
+      path.join(import.meta.dirname, "..", "..", "vendor", "ksef-pdf-generator", "THIRD_PARTY_NOTICES.txt"),
+      "utf-8",
+    );
+
+    for (const expected of [
+      "### core-js@",
+      "Denis Pushkarev",
+      "### file-saver@",
+      "Eli Grey",
+      "### svg-to-pdfkit@",
+      "SVG-to-PDFKit contributors",
+      "### pdfkit@",
+      "Devon Govett",
+      "### pdfmake@",
+      "bpampuch",
+      "Roboto Project Authors",
+      "International Color Consortium",
+    ]) {
+      expect(vendored).toContain(expected);
+    }
+    expect(vendored).not.toMatch(/License: UNKNOWN/);
   });
 
   it("accepts the repository's own vendored converter", () => {

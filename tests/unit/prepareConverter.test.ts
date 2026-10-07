@@ -10,9 +10,17 @@ const scriptNames = [
   "prepare-ksef-pdf-generator.mjs",
   "vendored-converter.mjs",
   "third-party-notices.mjs",
+  "check-vendored-converter.mjs",
 ];
 const pinnedCommit = "f59fc4e2addcf42c74b1674e7c1d534085bc3a84";
 const bundleSource = "export const built = true;\n";
+// What the converter build's hidden source map lists: its own source and one
+// installed package. Paths are relative to the converter's dist directory.
+const defaultMap = {
+  version: 3,
+  sources: ["../src/index.ts", "../node_modules/dep-a/index.js"],
+  mappings: "",
+};
 
 // A base64 blob that looks like an embedded TrueType font carrying `name`
 // strings, the way the bundle embeds Roboto.
@@ -53,6 +61,7 @@ if (args[0] === "run") {
     "dist/ksef-fe-invoice-converter.js",
     process.env.PREPARE_TEST_BUNDLE ?? "export const built = true;\\n",
   );
+  fs.writeFileSync("dist/ksef-fe-invoice-converter.js.map", process.env.PREPARE_TEST_MAP);
 }
 `;
 
@@ -138,8 +147,8 @@ describe("prepare-ksef-pdf-generator", () => {
       );
     }
     await fs.cp(
-      path.join(scriptsSource, "third-party-assets"),
-      path.join(root, "pkg", "scripts", "third-party-assets"),
+      path.join(scriptsSource, "third-party"),
+      path.join(root, "pkg", "scripts", "third-party"),
       { recursive: true },
     );
     await writeInstalledLock(pinnedCommit);
@@ -156,7 +165,6 @@ describe("prepare-ksef-pdf-generator", () => {
       JSON.stringify({
         name: "@akmf/ksef-fe-invoice-converter",
         version: "1.2.3",
-        dependencies: { "dep-a": "^1.0.0" },
       }),
     );
     await fs.writeFile(path.join(converterDir, "LICENSE"), "MIT License\n");
@@ -173,6 +181,14 @@ describe("prepare-ksef-pdf-generator", () => {
     ...scriptArgs: string[]
   ) => runScriptWith(probe, {}, ...scriptArgs);
 
+  // The prepack guard against the same package directory.
+  const runGuard = () =>
+    spawnSync(
+      process.execPath,
+      [path.join(root, "pkg", "scripts", "check-vendored-converter.mjs")],
+      { encoding: "utf-8" },
+    );
+
   const runScriptWith = async (
     probe: string,
     extraEnv: Record<string, string>,
@@ -187,6 +203,7 @@ describe("prepare-ksef-pdf-generator", () => {
           PATH: `${path.join(root, "bin")}${path.delimiter}${process.env.PATH ?? ""}`,
           PREPARE_TEST_RECORD: recordPath,
           PREPARE_TEST_PROBE: probe,
+          PREPARE_TEST_MAP: JSON.stringify(defaultMap),
           ...extraEnv,
           ...outerEnv,
         },
@@ -226,6 +243,8 @@ describe("prepare-ksef-pdf-generator", () => {
     expect(calls[2]?.args).toEqual(
       expect.arrayContaining(["--global=false", "--location=project"]),
     );
+    // A hidden source map inventories the bundle without changing its bytes.
+    expect(calls[2]?.args.slice(-3)).toEqual(["--", "--sourcemap", "hidden"]);
     expect(
       await fs.readFile(path.join(vendorDir, "ksef-fe-invoice-converter.js"), "utf-8"),
     ).toBe("export const built = true;\n");
@@ -243,7 +262,9 @@ describe("prepare-ksef-pdf-generator", () => {
       noticesSha256: createHash("sha256")
         .update(await fs.readFile(path.join(vendorDir, "THIRD_PARTY_NOTICES.txt")))
         .digest("hex"),
+      components: ["### dep-a@1.0.0"],
     });
+    expect(runGuard().status).toBe(0);
     const notices = await fs.readFile(
       path.join(vendorDir, "THIRD_PARTY_NOTICES.txt"),
       "utf-8",
@@ -402,47 +423,202 @@ describe("prepare-ksef-pdf-generator", () => {
     await expect(fs.access(vendorDir)).rejects.toThrow();
   });
 
-  it("fails when a bundled dependency publishes no license file", async () => {
-    await addDependency("no-license-dep", "2.0.0", "MIT", null);
-    await fs.writeFile(
-      path.join(converterDir, "package.json"),
-      JSON.stringify({
-        name: "@akmf/ksef-fe-invoice-converter",
-        version: "1.2.3",
-        dependencies: { "dep-a": "^1.0.0", "no-license-dep": "^2.0.0" },
-      }),
+  // Every negative case below must stop the build and leave nothing the
+  // prepack guard would accept.
+  const expectRefused = async (
+    result: { status: number | null; stderr: string },
+    expected: string[],
+  ) => {
+    expect(result.status).toBe(1);
+    for (const text of expected) {
+      expect(result.stderr).toContain(text);
+    }
+    await expect(fs.access(vendorDir)).rejects.toThrow();
+    const guard = runGuard();
+    expect(guard.status).toBe(1);
+    expect(guard.stderr).toContain("Refusing to pack");
+  };
+
+  const mapWith = (...sources: string[]) => ({
+    PREPARE_TEST_MAP: JSON.stringify({ ...defaultMap, sources }),
+  });
+
+  it("fails when the bundle contains a module no package or component accounts for", async () => {
+    const { result } = await runScriptWith(
+      "ok",
+      mapWith("../src/index.ts", "../node_modules/unlisted-package/index.js"),
     );
+
+    await expectRefused(result, ["unlisted-package is bundled but has no non-empty license text"]);
+  });
+
+  it("fails when a bundled module lies outside the converter", async () => {
+    const { result } = await runScriptWith("ok", mapWith("../../elsewhere/index.js"));
+
+    await expectRefused(result, ["cannot attribute bundled module"]);
+  });
+
+  it("fails when a bundled package's license file is empty or blank", async () => {
+    await fs.writeFile(path.join(converterDir, "node_modules", "dep-a", "LICENSE"), "  \n\n");
 
     const { result } = await runScript("ok");
 
+    await expectRefused(result, ["dep-a is bundled but has no non-empty license text"]);
+  });
+
+  it("fails when the converter build produced no source map", async () => {
+    const { result } = await runScriptWith("ok", { PREPARE_TEST_MAP: "" });
+
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain("no-license-dep@2.0.0");
-    expect(result.stderr).toContain("publishes no license file");
+    expect(result.stderr).toMatch(/source map|JSON/i);
     await expect(fs.access(vendorDir)).rejects.toThrow();
   });
 
-  it("accepts a reviewed license-file exception and says so in the notices", async () => {
-    await addDependency("fontkit", "2.0.4", "MIT", null, {
-      author: "Devon Govett <devongovett@gmail.com>",
-    });
-    await fs.writeFile(
-      path.join(converterDir, "package.json"),
-      JSON.stringify({
-        name: "@akmf/ksef-fe-invoice-converter",
-        version: "1.2.3",
-        dependencies: { fontkit: "^2.0.4" },
-      }),
-    );
+  it("uses the reviewed inventory for a bundled package installed without a license file", async () => {
+    await addDependency("fontkit", "2.0.4", "MIT", null);
 
-    const { result } = await runScript("ok");
+    const { result } = await runScriptWith(
+      "ok",
+      mapWith("../src/index.ts", "../node_modules/fontkit/dist/main.cjs"),
+    );
 
     expect(result.status, result.stderr).toBe(0);
-    const notices = await fs.readFile(
-      path.join(vendorDir, "THIRD_PARTY_NOTICES.txt"),
-      "utf-8",
-    );
-    expect(notices).toContain("fontkit@2.0.4");
-    expect(notices).toContain("none published");
-    expect(notices).toContain("Copyright (c) Devon Govett <devongovett@gmail.com>");
+    const notices = await fs.readFile(path.join(vendorDir, "THIRD_PARTY_NOTICES.txt"), "utf-8");
+    expect(notices).toContain("### fontkit@2.0.4");
+    expect(notices).toContain("reviewed copy of https://github.com/foliojs/fontkit");
+    expect(notices).toContain("Copyright (c) Devon Govett");
+    expect(runGuard().status).toBe(0);
+  });
+
+  describe("code pre-bundled inside a dependency", () => {
+    // dep-b ships a webpack-style prebuilt bundle with its own source map, like
+    // pdfmake's build/pdfmake.js.
+    const prebuiltMap = (sources: string[], contents?: string[]) => ({
+      version: 3,
+      sources: sources.map((source) => `webpack://dep-b/${source}`),
+      sourcesContent: contents ?? sources.map(() => "module.exports = 1;"),
+      mappings: "",
+    });
+
+    const installPrebuilt = async (map: object) => {
+      await addDependency("dep-b", "2.0.0", "MIT", "License text of dep-b\n");
+      const dir = path.join(converterDir, "node_modules", "dep-b");
+      await fs.mkdir(path.join(dir, "build"), { recursive: true });
+      await fs.writeFile(path.join(dir, "build", "dep-b.js"), "// prebuilt\n");
+      await fs.writeFile(path.join(dir, "build", "dep-b.js.map"), JSON.stringify(map));
+      return dir;
+    };
+
+    const prebuiltRun = (extra: Record<string, string> = {}) =>
+      runScriptWith("ok", {
+        ...mapWith("../src/index.ts", "../node_modules/dep-b/build/dep-b.js"),
+        ...extra,
+      });
+
+    it("expands the prebuilt input's own source map into its components", async () => {
+      const dir = await installPrebuilt(
+        prebuiltMap([
+          "./src/main.js",
+          "./src/3rd-party/svg-to-pdfkit/source.js",
+          "./node_modules/core-js/internals/a.js",
+          "./node_modules/file-saver/dist/FileSaver.min.js",
+          "./node_modules/dep-a/index.js",
+          "webpack/runtime/global",
+        ]),
+      );
+      const svgDir = path.join(dir, "src", "3rd-party", "svg-to-pdfkit");
+      await fs.mkdir(svgDir, { recursive: true });
+      await fs.writeFile(
+        path.join(svgDir, "LICENSE"),
+        "Copyright (c) 2019 SVG-to-PDFKit contributors\n",
+      );
+
+      const { result } = await prebuiltRun();
+
+      expect(result.status, result.stderr).toBe(0);
+      const notices = await fs.readFile(path.join(vendorDir, "THIRD_PARTY_NOTICES.txt"), "utf-8");
+      for (const expected of [
+        "### core-js@3.49.0 (as reviewed)",
+        "Denis Pushkarev",
+        "### file-saver@",
+        "Eli Grey",
+        "### svg-to-pdfkit@vendored in dep-b",
+        "SVG-to-PDFKit contributors",
+        "### webpack@",
+        "### dep-b@2.0.0",
+        "License text of dep-b",
+        "Included: inside dep-b's prebuilt dep-b.js",
+      ]) {
+        expect(notices).toContain(expected);
+      }
+      expect(runGuard().status).toBe(0);
+    });
+
+    it("fails when the prebuilt input holds a module that cannot be attributed", async () => {
+      await installPrebuilt(prebuiltMap(["./weird/file.js"]));
+
+      const { result } = await prebuiltRun();
+
+      await expectRefused(result, [
+        "cannot attribute module webpack://dep-b/./weird/file.js",
+      ]);
+    });
+
+    it("fails when a component inside the prebuilt input is not in the reviewed inventory", async () => {
+      await installPrebuilt(prebuiltMap(["./node_modules/not-reviewed-polyfill/index.js"]));
+
+      const { result } = await prebuiltRun();
+
+      await expectRefused(result, [
+        "not-reviewed-polyfill is bundled but has no non-empty license text",
+      ]);
+    });
+  });
+
+  describe("embedded data assets", () => {
+    // A one-pixel PNG: far below any size threshold, and not a font or profile.
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+    it.each([
+      ["a data: URL image", `export const logo = "data:image/png;base64,${tinyPng}";\n`, "embedded image"],
+      ["a bare base64 image", `export const logo = "${tinyPng}";\n`, "embedded image"],
+      [
+        "a data: URL font",
+        `export const f = "data:font/ttf;base64,${(/"([^"]+)"/.exec(fakeFontBundle("Other Font")))?.[1] ?? ""}";\n`,
+        "embedded font",
+      ],
+      [
+        "an opaque data: URL",
+        "export const blob = \"data:application/octet-stream;base64,AAECAwQFBgcICQ==\";\n",
+        "data: URL of media type application/octet-stream",
+      ],
+    ])("fails when the bundle embeds %s nothing covers", async (_label, bundle, expected) => {
+      const { result } = await runScriptWith("ok", { PREPARE_TEST_BUNDLE: bundle });
+
+      await expectRefused(result, [expected, "not covered"]);
+    });
+
+    it("accepts a reviewed font embedded as a data: URL and gives it a notice", async () => {
+      const blob = (/"([^"]+)"/.exec(fakeFontBundle(
+        "Copyright 2011 The Roboto Project Authors SIL Open Font License, Version 1.1.",
+      )))?.[1];
+      const bundle = `export const f = "data:font/ttf;base64,${blob ?? ""}";\n`;
+
+      const { result } = await runScriptWith("ok", { PREPARE_TEST_BUNDLE: bundle });
+
+      expect(result.status, result.stderr).toBe(0);
+      const notices = await fs.readFile(path.join(vendorDir, "THIRD_PARTY_NOTICES.txt"), "utf-8");
+      expect(notices).toContain("Roboto fonts");
+    });
+
+    it("ignores text data: URLs and empty data: URL prefixes", async () => {
+      const bundle =
+        "export const a = \"data:application/pdf;base64,\";\nexport const b = \"data:text/plain,hello\";\n";
+
+      const { result } = await runScriptWith("ok", { PREPARE_TEST_BUNDLE: bundle });
+
+      expect(result.status, result.stderr).toBe(0);
+    });
   });
 });

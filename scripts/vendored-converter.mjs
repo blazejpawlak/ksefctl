@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { detectEmbeddedAssets, noticesFileName } from "./third-party-notices.mjs";
+import {
+  detectEmbeddedAssets,
+  findNoticesProblems,
+  noticesFileName,
+} from "./third-party-notices.mjs";
 
 // The PDF converter (`@akmf/ksef-fe-invoice-converter`) is a commit-pinned git
 // devDependency. It is built at development time and its self-contained ESM
@@ -158,6 +162,15 @@ export const findVendorProblems = async (packageRoot) => {
     problems.push(
       `${noticesFileName} does not match the checksum recorded in metadata.json`,
     );
+  }
+  // Every component the build recorded as bundled needs a section with license
+  // text; an empty record would let an inventory failure pass unnoticed.
+  if (metadata && notices !== null) {
+    if (!Array.isArray(metadata.components) || metadata.components.length === 0) {
+      problems.push("metadata.json records no bundled components");
+    } else {
+      problems.push(...findNoticesProblems(notices, metadata.components));
+    }
   }
   // The notices must cover every font/profile the bundle embeds.
   if (bundle && notices !== null) {

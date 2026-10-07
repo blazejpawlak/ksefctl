@@ -1,0 +1,314 @@
+{
+  "comment": "Reviewed license texts for components the converter bundle contains but that are not installed (or are installed without a license file). version is the one the text was taken from, not necessarily the one inlined.",
+  "components": {
+    "@parcel/node-resolver-core": {
+      "version": "3.7.4",
+      "license": "MIT",
+      "source": "https://github.com/parcel-bundler/parcel",
+      "file": "@parcel__node-resolver-core.txt"
+    },
+    "assert": {
+      "version": "2.1.0",
+      "license": "MIT",
+      "source": "browserify/commonjs-assert",
+      "file": "assert.txt"
+    },
+    "available-typed-arrays": {
+      "version": "1.0.7",
+      "license": "MIT",
+      "source": "https://github.com/inspect-js/available-typed-arrays",
+      "file": "available-typed-arrays.txt"
+    },
+    "brotli": {
+      "version": "1.3.3",
+      "license": "MIT",
+      "source": "https://github.com/devongovett/brotli.js",
+      "file": "brotli.txt",
+      "note": "upstream publishes no license file; standard MIT text with the holder from package.json"
+    },
+    "buffer": {
+      "version": "6.0.3",
+      "license": "MIT",
+      "source": "https://github.com/feross/buffer",
+      "file": "buffer.txt"
+    },
+    "call-bind": {
+      "version": "1.0.9",
+      "license": "MIT",
+      "source": "https://github.com/ljharb/call-bind",
+      "file": "call-bind.txt"
+    },
+    "call-bind-apply-helpers": {
+      "version": "1.0.2",
+      "license": "MIT",
+      "source": "https://github.com/ljharb/call-bind-apply-helpers",
+      "file": "call-bind-apply-helpers.txt"
+    },
+    "call-bound": {
+      "version": "1.0.4",
+      "license": "MIT",
+      "source": "https://github.com/ljharb/call-bound",
+      "file": "call-bound.txt"
+    },
+    "core-js": {
+      "version": "3.49.0",
+      "license": "MIT",
+      "source": "https://github.com/zloirock/core-js",
+      "file": "core-js.txt"
+    },
+    "define-data-property": {
+      "version": "1.1.4",
+      "license": "MIT",
+      "source": "https://github.com/ljharb/define-data-property",
+      "file": "define-data-property.txt"
+    },
+    "define-properties": {
+      "version": "1.2.1",
+      "license": "MIT",
+      "source": "https://github.com/ljharb/define-properties",
+      "file": "define-properties.txt"
+    },
+    "dfa": {
+      "version": "1.2.0",
+      "license": "MIT",
+      "source": "https://github.com/devongovett/dfa",
+      "file": "dfa.txt",
+      "note": "upstream publishes no license file; standard MIT text with the holder from package.json"
+    },
+    "dunder-proto": {
+      "version": "1.0.1",
+      "license": "MIT",
+      "source": "https://github.com/es-shims/dunder-proto",
+      "file": "dunder-proto.txt"
+    },
+    "es-define-property": {
+      "version": "1.0.1",
+      "license": "MIT",
+      "source": "https://github.com/ljharb/es-define-property",
+      "file": "es-define-property.txt"
+    },
+    "es-object-atoms": {
+      "version": "1.1.2",
+      "license": "MIT",
+      "source": "https://github.com/ljharb/es-object-atoms",
+      "file": "es-object-atoms.txt"
+    },
+    "events": {
+      "version": "3.3.0",
+      "license": "MIT",
+      "source": "https://github.com/Gozala/events",
+      "file": "events.txt"
+    },
+    "expose-loader": {
+      "version": "5.0.1",
+      "license": "MIT",
+      "source": "webpack-contrib/expose-loader",
+      "file": "expose-loader.txt"
+    },
+    "file-saver": {
+      "version": "2.0.5",
+      "license": "MIT",
+      "source": "https://github.com/eligrey/FileSaver.js",
+      "file": "file-saver.txt"
+    },
+    "fontkit": {
+      "version": "2.0.4",
+      "license": "MIT",
+      "source": "https://github.com/foliojs/fontkit",
+      "file": "fontkit.txt",
+      "note": "upstream publishes no license file; standard MIT text with the holder from package.json"
+    },
+    "for-each": {
+      "version": "0.3.5",
+      "license": "MIT",
+      "source": "https://github.com/Raynos/for-each",
+      "file": "for-each.txt"
+    },
+    "generator-function": {
+      "version": "2.0.1",
+      "license": "MIT",
+      "source": "https://github.com/TimothyGu/generator-function",
+      "file": "generator-function.txt"
+    },
+    "get-intrinsic": {
+      "version": "1.3.0",
+      "license": "MIT",
+      "source": "https://github.com/ljharb/get-intrinsic",
+      "file": "get-intrinsic.txt"
+    },
+    "get-proto": {
+      "version": "1.0.1",
+      "license": "MIT",
+      "source": "https://github.com/ljharb/get-proto",
+      "file": "get-proto.txt"
+    },
+    "gopd": {
+      "version": "1.2.0",
+      "license": "MIT",
+      "source": "https://github.com/ljharb/gopd",
+      "file": "gopd.txt"
+    },
+    "has-property-descriptors": {
+      "version": "1.0.2",
+      "license": "MIT",
+      "source": "https://github.com/inspect-js/has-property-descriptors",
+      "file": "has-property-descriptors.txt"
+    },
+    "has-symbols": {
+      "version": "1.1.0",
+      "license": "MIT",
+      "source": "https://github.com/inspect-js/has-symbols",
+      "file": "has-symbols.txt"
+    },
+    "has-tostringtag": {
+      "version": "1.0.2",
+      "license": "MIT",
+      "source": "https://github.com/inspect-js/has-tostringtag",
+      "file": "has-tostringtag.txt"
+    },
+    "ieee754": {
+      "version": "1.2.1",
+      "license": "BSD-3-Clause",
+      "source": "https://github.com/feross/ieee754",
+      "file": "ieee754.txt"
+    },
+    "inherits": {
+      "version": "2.0.4",
+      "license": "ISC",
+      "source": "https://github.com/isaacs/inherits",
+      "file": "inherits.txt"
+    },
+    "is-arguments": {
+      "version": "1.2.0",
+      "license": "MIT",
+      "source": "https://github.com/inspect-js/is-arguments",
+      "file": "is-arguments.txt"
+    },
+    "is-callable": {
+      "version": "1.2.7",
+      "license": "MIT",
+      "source": "https://github.com/inspect-js/is-callable",
+      "file": "is-callable.txt"
+    },
+    "is-generator-function": {
+      "version": "1.1.2",
+      "license": "MIT",
+      "source": "https://github.com/inspect-js/is-generator-function",
+      "file": "is-generator-function.txt"
+    },
+    "is-nan": {
+      "version": "1.3.2",
+      "license": "MIT",
+      "source": "https://github.com/es-shims/is-nan",
+      "file": "is-nan.txt"
+    },
+    "is-regex": {
+      "version": "1.2.1",
+      "license": "MIT",
+      "source": "https://github.com/inspect-js/is-regex",
+      "file": "is-regex.txt"
+    },
+    "is-typed-array": {
+      "version": "1.1.15",
+      "license": "MIT",
+      "source": "https://github.com/inspect-js/is-typed-array",
+      "file": "is-typed-array.txt"
+    },
+    "math-intrinsics": {
+      "version": "1.1.0",
+      "license": "MIT",
+      "source": "https://github.com/es-shims/math-intrinsics",
+      "file": "math-intrinsics.txt"
+    },
+    "object-is": {
+      "version": "1.1.6",
+      "license": "MIT",
+      "source": "https://github.com/es-shims/object-is",
+      "file": "object-is.txt"
+    },
+    "object-keys": {
+      "version": "1.1.1",
+      "license": "MIT",
+      "source": "https://github.com/ljharb/object-keys",
+      "file": "object-keys.txt"
+    },
+    "object.assign": {
+      "version": "4.1.7",
+      "license": "MIT",
+      "source": "https://github.com/ljharb/object.assign",
+      "file": "object.assign.txt"
+    },
+    "possible-typed-array-names": {
+      "version": "1.1.0",
+      "license": "MIT",
+      "source": "https://github.com/ljharb/possible-typed-array-names",
+      "file": "possible-typed-array-names.txt"
+    },
+    "process": {
+      "version": "0.11.10",
+      "license": "MIT",
+      "source": "https://github.com/shtylman/node-process",
+      "file": "process.txt"
+    },
+    "readable-stream": {
+      "version": "4.7.0",
+      "license": "MIT",
+      "source": "https://github.com/nodejs/readable-stream",
+      "file": "readable-stream.txt"
+    },
+    "safe-buffer": {
+      "version": "5.2.1",
+      "license": "MIT",
+      "source": "https://github.com/feross/safe-buffer",
+      "file": "safe-buffer.txt"
+    },
+    "safe-regex-test": {
+      "version": "1.1.0",
+      "license": "MIT",
+      "source": "https://github.com/ljharb/safe-regex-test",
+      "file": "safe-regex-test.txt"
+    },
+    "set-function-length": {
+      "version": "1.2.2",
+      "license": "MIT",
+      "source": "https://github.com/ljharb/set-function-length",
+      "file": "set-function-length.txt"
+    },
+    "stream-browserify": {
+      "version": "3.0.0",
+      "license": "MIT",
+      "source": "https://github.com/browserify/stream-browserify",
+      "file": "stream-browserify.txt"
+    },
+    "string_decoder": {
+      "version": "1.3.0",
+      "license": "MIT",
+      "source": "https://github.com/nodejs/string_decoder",
+      "file": "string_decoder.txt"
+    },
+    "util": {
+      "version": "0.12.5",
+      "license": "MIT",
+      "source": "https://github.com/browserify/node-util",
+      "file": "util.txt"
+    },
+    "util-deprecate": {
+      "version": "1.0.2",
+      "license": "MIT",
+      "source": "https://github.com/TooTallNate/util-deprecate",
+      "file": "util-deprecate.txt"
+    },
+    "webpack": {
+      "version": "5.111.1",
+      "license": "MIT",
+      "source": "https://github.com/webpack/webpack",
+      "file": "webpack.txt"
+    },
+    "which-typed-array": {
+      "version": "1.1.24",
+      "license": "MIT",
+      "source": "https://github.com/inspect-js/which-typed-array",
+      "file": "which-typed-array.txt"
+    }
+  }
+}

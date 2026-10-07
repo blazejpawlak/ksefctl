@@ -130,10 +130,18 @@ const writeAllowScriptsConfig = async (packageRoot) => {
 // run never leaves a half-written vendor directory that looks complete.
 const vendorArtifacts = async (version, pin) => {
   const bundle = await fs.readFile(path.join(converterRoot, "dist", bundleFileName));
+  // The hidden map lists every module the bundle contains; it is not shipped.
+  const mapPath = path.join(converterRoot, "dist", `${bundleFileName}.map`);
+  try {
+    await fs.access(mapPath);
+  } catch {
+    throw new Error(`The converter build produced no source map at ${mapPath}`);
+  }
   const notices = await buildNotices({
     converterRoot,
     converter: { name: converterPackageName, version, ...pin },
     bundle,
+    mapPath,
   });
   const target = vendorDir(packageRoot);
   const staging = `${target}.staging-${process.pid}`;
@@ -156,6 +164,7 @@ const vendorArtifacts = async (version, pin) => {
           commit: pin.commit,
           bundleSha256: sha256(bundle),
           noticesSha256: sha256(notices.text),
+          components: notices.components,
         },
         null,
         2,
@@ -220,7 +229,17 @@ const run = async () => {
     );
     await runLogged(
       "npm",
-      ["run", "build", "--global=false", "--location=project"],
+      // A hidden source map (no sourceMappingURL comment, identical bundle
+      // bytes) is the inventory of the code the bundle contains.
+      [
+        "run",
+        "build",
+        "--global=false",
+        "--location=project",
+        "--",
+        "--sourcemap",
+        "hidden",
+      ],
       converterRoot,
       logPath,
     );
