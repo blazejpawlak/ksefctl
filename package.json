@@ -42,7 +42,7 @@
     "test:integration": "NODE_OPTIONS= NODE_NO_WARNINGS=1 vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
-    "@akmf/ksef-fe-invoice-converter": "github:CIRFMF/ksef-pdf-generator#fb12569a439a391a8e0c705e7dc331079be8c942",
+    "@akmf/ksef-fe-invoice-converter": "github:CIRFMF/ksef-pdf-generator#f59fc4e2addcf42c74b1674e7c1d534085bc3a84",
     "adm-zip": "^0.6.1",
     "cli-spinners": "^3.4.0",
     "commander": "^15.0.0",
