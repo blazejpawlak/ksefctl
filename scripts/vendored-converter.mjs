@@ -6,6 +6,7 @@ import {
   detectEmbeddedAssets,
   findNoticesProblems,
   noticesFileName,
+  noticesGeneratorVersion,
 } from "./third-party-notices.mjs";
 
 // The PDF converter (`@akmf/ksef-fe-invoice-converter`) is a commit-pinned git
@@ -161,6 +162,11 @@ export const findVendorProblems = async (packageRoot) => {
   if (metadata && bundle && metadata.bundleSha256 !== sha256(bundle)) {
     problems.push(
       "vendored bundle does not match the checksum recorded in metadata.json",
+    );
+  }
+  if (metadata && metadata.noticesGeneratorVersion !== noticesGeneratorVersion) {
+    problems.push(
+      `the vendored notices were produced by an older notices generator (metadata has version ${String(metadata.noticesGeneratorVersion)}, current is ${noticesGeneratorVersion}); rebuild with node scripts/prepare-ksef-pdf-generator.mjs --force`,
     );
   }
   if (metadata && notices !== null && metadata.noticesSha256 !== sha256(notices)) {

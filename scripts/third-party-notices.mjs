@@ -19,6 +19,11 @@ import { fileURLToPath } from "node:url";
 
 export const noticesFileName = "THIRD_PARTY_NOTICES.txt";
 
+// Bump when the generator's output or checks change, so vendor directories
+// produced by an older generator are rebuilt by prepare and rejected by the
+// prepack guard even though the converter pin did not change.
+export const noticesGeneratorVersion = 1;
+
 const thirdPartyDir = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
   "third-party",
@@ -141,59 +146,179 @@ const shippedMarkers = {
 };
 
 // File-level license headers: comments that carry a copyright line, a license
-// tag, an SPDX identifier, license wording or a /*! banner.
-const commentPattern = /\/\*[\s\S]*?\*\/|(?:^[ \t]*\/\/.*(?:\n|$))+/gm;
-const copyrightPattern = /Copyright\s*(?:\(c\)|©)?\s*(?:\d{4}|[A-Z])/;
-const isLicenseHeader = (comment) =>
-  copyrightPattern.test(comment) ||
-  /@license|@preserve|SPDX-License-Identifier|Licensed under|Permission is hereby granted/.test(
+// tag, an SPDX identifier, license wording or a /*! banner. Comments come from
+// a real JavaScript tokenizer, so string literals that merely look like
+// comments are not headers; the triggers are case-insensitive.
+const isLicenseHeader = (comment, banner) =>
+  banner ||
+  /copyright\s*(?:\(c\)|©)/i.test(comment) ||
+  /copyright\s+\d{4}/i.test(comment) ||
+  /Copyright\s+[A-Z]/.test(comment) ||
+  /@license|@preserve|spdx-license-identifier|licensed under|permission is hereby granted/i.test(
     comment,
-  ) ||
-  comment.startsWith("/*!");
+  );
 
-const extractHeaders = (content) => {
+// The comments of a module, with consecutive line comments joined, taken from
+// the TypeScript compiler's parser (already a devDependency; it reads plain
+// JavaScript, TypeScript and decorator syntax alike). Every comment is leading
+// trivia of exactly one token, so walking the tokens finds each comment once
+// and never mistakes the inside of a string, template or regular expression for
+// one. JSON has no comments.
+const extractComments = async (content, name) => {
+  if (/\.json$/i.test(name)) return [];
+  const { default: ts } = await import("typescript");
+  const kind = /\.tsx$/i.test(name)
+    ? ts.ScriptKind.TSX
+    : /\.(?:[cm]?ts)$/i.test(name)
+      ? ts.ScriptKind.TS
+      : ts.ScriptKind.JS;
+  const sourceFile = ts.createSourceFile(name, content, ts.ScriptTarget.Latest, false, kind);
+  const seen = new Set();
+  const comments = [];
+  const visit = (node) => {
+    if (node.kind >= ts.SyntaxKind.FirstJSDocNode && node.kind <= ts.SyntaxKind.LastJSDocNode) {
+      return;
+    }
+    const children = node.getChildren(sourceFile);
+    if (children.length > 0) {
+      for (const child of children) visit(child);
+      return;
+    }
+    for (const range of ts.getLeadingCommentRanges(content, node.pos) ?? []) {
+      if (seen.has(range.pos)) continue;
+      seen.add(range.pos);
+      const block = range.kind === ts.SyntaxKind.MultiLineCommentTrivia;
+      comments.push({
+        block,
+        text: content.slice(range.pos + 2, block ? range.end - 2 : range.end),
+        start: range.pos,
+        end: range.end,
+      });
+    }
+  };
+  visit(sourceFile);
+  comments.sort((a, b) => a.start - b.start);
+  const groups = [];
+  for (const comment of comments) {
+    const previous = groups[groups.length - 1];
+    if (
+      !comment.block &&
+      previous &&
+      !previous.block &&
+      /^[ \t]*\r?\n[ \t]*$/.test(content.slice(previous.end, comment.start))
+    ) {
+      previous.text += `\n${comment.text}`;
+      previous.end = comment.end;
+    } else {
+      groups.push({ ...comment });
+    }
+  }
+  return groups;
+};
+
+const extractHeaders = async (content, name) => {
+  const comments = await extractComments(content, name);
   const headers = [];
-  for (const match of content.matchAll(commentPattern)) {
-    if (!isLicenseHeader(match[0])) continue;
-    const text = match[0]
+  for (const comment of comments) {
+    const banner = comment.block && comment.text.startsWith("!");
+    const text = comment.text
       .split("\n")
-      .map((line) =>
-        line
-          .replace(/^\s*(?:\/\*+!?|\*(?!\/)|\/\/+)[ \t]?/, "")
-          .replace(/\s*\*+\/\s*$/, ""),
-      )
+      .map((line) => (comment.block ? line.replace(/^\s*\*(?!\/)[ \t]?/, "") : line.replace(/^ /, "")))
       .join("\n")
+      .replace(/^!/, "")
       .trim();
-    if (text) headers.push(text);
+    if (text && isLicenseHeader(text, banner)) headers.push(text);
   }
   return headers;
 };
 
-const detectLicenseId = (text) => {
-  const spdx = text.match(/SPDX-License-Identifier:\s*([A-Za-z0-9.+-]+)/);
-  if (spdx) return spdx[1];
-  if (/Apache License,?\s+Version 2\.0/i.test(text)) return "Apache-2.0";
-  const tag = text.match(/@license[ \t]+([A-Za-z0-9][A-Za-z0-9.+-]*)/);
-  if (tag && !/^copyright$/i.test(tag[1])) return tag[1].replace(/[.,;]+$/, "");
+// Parses a complete SPDX license expression (AND, OR, WITH, parentheses) and
+// returns every license and exception id in it; throws on anything it cannot
+// parse, so an expression is never reduced to its first token.
+const parseSpdxExpression = (expression) => {
+  const tokens = expression.match(/\(|\)|[A-Za-z0-9.+:-]+/g) ?? [];
+  if (tokens.join("") !== expression.replace(/\s+/g, "")) {
+    throw new Error(`unsupported characters in license expression "${expression}"`);
+  }
+  const ids = new Set();
+  let position = 0;
+  const operators = new Set(["AND", "OR", "WITH"]);
+  const identifier = () => {
+    const token = tokens[position];
+    if (token === undefined || token === "(" || token === ")" || operators.has(token)) {
+      throw new Error(`expected a license id in "${expression}"`);
+    }
+    position += 1;
+    return token;
+  };
+  const primary = () => {
+    if (tokens[position] === "(") {
+      position += 1;
+      or();
+      if (tokens[position] !== ")") throw new Error(`unbalanced parentheses in "${expression}"`);
+      position += 1;
+      return;
+    }
+    ids.add(identifier());
+    if (tokens[position] === "WITH") {
+      position += 1;
+      ids.add(identifier());
+    }
+  };
+  const and = () => {
+    primary();
+    while (tokens[position] === "AND") {
+      position += 1;
+      primary();
+    }
+  };
+  const or = () => {
+    and();
+    while (tokens[position] === "OR") {
+      position += 1;
+      and();
+    }
+  };
+  if (tokens.length === 0) throw new Error("empty license expression");
+  or();
+  if (position !== tokens.length) throw new Error(`trailing tokens in "${expression}"`);
+  return [...ids].sort();
+};
+
+// The license(s) a header invokes: { expression, ids }, { error } for an
+// expression that cannot be parsed, or null when it names none.
+const detectLicenses = (text) => {
+  const tagged =
+    text.match(/SPDX-License-Identifier:[ \t]*([^\n]*)/i)?.[1] ??
+    text.match(/@license[ \t]+([^\n,;]*?)(?=\s@|[,;]|\n|$)/i)?.[1];
+  if (tagged !== undefined && tagged.trim() !== "" && !/^copyright$/i.test(tagged.trim())) {
+    try {
+      return { expression: tagged.trim(), ids: parseSpdxExpression(tagged.trim()) };
+    } catch (error) {
+      return { error: error.message };
+    }
+  }
+  const single = (id) => ({ expression: id, ids: [id] });
+  if (/Apache License,?\s+Version 2\.0/i.test(text)) return single("Apache-2.0");
   const named = text.match(/\b(MIT|ISC|0BSD|BSD-2-Clause|BSD-3-Clause)\b/);
-  if (named) return named[1];
-  if (/Permission is hereby granted, free of charge/i.test(text)) return "MIT";
-  if (/Permission to use, copy, modify, and\/or distribute/i.test(text)) return "ISC";
-  if (/Redistribution and use in source and binary forms/i.test(text)) return "BSD";
+  if (named) return single(named[1]);
+  if (/Permission is hereby granted, free of charge/i.test(text)) return single("MIT");
+  if (/Permission to use, copy, modify, and\/or distribute/i.test(text)) return single("ISC");
+  if (/Redistribution and use in source and binary forms/i.test(text)) return single("BSD");
   return null;
 };
 
 const headerHolders = (text) => {
   const raw = [];
   for (const match of text.matchAll(
-    /Copyright\s*(?:\(c\)|©)?\s*(?:\d{4}(?:\s*[-–,]\s*(?:\d{4}|present))*\s*,?\s*)*([^\n]*)/g,
+    /Copyright\s*(?:\(c\)|©)?\s*(?:\d{4}(?:\s*[-–,]\s*(?:\d{4}|present))*\s*,?\s*)*([^\n]*)/gi,
   )) {
     raw.push(match[1]);
   }
   for (const match of text.matchAll(/\(c\)\s*(?:\d{4}(?:\s*[-–,]\s*\d{4})*\s*)?([^\n]*)/gi)) {
     raw.push(match[1]);
   }
-  for (const match of text.matchAll(/@(?:author|copyright)[ \t]+([^\n]*)/g)) {
+  for (const match of text.matchAll(/@(?:author|copyright)[ \t]+([^\n]*)/gi)) {
     raw.push(match[1]);
   }
   return raw;
@@ -287,13 +412,14 @@ export const inventoryComponents = async ({ converterRoot, mapPath }) => {
   };
 
   // Records the license headers found in a bundled module's source.
-  const inspect = (name, content, label) => {
+  const inspect = async (name, content, label) => {
     if (content === null || content === undefined) {
       problems.push(`${label} has no source content, so its license headers cannot be checked`);
       return;
     }
+    const headers = await extractHeaders(content, label);
     const component = components.get(name);
-    for (const header of extractHeaders(content)) {
+    for (const header of headers) {
       component.headers.set(collapse(header), header);
     }
   };
@@ -312,7 +438,7 @@ export const inventoryComponents = async ({ converterRoot, mapPath }) => {
           dir: await installedDir(owner.name, hostDir, converterRoot),
           origin,
         });
-        inspect(owner.name, contents[index], label);
+        await inspect(owner.name, contents[index], label);
       } else if (/^\.\/src\/3rd-party\/svg-to-pdfkit(\.js|\/|$)/.test(source)) {
         // pdfmake vendors SVG-to-PDFKit and ships its license next to it.
         const dir = path.join(hostDir, "src", "3rd-party", "svg-to-pdfkit");
@@ -323,13 +449,13 @@ export const inventoryComponents = async ({ converterRoot, mapPath }) => {
           version: `vendored in ${hostName}`,
           license: "MIT",
         });
-        inspect("svg-to-pdfkit", contents[index], label);
+        await inspect("svg-to-pdfkit", contents[index], label);
       } else if (source.startsWith("./src/")) {
         await add(hostName, { dir: hostDir, origin });
-        inspect(hostName, contents[index], label);
+        await inspect(hostName, contents[index], label);
       } else if (source.startsWith("webpack/")) {
         await add("webpack", { dir: null, origin });
-        inspect("webpack", contents[index], label);
+        await inspect("webpack", contents[index], label);
       } else if ((contents[index] ?? "").trim() === "") {
         // An empty module contributes no code.
       } else {
@@ -378,24 +504,29 @@ export const inventoryComponents = async ({ converterRoot, mapPath }) => {
               origin: `listed by the reviewed entry for ${owner.name}/${inPackage}`,
             });
           }
-          inspect(owner.name, content, rawSource);
+          await inspect(owner.name, content, rawSource);
         } else {
           problems.push(
             `${rawSource} is itself a prebuilt bundle but its source map ${path.basename(file)}.map is missing and no reviewed prebuiltInputs entry in scripts/third-party/inventory.json matches its sha256 (${digest ?? "file unreadable"})`,
           );
         }
       } else {
-        inspect(owner.name, content, rawSource);
+        await inspect(owner.name, content, rawSource);
       }
     }
   }
 
   // Headers whose holder or license the component's own notice does not carry
-  // must appear in the notices, with the full text of any license not shipped.
+  // must appear in the notices, with the full text of every license not shipped
+  // there. Everything is visited in sorted order so the output does not depend
+  // on the order the maps list their modules.
   for (const component of components.values()) {
     const shipped = component.texts.map(({ text }) => text).join("\n");
     const shippedWords = ` ${words(shipped).join(" ")} `;
-    for (const header of component.headers.values()) {
+    const headers = [...component.headers.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([, header]) => header);
+    for (const header of headers) {
       if (isCovered(header, component, inventory)) continue;
       const where = `${component.name}: license header "${collapse(header).slice(0, 90)}"`;
       const reviewed = inventory.headerLicenses.find(
@@ -416,40 +547,45 @@ export const inventoryComponents = async ({ converterRoot, mapPath }) => {
         component.extraLicenses.set(reviewed.file, { license: reviewed.license, text });
         continue;
       }
-      const license = detectLicenseId(header);
+      const detected = detectLicenses(header);
+      if (detected?.error) {
+        problems.push(`${where} has a license expression this build cannot parse (${detected.error})`);
+        continue;
+      }
+      const ids = detected?.ids ?? [];
       const keys = holderKeys(header);
-      if (!license && keys.length === 0) {
+      if (ids.length === 0 && keys.length === 0) {
         problems.push(
           `${where} names neither a holder nor a license; review it and add a headerLicenses or headerAllowlist entry with a reason`,
         );
         continue;
       }
       const holdersCovered = keys.every((key) => shippedWords.includes(` ${key} `));
-      const licenseShipped = !license || (shippedMarkers[license]?.test(shipped) ?? false);
-      if (holdersCovered && licenseShipped) {
-        if (!license) {
+      const missing = ids.filter((id) => !(shippedMarkers[id]?.test(shipped) ?? false));
+      if (holdersCovered && missing.length === 0) {
+        if (ids.length === 0) {
           problems.push(
             `${where} names a holder but no license terms; review it and add a headerLicenses or headerAllowlist entry with a reason`,
           );
         }
         continue;
       }
-      if (!license) {
+      if (ids.length === 0) {
         problems.push(
           `${where} names a holder the component's notice does not carry and no license terms; review it and add a headerLicenses or headerAllowlist entry with a reason`,
         );
         continue;
       }
-      component.fileNotices.push({ text: header, license });
-      if (!licenseShipped) {
-        const file = spdxFile(license);
+      component.fileNotices.push({ text: header, license: detected.expression });
+      for (const id of missing) {
+        const file = spdxFile(id);
         const text = file ? await readThirdPartyText(file) : null;
         if (text === null) {
           problems.push(
-            `${where} invokes license ${license}, which the component's notice does not carry and scripts/third-party/spdx/ has no reviewed text for`,
+            `${where} invokes license ${id}, which the component's notice does not carry and scripts/third-party/spdx/ has no reviewed text for`,
           );
         } else {
-          component.extraLicenses.set(file, { license, text });
+          component.extraLicenses.set(file, { license: id, text });
         }
       }
     }
@@ -604,10 +740,17 @@ not necessarily the one inlined.`,
     }
     if (component.fileNotices.length > 0) {
       lines.push("", "--- File-level license notices inside bundled modules ---");
-      for (const { text } of component.fileNotices) {
+      const byText = [...component.fileNotices].sort((a, b) => {
+        const [x, y] = [collapse(a.text), collapse(b.text)];
+        return x < y ? -1 : x > y ? 1 : 0;
+      });
+      for (const { text } of byText) {
         lines.push(text.trimEnd(), "");
       }
-      for (const { license, text } of component.extraLicenses.values()) {
+      const byFile = [...component.extraLicenses.entries()].sort(([a], [b]) =>
+        a < b ? -1 : a > b ? 1 : 0,
+      );
+      for (const [, { license, text }] of byFile) {
         lines.push(
           `--- ${license} (full text; applies to the file-level notices above) ---`,
           text.trimEnd(),

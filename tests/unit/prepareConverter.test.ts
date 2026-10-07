@@ -153,6 +153,12 @@ describe("prepare-ksef-pdf-generator", () => {
       { recursive: true },
     );
     await writeInstalledLock(pinnedCommit);
+    // The notices generator tokenizes bundled sources with the repo's TypeScript.
+    await fs.symlink(
+      path.join(import.meta.dirname, "..", "..", "node_modules", "typescript"),
+      path.join(root, "pkg", "node_modules", "typescript"),
+      "dir",
+    );
     await fs.writeFile(
       path.join(root, "pkg", "package.json"),
       JSON.stringify({
@@ -265,6 +271,7 @@ describe("prepare-ksef-pdf-generator", () => {
         .digest("hex"),
       components: ["### dep-a@1.0.0"],
       extraLicenses: [],
+      noticesGeneratorVersion: 1,
     });
     expect(runGuard().status).toBe(0);
     const notices = await fs.readFile(
@@ -765,6 +772,11 @@ module.exports = 1;`;
     });
 
     it("does not repeat a header whose holder and license the notice already carries", async () => {
+      await fs.writeFile(
+        path.join(converterDir, "node_modules", "dep-a", "LICENSE"),
+        "MIT License\n\nCopyright (c) dep-a authors\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software.\n",
+      );
+
       const { result } = await runScriptWith(
         "ok",
         mapWithDepAContent("/* Copyright (c) dep-a authors. MIT */\nmodule.exports = 1;"),
@@ -834,6 +846,188 @@ module.exports = 1;`;
       });
 
       await expectRefused(result, ["has no source content"]);
+    });
+  });
+
+  describe("vendor directories from an older notices generator", () => {
+    const rewriteMetadata = async (edit: (metadata: Record<string, unknown>) => void) => {
+      const file = path.join(vendorDir, "metadata.json");
+      const metadata = JSON.parse(await fs.readFile(file, "utf-8")) as Record<string, unknown>;
+      edit(metadata);
+      await fs.writeFile(file, JSON.stringify(metadata));
+    };
+
+    it.each([
+      ["no generator version, as before round 5", (m: Record<string, unknown>) => {
+        delete m.noticesGeneratorVersion;
+      }],
+      ["the oldest metadata shape", (m: Record<string, unknown>) => {
+        delete m.noticesGeneratorVersion;
+        delete m.extraLicenses;
+        delete m.components;
+      }],
+      ["a lower generator version", (m: Record<string, unknown>) => {
+        m.noticesGeneratorVersion = 0;
+      }],
+    ])("rejects it in prepack and rebuilds it in prepare: %s", async (_label, edit) => {
+      expect((await runScript("ok")).result.status).toBe(0);
+      await rewriteMetadata(edit);
+      const guard = runGuard();
+      expect(guard.status).toBe(1);
+      expect(guard.stderr).toContain("older notices generator");
+      await fs.rm(recordPath);
+
+      const { result, calls } = await runScript("ok");
+
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).not.toContain("up to date");
+      expect(calls.map((call) => call.args[0])).toContain("run");
+      expect(runGuard().status).toBe(0);
+    });
+  });
+
+  describe("SPDX expressions in license headers", () => {
+    const withExpression = (expression: string) =>
+      `/* Copyright (c) dep-a authors.\n   SPDX-License-Identifier: ${expression} */\nmodule.exports = 1;`;
+    const mitLicense = "MIT License\n\nCopyright (c) dep-a authors\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software.\n";
+
+    beforeEach(async () => {
+      await fs.writeFile(path.join(converterDir, "node_modules", "dep-a", "LICENSE"), mitLicense);
+    });
+
+    it.each(["MIT AND Apache-2.0", "(MIT OR Apache-2.0)", "MIT AND (Apache-2.0 OR MIT)"])(
+      "ships every license in %s that the package notice does not carry",
+      async (expression) => {
+        const { result } = await runScriptWith("ok", mapWithDepAContent(withExpression(expression)));
+
+        expect(result.status, result.stderr).toBe(0);
+        const notices = await fs.readFile(path.join(vendorDir, "THIRD_PARTY_NOTICES.txt"), "utf-8");
+        expect(notices).toContain(`SPDX-License-Identifier: ${expression}`);
+        expect(notices).toContain("--- Apache-2.0 (full text; applies to the file-level notices above) ---");
+        expect(runGuard().status).toBe(0);
+      },
+    );
+
+    it("does not repeat an expression the package notice already carries", async () => {
+      const { result } = await runScriptWith("ok", mapWithDepAContent(withExpression("MIT")));
+
+      expect(result.status, result.stderr).toBe(0);
+      const notices = await fs.readFile(path.join(vendorDir, "THIRD_PARTY_NOTICES.txt"), "utf-8");
+      expect(notices).not.toContain("File-level license notices");
+    });
+
+    it.each([
+      ["a license nothing reviewed has text for", "MIT AND LicenseRef-vendor", "invokes license LicenseRef-vendor"],
+      ["an exception nothing reviewed has text for", "Apache-2.0 WITH LLVM-exception", "invokes license LLVM-exception"],
+      ["a dangling operator", "MIT AND", "cannot parse"],
+      ["unbalanced parentheses", "(MIT OR Apache-2.0", "cannot parse"],
+      ["an unsupported character", "MIT & Apache-2.0", "cannot parse"],
+    ])("fails on %s", async (_label, expression, expected) => {
+      const { result } = await runScriptWith("ok", mapWithDepAContent(withExpression(expression)));
+
+      await expectRefused(result, [expected]);
+    });
+  });
+
+  describe("comment extraction", () => {
+    it("ignores comment-like text inside string, template and regular expression literals", async () => {
+      const content = [
+        "const banner = \"/*! documentation example */\";",
+        "const text = `// Copyright 2020 Foo Corp. Licensed under the Apache License, Version 2.0`;",
+        "const re = /\\/\\* Copyright 2020 Foo Corp. \\*\\//;",
+        "module.exports = 1;",
+      ].join("\n");
+
+      const { result } = await runScriptWith("ok", mapWithDepAContent(content));
+
+      expect(result.status, result.stderr).toBe(0);
+      const notices = await fs.readFile(path.join(vendorDir, "THIRD_PARTY_NOTICES.txt"), "utf-8");
+      expect(notices).not.toContain("File-level license notices");
+      expect(notices).not.toContain("Foo Corp");
+    });
+
+    it.each([
+      [
+        "lower-case",
+        "/* copyright 2013 Google Inc. All Rights Reserved.\n   licensed under the Apache License, Version 2.0 (the \"License\"); */\nmodule.exports = 1;",
+      ],
+      [
+        "upper-case",
+        "/* COPYRIGHT 2013 GOOGLE INC. ALL RIGHTS RESERVED.\n   LICENSED UNDER THE APACHE LICENSE, VERSION 2.0 (THE \"LICENSE\"); */\nmodule.exports = 1;",
+      ],
+      [
+        "spdx in lower case",
+        "// Copyright 2013 Google Inc.\n// spdx-license-identifier: Apache-2.0\nmodule.exports = 1;",
+      ],
+    ])("recognises %s header triggers", async (_label, content) => {
+      const { result } = await runScriptWith("ok", mapWithDepAContent(content));
+
+      expect(result.status, result.stderr).toBe(0);
+      const notices = await fs.readFile(path.join(vendorDir, "THIRD_PARTY_NOTICES.txt"), "utf-8");
+      expect(notices).toMatch(/google inc/i);
+      expect(notices).toContain("--- Apache-2.0 (full text");
+      expect(runGuard().status).toBe(0);
+    });
+
+    it("reads TypeScript sources and joins consecutive line comments", async () => {
+      const content =
+        "// Copyright 2020 Foo Corp.\n// Licensed under the Apache License, Version 2.0\nexport const value: number = 1;\n";
+
+      const { result } = await runScriptWith("ok", mapWithDepAContent(content));
+
+      expect(result.status, result.stderr).toBe(0);
+      const notices = await fs.readFile(path.join(vendorDir, "THIRD_PARTY_NOTICES.txt"), "utf-8");
+      expect(notices).toContain("Copyright 2020 Foo Corp.\nLicensed under the Apache License");
+    });
+
+    it("does not treat prose that merely mentions copyright information as a header", async () => {
+      const { result } = await runScriptWith(
+        "ok",
+        mapWithDepAContent("/** The font's copyright information */\nexport const x = 1;\n"),
+      );
+
+      expect(result.status, result.stderr).toBe(0);
+    });
+  });
+
+  describe("deterministic notices", () => {
+    it("is byte-identical when the prebuilt input's modules are listed in reverse order", async () => {
+      await addDependency("dep-b", "2.0.0", "MIT", "License text of dep-b\n");
+      const dir = path.join(converterDir, "node_modules", "dep-b");
+      await fs.mkdir(path.join(dir, "build"), { recursive: true });
+      await fs.writeFile(path.join(dir, "build", "dep-b.js"), "// prebuilt\n");
+      const modules = [
+        ["./node_modules/dep-a/zeta.js", "/* Copyright 2021 Zeta Corp. Licensed under the Apache License, Version 2.0 */"],
+        ["./node_modules/dep-a/alpha.js", "/* Copyright 2020 Alpha Corp. Licensed under the Apache License, Version 2.0 */"],
+        ["./node_modules/dep-a/mid.js", "// Copyright 2022 Mid Corp.\n// SPDX-License-Identifier: Apache-2.0\n"],
+        ["./node_modules/dep-a/index.js", "module.exports = 1;"],
+      ];
+      const writeMap = (order: string[][]) =>
+        fs.writeFile(
+          path.join(dir, "build", "dep-b.js.map"),
+          JSON.stringify({
+            version: 3,
+            sources: order.map(([source]) => `webpack://dep-b/${source}`),
+            sourcesContent: order.map(([, content]) => content),
+            mappings: "",
+          }),
+        );
+      const env = mapWith("../src/index.ts", "../node_modules/dep-b/build/dep-b.js");
+      const order = modules;
+      await writeMap(order);
+
+      expect((await runScriptWith("ok", env)).result.status).toBe(0);
+      const forward = await fs.readFile(path.join(vendorDir, "THIRD_PARTY_NOTICES.txt"), "utf-8");
+      await writeMap([...order].reverse());
+      expect((await runScriptWith("ok", env, "--force")).result.status).toBe(0);
+      const reversed = await fs.readFile(path.join(vendorDir, "THIRD_PARTY_NOTICES.txt"), "utf-8");
+
+      expect(forward).toContain("Alpha Corp");
+      // Sorted by header text (here: by year), whatever order the map lists them.
+      expect(forward.indexOf("Alpha Corp")).toBeLessThan(forward.indexOf("Zeta Corp"));
+      expect(forward.indexOf("Zeta Corp")).toBeLessThan(forward.indexOf("Mid Corp"));
+      expect(reversed).toBe(forward);
+      expect(runGuard().status).toBe(0);
     });
   });
 });

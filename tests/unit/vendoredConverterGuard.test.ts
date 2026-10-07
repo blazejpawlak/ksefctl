@@ -43,6 +43,8 @@ describe("check-vendored-converter (prepack guard)", () => {
         bundleSha256: createHash("sha256").update(bundle).digest("hex"),
         noticesSha256: createHash("sha256").update(notices).digest("hex"),
         components: [component],
+        extraLicenses: [],
+        noticesGeneratorVersion: 1,
         ...overrides,
       }),
     );
@@ -452,6 +454,19 @@ describe("check-vendored-converter (prepack guard)", () => {
     for (const expected of ["Thomas Robinson", "Copyright Joyent, Inc.", "Mathias Bynens"]) {
       expect(vendored).toContain(expected);
     }
+  });
+
+  it.each([
+    ["no generator version", undefined],
+    ["an older generator version", 0],
+    ["a newer generator version", 99],
+  ])("fails when the metadata records %s", async (_label, version) => {
+    await writeMetadata({ noticesGeneratorVersion: version });
+
+    const result = runGuard();
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("older notices generator");
   });
 
   it("accepts the repository's own vendored converter", () => {

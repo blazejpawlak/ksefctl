@@ -14,7 +14,7 @@ import {
   sha256,
   vendorDir,
 } from "./vendored-converter.mjs";
-import { buildNotices } from "./third-party-notices.mjs";
+import { buildNotices, noticesGeneratorVersion } from "./third-party-notices.mjs";
 
 // Development-time step, run from the `prepare` lifecycle (local `npm install`
 // and `npm ci`, and before pack/publish; npm does not run it when a consumer
@@ -166,6 +166,7 @@ const vendorArtifacts = async (version, pin) => {
           commit: pin.commit,
           bundleSha256: sha256(bundle),
           noticesSha256: sha256(notices.text),
+          noticesGeneratorVersion,
           components: notices.components,
           extraLicenses: notices.extraLicenses,
         },
