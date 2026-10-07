@@ -1,6 +1,7 @@
-import type { Database } from "sql.js";
+import type { Database, SqlJsStatic } from "sql.js";
 import lockfile from "proper-lockfile";
 import initSqlJs from "sql.js";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -139,6 +140,57 @@ const migrateLegacyTables = (db: Database): void => {
   }
 };
 
+const loadSqlJs = () =>
+  initSqlJs({
+    locateFile: (file: string) => path.join(resolveSqlWasmPath(), file),
+  });
+
+const isNotFound = (error: unknown): boolean =>
+  (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+
+/**
+ * Loads the database at `filePath`. A missing file is an empty database; any
+ * other read error propagates so callers never mistake a failed read for "no
+ * data".
+ */
+const openExisting = async (
+  SQL: SqlJsStatic,
+  filePath: string,
+): Promise<Database> => {
+  try {
+    return new SQL.Database(await fs.readFile(filePath));
+  } catch (error) {
+    if (!isNotFound(error)) throw error;
+    return new SQL.Database();
+  }
+};
+
+/**
+ * Replaces `filePath` with `data` atomically: the bytes go to a temp file in
+ * the same directory (same filesystem, so `rename` is atomic), are fsynced,
+ * and only then renamed over the target. A crash at any point leaves either
+ * the previous file or the complete new one, never a truncated database.
+ */
+const replaceFileAtomically = async (
+  filePath: string,
+  data: Uint8Array,
+): Promise<void> => {
+  const tempPath = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try {
+    const handle = await fs.open(tempPath, "wx", 0o600);
+    try {
+      await handle.writeFile(data);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await fs.rename(tempPath, filePath);
+  } catch (error) {
+    await fs.unlink(tempPath).catch(() => undefined);
+    throw error;
+  }
+};
+
 export class SqliteStore {
   private dbPath: string;
 
@@ -146,6 +198,10 @@ export class SqliteStore {
     this.dbPath = dbPath;
   }
 
+  /**
+   * Opens the database for reading and writing, then persists it atomically.
+   * Serialized across processes by a lockfile.
+   */
   async withDb<T>(fn: (db: Database) => T | Promise<T>): Promise<T> {
     await ensureDir(path.dirname(this.dbPath));
     await fs.open(this.dbPath, "a").then((handle) => handle.close());
@@ -154,27 +210,46 @@ export class SqliteStore {
       realpath: false,
     });
     try {
-      const SQL = await initSqlJs({
-        locateFile: (file: string) => path.join(resolveSqlWasmPath(), file),
-      });
-      let db: Database;
+      const SQL = await loadSqlJs();
+      // The file exists (touched above), so any read error is real: starting
+      // from an empty DB would atomically replace the stored state with it.
+      const db = await openExisting(SQL, this.dbPath);
       try {
-        const fileBuffer = await fs.readFile(this.dbPath);
-        db = new SQL.Database(fileBuffer);
-      } catch {
-        db = new SQL.Database();
-      }
-      db.exec(schemaSql);
-      migrateLegacyTables(db);
+        db.exec(schemaSql);
+        migrateLegacyTables(db);
 
-      const result = await fn(db);
-      const data = db.export();
-      await fs.writeFile(this.dbPath, data, { mode: 0o600 });
-      await fs.chmod(this.dbPath, 0o600);
-      db.close();
-      return result;
+        const result = await fn(db);
+        await replaceFileAtomically(this.dbPath, db.export());
+        return result;
+      } finally {
+        db.close();
+      }
     } finally {
       await release();
+    }
+  }
+
+  /**
+   * Opens the database strictly for reading. Never creates the file or its
+   * directory, never takes the lock, and never writes anything back, so it
+   * works on read-only storage and leaves the canonical state byte-for-byte
+   * untouched. A missing database behaves like an empty one. Schema creation
+   * and legacy migrations run in memory only, so older databases stay
+   * queryable.
+   *
+   * No lock is needed: `withDb` replaces the file atomically via `rename`, so
+   * a lock-free read always sees one complete snapshot, and skipping the lock
+   * keeps reads from contending with a running watch service.
+   */
+  async readDb<T>(fn: (db: Database) => T | Promise<T>): Promise<T> {
+    const SQL = await loadSqlJs();
+    const db = await openExisting(SQL, this.dbPath);
+    try {
+      db.exec(schemaSql);
+      migrateLegacyTables(db);
+      return await fn(db);
+    } finally {
+      db.close();
     }
   }
 }

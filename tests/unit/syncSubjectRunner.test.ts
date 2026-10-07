@@ -1059,3 +1059,108 @@ describe("syncSubjectType - saved cursor without initialSyncFrom", () => {
     expect(t.requestedFrom(0)).toBe(defaultStartIso);
   });
 });
+
+describe("syncSubjectType - export-only runs never write the canonical DB", () => {
+  const nip = "1234567890";
+  const priorCursor = "2026-04-01T00:00:00.000Z";
+  const canWriteDespiteMode = process.getuid?.() === 0;
+  const tmpDirs: string[] = [];
+
+  const setup = async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-10T12:00:00Z"));
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-runner-"));
+    tmpDirs.push(tmpDir);
+    const dbPath = path.join(tmpDir, "db", "state.sqlite");
+    const store = new SqliteStore(dbPath);
+    const exportInvoices = vi
+      .fn()
+      .mockRejectedValue(
+        new Error(
+          "HTTP 400 POST /invoices/exports: zakres filtrowania wykracza poza dostepny zakres danych",
+        ),
+      );
+    const client = { exportInvoices } as unknown as KsefClient;
+    const config = createConfig(path.join(tmpDir, "storage"), {
+      minExportWindowSeconds: 300,
+      initialSyncFrom: "2026-02-01T00:00:00Z",
+    });
+    const deps = createRunnerDeps(client, config, createLogger(), store);
+    const runExport = (forceRedownloadAll = false) =>
+      syncSubjectType(
+        deps,
+        "ACCESS",
+        nip,
+        "Subject1",
+        undefined,
+        false,
+        forceRedownloadAll,
+        false,
+        path.join(tmpDir, "scratch"),
+      );
+    return { tmpDir, dbPath, store, exportInvoices, runExport };
+  };
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await Promise.all(
+      tmpDirs.splice(0).map(async (dir) => {
+        await fs.chmod(path.join(dir, "db", "state.sqlite"), 0o600).catch(
+          () => undefined,
+        );
+        await fs.rm(dir, { recursive: true, force: true });
+      }),
+    );
+  });
+
+  it("reads the cursor without rewriting an existing DB, for plain and redownload-all runs", async () => {
+    const t = await setup();
+    await t.store.withDb((db) =>
+      setContinuationPoint(db, nip, "Subject1", priorCursor),
+    );
+    const bytesBefore = await fs.readFile(t.dbPath);
+    const mtimeBefore = (await fs.stat(t.dbPath)).mtimeMs;
+    const open = vi.spyOn(fs, "open");
+    const writeFile = vi.spyOn(fs, "writeFile");
+    const rename = vi.spyOn(fs, "rename");
+
+    await t.runExport();
+    await t.runExport(true);
+
+    expect(t.exportInvoices).toHaveBeenCalledTimes(2);
+    expect(open).not.toHaveBeenCalled();
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(rename).not.toHaveBeenCalled();
+    expect((await fs.stat(t.dbPath)).mtimeMs).toBe(mtimeBefore);
+    expect(Buffer.compare(await fs.readFile(t.dbPath), bytesBefore)).toBe(0);
+    // Windowing came from the stored cursor, read without a write.
+    expect(JSON.stringify(t.exportInvoices.mock.calls[0])).toContain(
+      "2026-04-01",
+    );
+  });
+
+  it.skipIf(canWriteDespiteMode)(
+    "exports when the canonical DB exists but is read-only",
+    async () => {
+      const t = await setup();
+      await t.store.withDb((db) =>
+        setContinuationPoint(db, nip, "Subject1", priorCursor),
+      );
+      await fs.chmod(t.dbPath, 0o400);
+
+      await expect(t.runExport()).resolves.toMatchObject({ failed: 0 });
+      expect(t.exportInvoices).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("treats a missing DB as no cursor and does not create it", async () => {
+    const t = await setup();
+
+    await t.runExport();
+
+    expect(t.exportInvoices).toHaveBeenCalledTimes(1);
+    await expect(fs.stat(path.dirname(t.dbPath))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+});
