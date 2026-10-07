@@ -98,9 +98,11 @@ export async function syncSubjectType(
     windowStart = explicitWindow.from;
     windowEndCap = explicitWindow.to;
   } else {
+    // Read-only access: an export-only run must never write the canonical DB,
+    // and a missing DB simply means no cursor.
     const cursor = forceRedownloadAll
       ? null
-      : await store.withDb((db) => getContinuationPoint(db, nip, subjectType));
+      : await store.readDb((db) => getContinuationPoint(db, nip, subjectType));
     // An explicit `initialSyncFrom` is a deliberate floor. Without one, the
     // rolling 3-month default only seeds a first sync: a saved cursor is kept
     // (floored at the KSeF epoch), otherwise a held cursor or an outage would

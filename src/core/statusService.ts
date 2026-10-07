@@ -66,7 +66,7 @@ export class StatusService {
 
   async getStatus(): Promise<StatusInfo> {
     const adaptive = await this.readAdaptiveStatus();
-    return this.store.withDb((db) => {
+    return this.store.readDb((db) => {
       const state = getSyncState(db);
       const lifecycle = getServiceLifecycleState(db);
       return {
