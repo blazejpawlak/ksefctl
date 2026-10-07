@@ -137,7 +137,9 @@ describe("PdfService", () => {
     if (result.status === "ok") {
       expect(result.buffer.subarray(0, 5).toString("latin1")).toBe("%PDF-");
     }
-  });
+    // The first call parses the 3.5 MB bundle, which can exceed the default
+    // 5 s test timeout on a loaded machine.
+  }, 30_000);
 
   it("reports the generator as unavailable when the loader rejects", async () => {
     const xml =

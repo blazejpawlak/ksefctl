@@ -8,6 +8,14 @@ import path from "node:path";
 const scriptsSource = path.join(import.meta.dirname, "..", "..", "scripts");
 const pinnedCommit = "f59fc4e2addcf42c74b1674e7c1d534085bc3a84";
 const bundle = "export const built = true;\n";
+const notices = "THIRD-PARTY NOTICES\n";
+const robotoBundle = `export const font = "${Buffer.concat([
+  Buffer.from([0, 1, 0, 0]),
+  Buffer.from(
+    `Copyright 2011 The Roboto Project Authors SIL Open Font License, Version 1.1.${"x".repeat(600)}`,
+    "latin1",
+  ),
+]).toString("base64")}";\n`;
 
 describe("check-vendored-converter (prepack guard)", () => {
   let pkg: string;
@@ -22,6 +30,7 @@ describe("check-vendored-converter (prepack guard)", () => {
         source: "CIRFMF/ksef-pdf-generator",
         commit: pinnedCommit,
         bundleSha256: createHash("sha256").update(bundle).digest("hex"),
+        noticesSha256: createHash("sha256").update(notices).digest("hex"),
         ...overrides,
       }),
     );
@@ -40,12 +49,36 @@ describe("check-vendored-converter (prepack guard)", () => {
       }),
     );
 
-  const runGuard = () =>
+  const runGuard = (root = pkg) =>
     spawnSync(
       process.execPath,
-      [path.join(pkg, "scripts", "check-vendored-converter.mjs")],
+      [path.join(root, "scripts", "check-vendored-converter.mjs")],
       { encoding: "utf-8" },
     );
+
+  // Replaces the bundle (and its recorded checksum), optionally with notices.
+  const writeBundle = async (content: string, noticesText = notices) => {
+    await fs.writeFile(path.join(vendorDir, "ksef-fe-invoice-converter.js"), content);
+    await fs.writeFile(path.join(vendorDir, "THIRD_PARTY_NOTICES.txt"), noticesText);
+    await writeMetadata({
+      bundleSha256: createHash("sha256").update(content).digest("hex"),
+      noticesSha256: createHash("sha256").update(noticesText).digest("hex"),
+    });
+  };
+
+  const writeInstalledLock = async (commit: string) => {
+    await fs.mkdir(path.join(pkg, "node_modules"), { recursive: true });
+    await fs.writeFile(
+      path.join(pkg, "node_modules", ".package-lock.json"),
+      JSON.stringify({
+        packages: {
+          "node_modules/@akmf/ksef-fe-invoice-converter": {
+            resolved: `git+ssh://git@github.com/CIRFMF/ksef-pdf-generator.git#${commit}`,
+          },
+        },
+      }),
+    );
+  };
 
   beforeEach(async () => {
     pkg = await fs.realpath(
@@ -57,12 +90,18 @@ describe("check-vendored-converter (prepack guard)", () => {
     for (const name of [
       "check-vendored-converter.mjs",
       "vendored-converter.mjs",
+      "third-party-notices.mjs",
     ]) {
       await fs.copyFile(
         path.join(scriptsSource, name),
         path.join(pkg, "scripts", name),
       );
     }
+    await fs.cp(
+      path.join(scriptsSource, "third-party-assets"),
+      path.join(pkg, "scripts", "third-party-assets"),
+      { recursive: true },
+    );
     await fs.writeFile(
       path.join(pkg, "package.json"),
       JSON.stringify({
@@ -73,6 +112,7 @@ describe("check-vendored-converter (prepack guard)", () => {
     );
     await fs.writeFile(path.join(vendorDir, "ksef-fe-invoice-converter.js"), bundle);
     await fs.writeFile(path.join(vendorDir, "LICENSE"), "MIT License\n");
+    await fs.writeFile(path.join(vendorDir, "THIRD_PARTY_NOTICES.txt"), notices);
     await writeMetadata();
     await writeLock("1.2.3", pinnedCommit);
   });
@@ -167,5 +207,76 @@ describe("check-vendored-converter (prepack guard)", () => {
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("commit-pinned");
+  });
+
+  it("fails when the third-party notices file is missing", async () => {
+    await fs.rm(path.join(vendorDir, "THIRD_PARTY_NOTICES.txt"));
+
+    const result = runGuard();
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("THIRD_PARTY_NOTICES.txt is missing");
+  });
+
+  it("fails when the third-party notices file is empty", async () => {
+    await fs.writeFile(path.join(vendorDir, "THIRD_PARTY_NOTICES.txt"), "");
+
+    const result = runGuard();
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("THIRD_PARTY_NOTICES.txt is empty");
+  });
+
+  it("fails when the notices do not match their recorded checksum", async () => {
+    await fs.writeFile(
+      path.join(vendorDir, "THIRD_PARTY_NOTICES.txt"),
+      "edited notices\n",
+    );
+
+    const result = runGuard();
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("THIRD_PARTY_NOTICES.txt does not match the checksum");
+  });
+
+  it("fails when the bundle embeds a font the notices do not cover", async () => {
+    await writeBundle(robotoBundle);
+
+    const result = runGuard();
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("no notice for embedded Roboto");
+  });
+
+  it("passes when the notices cover the embedded font", async () => {
+    await writeBundle(robotoBundle, "Roboto fonts (pdfmake's built-in virtual file system)\n");
+
+    const result = runGuard();
+
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it("fails when the installed converter is not the pinned commit", async () => {
+    await writeInstalledLock("3".repeat(40));
+
+    const result = runGuard();
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(`the installed converter is at ${"3".repeat(40)}`);
+    expect(result.stderr).toContain("run npm ci");
+  });
+
+  it("passes when the installed converter is the pinned commit", async () => {
+    await writeInstalledLock(pinnedCommit);
+
+    const result = runGuard();
+
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it("accepts the repository's own vendored converter", () => {
+    const result = runGuard(path.join(import.meta.dirname, "..", ".."));
+
+    expect(result.status, result.stderr).toBe(0);
   });
 });

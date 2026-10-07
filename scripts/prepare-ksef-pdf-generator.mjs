@@ -8,15 +8,19 @@ import {
   findVendorProblems,
   licenseFileName,
   metadataFileName,
+  noticesFileName,
+  readInstalledCommit,
   readPin,
   sha256,
   vendorDir,
 } from "./vendored-converter.mjs";
+import { buildNotices } from "./third-party-notices.mjs";
 
 // Development-time step, run from the `prepare` lifecycle (local `npm install`
 // and `npm ci`, and before pack/publish; npm does not run it when a consumer
 // installs the registry tarball). It builds the commit-pinned converter
-// devDependency and vendors the ESM bundle that ksefctl ships and loads.
+// devDependency and vendors the ESM bundle that ksefctl ships and loads, with
+// the notices of the third-party code and assets the bundle embeds.
 // Pass --force to rebuild a vendored copy that is already up to date.
 const packageRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const converterRoot = path.join(
@@ -126,6 +130,11 @@ const writeAllowScriptsConfig = async (packageRoot) => {
 // run never leaves a half-written vendor directory that looks complete.
 const vendorArtifacts = async (version, pin) => {
   const bundle = await fs.readFile(path.join(converterRoot, "dist", bundleFileName));
+  const notices = await buildNotices({
+    converterRoot,
+    converter: { name: converterPackageName, version, ...pin },
+    bundle,
+  });
   const target = vendorDir(packageRoot);
   const staging = `${target}.staging-${process.pid}`;
   await fs.rm(staging, { recursive: true, force: true });
@@ -136,6 +145,7 @@ const vendorArtifacts = async (version, pin) => {
       path.join(converterRoot, licenseFileName),
       path.join(staging, licenseFileName),
     );
+    await fs.writeFile(path.join(staging, noticesFileName), notices.text);
     await fs.writeFile(
       path.join(staging, metadataFileName),
       `${JSON.stringify(
@@ -145,6 +155,7 @@ const vendorArtifacts = async (version, pin) => {
           source: pin.source,
           commit: pin.commit,
           bundleSha256: sha256(bundle),
+          noticesSha256: sha256(notices.text),
         },
         null,
         2,
@@ -181,6 +192,14 @@ const run = async () => {
   } catch {
     throw new Error(
       `Cannot find ${converterPackageName} in ${path.join(packageRoot, "node_modules")}. It is a devDependency used to build the vendored PDF converter; install with dev dependencies (npm ci).`,
+    );
+  }
+  // The build uses whatever converter is installed, so make sure that is the
+  // pinned commit before the output is labelled with it.
+  const installed = await readInstalledCommit(packageRoot);
+  if (installed !== pin.commit) {
+    throw new Error(
+      `The installed ${converterPackageName} is ${installed ? `at ${installed}` : "of unknown origin"}, but package.json pins ${pin.commit}. Run npm ci to install the pinned converter, then retry.`,
     );
   }
   const logPath = path.join(converterRoot, logFileName);

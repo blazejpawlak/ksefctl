@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { detectEmbeddedAssets, noticesFileName } from "./third-party-notices.mjs";
 
 // The PDF converter (`@akmf/ksef-fe-invoice-converter`) is a commit-pinned git
 // devDependency. It is built at development time and its self-contained ESM
@@ -11,6 +12,7 @@ export const vendorDirName = path.join("vendor", "ksef-pdf-generator");
 export const bundleFileName = "ksef-fe-invoice-converter.js";
 export const licenseFileName = "LICENSE";
 export const metadataFileName = "metadata.json";
+export { noticesFileName };
 
 const pinPattern = /^github:([^#\s]+\/[^#\s]+)#([0-9a-f]{40})$/;
 
@@ -47,6 +49,36 @@ const readLockedConverter = async (packageRoot) => {
   }
 };
 
+// The commit npm actually installed for the converter, read from the hidden
+// lockfile npm writes into node_modules (or, failing that, from the converter's
+// own package.json). Null when it cannot be determined, e.g. no node_modules.
+export const readInstalledCommit = async (packageRoot) => {
+  const modules = path.join(packageRoot, "node_modules");
+  const fromSpec = (value) => {
+    const commit = String(value ?? "").split("#")[1];
+    return /^[0-9a-f]{40}$/.test(commit ?? "") ? commit : null;
+  };
+  try {
+    const lock = await readJson(path.join(modules, ".package-lock.json"));
+    const entry = lock.packages?.[`node_modules/${converterPackageName}`];
+    const commit = fromSpec(entry?.resolved);
+    if (commit) return commit;
+  } catch {
+    // Fall through to the converter's own package.json.
+  }
+  try {
+    const pkg = await readJson(
+      path.join(modules, ...converterPackageName.split("/"), "package.json"),
+    );
+    return (
+      (/^[0-9a-f]{40}$/.test(pkg.gitHead ?? "") ? pkg.gitHead : null) ??
+      fromSpec(pkg._resolved)
+    );
+  } catch {
+    return null;
+  }
+};
+
 export const readMetadata = async (packageRoot) =>
   readJson(path.join(vendorDir(packageRoot), metadataFileName));
 
@@ -56,13 +88,16 @@ export const findVendorProblems = async (packageRoot) => {
   const problems = [];
 
   let bundle = null;
-  for (const fileName of [bundleFileName, licenseFileName]) {
+  let notices = null;
+  for (const fileName of [bundleFileName, licenseFileName, noticesFileName]) {
     try {
       const content = await fs.readFile(path.join(dir, fileName));
       if (content.length === 0) {
         problems.push(`${path.join(vendorDirName, fileName)} is empty`);
       } else if (fileName === bundleFileName) {
         bundle = content;
+      } else if (fileName === noticesFileName) {
+        notices = content.toString("utf-8");
       }
     } catch {
       problems.push(`${path.join(vendorDirName, fileName)} is missing`);
@@ -118,6 +153,32 @@ export const findVendorProblems = async (packageRoot) => {
     problems.push(
       "vendored bundle does not match the checksum recorded in metadata.json",
     );
+  }
+  if (metadata && notices !== null && metadata.noticesSha256 !== sha256(notices)) {
+    problems.push(
+      `${noticesFileName} does not match the checksum recorded in metadata.json`,
+    );
+  }
+  // The notices must cover every font/profile the bundle embeds.
+  if (bundle && notices !== null) {
+    const embedded = await detectEmbeddedAssets(bundle);
+    problems.push(...embedded.problems);
+    for (const asset of embedded.assets) {
+      if (!notices.includes(asset.heading)) {
+        problems.push(`${noticesFileName} has no notice for embedded ${asset.id}`);
+      }
+    }
+  }
+  // The pin is what the vendored code claims to be built from; check that the
+  // converter npm installed really is that commit. Without node_modules (a
+  // consumer-style tree) there is nothing to compare.
+  if (pin) {
+    const installed = await readInstalledCommit(packageRoot);
+    if (installed && installed !== pin.commit) {
+      problems.push(
+        `the installed converter is at ${installed}, not the devDependency pin ${pin.commit}; run npm ci`,
+      );
+    }
   }
 
   return problems;
