@@ -41,14 +41,54 @@ const truncateErrorMessage = (message: string): string => {
   return `${message.slice(0, maxSanitizedMessageLength - 3)}...`;
 };
 
+const redactSecrets = (message: string): string =>
+  message
+    .replace(urlUserInfoPattern, "$1[REDACTED]@")
+    .replace(bearerTokenPattern, "$1 [REDACTED]")
+    .replace(secretQueryParamPattern, "$1[REDACTED]")
+    .replace(secretKeyPattern, "$1[REDACTED]");
+
 const sanitizeGenericErrorMessage = (message: string): string =>
-  truncateErrorMessage(
-    message
-      .replace(urlUserInfoPattern, "$1[REDACTED]@")
-      .replace(bearerTokenPattern, "$1 [REDACTED]")
-      .replace(secretQueryParamPattern, "$1[REDACTED]")
-      .replace(secretKeyPattern, "$1[REDACTED]"),
-  );
+  truncateErrorMessage(redactSecrets(message));
+
+// Config diagnostics list every violation on its own line, so they get a much
+// larger bound than other errors; it only guards against pathological input.
+const maxConfigErrorLines = 100;
+const maxConfigErrorLength = 5000;
+// Every C0/C1 control character except "\n" (ESC, CSI, BEL, "\r", "\t", ...).
+const configErrorControlChars = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g;
+
+// Keeps the line breaks of a config diagnostic list while stripping everything
+// that could inject terminal escapes. Redaction runs per line because the
+// secret patterns use "\s", which would otherwise swallow the next line.
+export const formatConfigErrorMessage = (message: string): string => {
+  const lines = message
+    .replace(/\r\n?/g, "\n")
+    .replace(configErrorControlChars, "")
+    .split("\n")
+    .map(redactSecrets);
+
+  const kept: string[] = [];
+  let length = 0;
+  for (const line of lines) {
+    const next = length + line.length + (kept.length > 0 ? 1 : 0);
+    if (kept.length >= maxConfigErrorLines) break;
+    if (next > maxConfigErrorLength) {
+      if (kept.length === 0) {
+        kept.push(`${line.slice(0, maxConfigErrorLength - 3)}...`);
+      }
+      break;
+    }
+    kept.push(line);
+    length = next;
+  }
+
+  const omitted = lines.length - kept.length;
+  if (omitted > 0) {
+    kept.push(`... (${omitted} more ${omitted === 1 ? "line" : "lines"} omitted)`);
+  }
+  return kept.join("\n");
+};
 
 // Two-pass sanitization:
 // 1. sanitizeHttpErrorMessage strips the HTTP response body (everything between
