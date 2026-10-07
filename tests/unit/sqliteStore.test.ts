@@ -156,12 +156,20 @@ describe("SqliteStore.withDb atomic writes", () => {
     );
     const bytesBefore = await fs.readFile(dbPath);
     const realOpen = fs.open.bind(fs);
+    let prefixBytes = 0;
     vi.spyOn(fs, "open").mockImplementation(async (file, flags, mode) => {
       const handle = await realOpen(file, flags, mode);
       if (String(file).endsWith(".tmp")) {
-        vi.spyOn(handle, "writeFile").mockRejectedValue(
-          new Error("disk full"),
-        );
+        // Write a real prefix of the data, then run out of space.
+        vi.spyOn(handle, "writeFile").mockImplementation(async (data) => {
+          const bytes = data as Uint8Array;
+          const prefix = bytes.subarray(0, Math.floor(bytes.length / 2));
+          prefixBytes = prefix.length;
+          await handle.write(prefix);
+          throw Object.assign(new Error("no space left on device"), {
+            code: "ENOSPC",
+          });
+        });
       }
       return handle;
     });
@@ -170,12 +178,43 @@ describe("SqliteStore.withDb atomic writes", () => {
       store.withDb((db) =>
         setContinuationPoint(db, "123", "Subject1", "2030-01-01T00:00:00.000Z"),
       ),
-    ).rejects.toThrow("disk full");
+    ).rejects.toMatchObject({ code: "ENOSPC" });
+
+    expect(prefixBytes).toBeGreaterThan(0);
+    expect(Buffer.compare(await fs.readFile(dbPath), bytesBefore)).toBe(0);
+    expect((await fs.readdir(dbDir)).filter((n) => n.endsWith(".tmp"))).toEqual(
+      [],
+    );
+  });
+
+  it("does not replace the DB with an empty one when reading it fails", async () => {
+    const { dbDir, dbPath, store } = await createStore();
+    await store.withDb((db) =>
+      setContinuationPoint(db, "123", "Subject1", "2026-04-01T00:00:00.000Z"),
+    );
+    const bytesBefore = await fs.readFile(dbPath);
+    const realReadFile = fs.readFile.bind(fs);
+    vi.spyOn(fs, "readFile").mockImplementation(((file: unknown, ...rest: unknown[]) =>
+      String(file) === dbPath
+        ? Promise.reject(Object.assign(new Error("I/O error"), { code: "EIO" }))
+        : (realReadFile as (...args: unknown[]) => unknown)(
+            file,
+            ...rest,
+          )) as typeof fs.readFile);
+
+    await expect(
+      store.withDb((db) =>
+        setContinuationPoint(db, "123", "Subject1", "2030-01-01T00:00:00.000Z"),
+      ),
+    ).rejects.toMatchObject({ code: "EIO" });
+    vi.restoreAllMocks();
 
     expect(Buffer.compare(await fs.readFile(dbPath), bytesBefore)).toBe(0);
     expect((await fs.readdir(dbDir)).filter((n) => n.endsWith(".tmp"))).toEqual(
       [],
     );
+    // The lock was released and the stored cursor is still there.
+    await expect(readCursor(store)).resolves.toBe("2026-04-01T00:00:00.000Z");
   });
 
   it("does not write when the callback throws", async () => {

@@ -1,4 +1,4 @@
-import type { Database } from "sql.js";
+import type { Database, SqlJsStatic } from "sql.js";
 import lockfile from "proper-lockfile";
 import initSqlJs from "sql.js";
 import crypto from "node:crypto";
@@ -149,6 +149,23 @@ const isNotFound = (error: unknown): boolean =>
   (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
 
 /**
+ * Loads the database at `filePath`. A missing file is an empty database; any
+ * other read error propagates so callers never mistake a failed read for "no
+ * data".
+ */
+const openExisting = async (
+  SQL: SqlJsStatic,
+  filePath: string,
+): Promise<Database> => {
+  try {
+    return new SQL.Database(await fs.readFile(filePath));
+  } catch (error) {
+    if (!isNotFound(error)) throw error;
+    return new SQL.Database();
+  }
+};
+
+/**
  * Replaces `filePath` with `data` atomically: the bytes go to a temp file in
  * the same directory (same filesystem, so `rename` is atomic), are fsynced,
  * and only then renamed over the target. A crash at any point leaves either
@@ -194,13 +211,9 @@ export class SqliteStore {
     });
     try {
       const SQL = await loadSqlJs();
-      let db: Database;
-      try {
-        const fileBuffer = await fs.readFile(this.dbPath);
-        db = new SQL.Database(fileBuffer);
-      } catch {
-        db = new SQL.Database();
-      }
+      // The file exists (touched above), so any read error is real: starting
+      // from an empty DB would atomically replace the stored state with it.
+      const db = await openExisting(SQL, this.dbPath);
       try {
         db.exec(schemaSql);
         migrateLegacyTables(db);
@@ -230,13 +243,7 @@ export class SqliteStore {
    */
   async readDb<T>(fn: (db: Database) => T | Promise<T>): Promise<T> {
     const SQL = await loadSqlJs();
-    let db: Database;
-    try {
-      db = new SQL.Database(await fs.readFile(this.dbPath));
-    } catch (error) {
-      if (!isNotFound(error)) throw error;
-      db = new SQL.Database();
-    }
+    const db = await openExisting(SQL, this.dbPath);
     try {
       db.exec(schemaSql);
       migrateLegacyTables(db);
