@@ -86,6 +86,22 @@ describe("config error formatting", () => {
     expect(formatted).toContain("✖ token: [REDACTED]\n✖ next violation\n");
   });
 
+  it("redacts a secret value that starts on the next line", () => {
+    const formatted = formatCliError(
+      new ConfigError("Invalid port: token=\nabc123"),
+    );
+
+    expect(formatted).toBe("Invalid port: token=\n[REDACTED]");
+  });
+
+  it("redacts a quoted secret value that spans lines", () => {
+    const formatted = formatCliError(
+      new ConfigError("Invalid port: token=\"first\nsecond\""),
+    );
+
+    expect(formatted).toBe("Invalid port: token=[REDACTED]");
+  });
+
   it("caps pathological diagnostics and reports the omitted lines", () => {
     const message = Array.from({ length: 250 }, (_, i) => `✖ violation ${i}`).join(
       "\n",

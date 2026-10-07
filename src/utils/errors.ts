@@ -41,12 +41,27 @@ const truncateErrorMessage = (message: string): string => {
   return `${message.slice(0, maxSanitizedMessageLength - 3)}...`;
 };
 
-const redactSecrets = (message: string): string =>
+// Config diagnostics are multi-line, so the optional second word of a value must
+// stay on the same line: otherwise "token: abc\n✖ next" would eat "✖". Everything
+// else is unchanged, so a value that starts on the next line ("token=\nabc") or a
+// quoted value that spans lines is still redacted.
+const configSecretKeyPattern = new RegExp(
+  secretKeyPattern.source.replace(
+    String.raw`(?:\s+[^\s,;#&]+)?)`,
+    String.raw`(?:[^\S\n]+[^\s,;#&]+)?)`,
+  ),
+  secretKeyPattern.flags,
+);
+
+const redactSecrets = (
+  message: string,
+  keyPattern: RegExp = secretKeyPattern,
+): string =>
   message
     .replace(urlUserInfoPattern, "$1[REDACTED]@")
     .replace(bearerTokenPattern, "$1 [REDACTED]")
     .replace(secretQueryParamPattern, "$1[REDACTED]")
-    .replace(secretKeyPattern, "$1[REDACTED]");
+    .replace(keyPattern, "$1[REDACTED]");
 
 const sanitizeGenericErrorMessage = (message: string): string =>
   truncateErrorMessage(redactSecrets(message));
@@ -59,14 +74,13 @@ const maxConfigErrorLength = 5000;
 const configErrorControlChars = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g;
 
 // Keeps the line breaks of a config diagnostic list while stripping everything
-// that could inject terminal escapes. Redaction runs per line because the
-// secret patterns use "\s", which would otherwise swallow the next line.
+// that could inject terminal escapes. The whole message is redacted before it
+// is split into lines, so values that start on or span lines are still caught.
 export const formatConfigErrorMessage = (message: string): string => {
-  const lines = message
-    .replace(/\r\n?/g, "\n")
-    .replace(configErrorControlChars, "")
-    .split("\n")
-    .map(redactSecrets);
+  const lines = redactSecrets(
+    message.replace(/\r\n?/g, "\n").replace(configErrorControlChars, ""),
+    configSecretKeyPattern,
+  ).split("\n");
 
   const kept: string[] = [];
   let length = 0;
