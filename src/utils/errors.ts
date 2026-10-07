@@ -41,14 +41,74 @@ const truncateErrorMessage = (message: string): string => {
   return `${message.slice(0, maxSanitizedMessageLength - 3)}...`;
 };
 
-const sanitizeGenericErrorMessage = (message: string): string =>
-  truncateErrorMessage(
-    message
-      .replace(urlUserInfoPattern, "$1[REDACTED]@")
-      .replace(bearerTokenPattern, "$1 [REDACTED]")
-      .replace(secretQueryParamPattern, "$1[REDACTED]")
-      .replace(secretKeyPattern, "$1[REDACTED]"),
+// Config diagnostics are multi-line, so the optional second word of a value must
+// stay on the same line: otherwise "token: abc\n✖ next" would eat "✖". Everything
+// else is unchanged, so a value that starts on the next line ("token=\nabc") or a
+// quoted value that spans lines is still redacted.
+const configSecretKeyPattern = ((): RegExp => {
+  const source = secretKeyPattern.source.replace(
+    String.raw`(?:\s+[^\s,;#&]+)?)`,
+    String.raw`(?:[^\S\n]+[^\s,;#&]+)?)`,
   );
+  if (source === secretKeyPattern.source) {
+    // Fail at load rather than silently let config diagnostics lose lines.
+    throw new Error(
+      "secretKeyPattern changed: update the configSecretKeyPattern derivation",
+    );
+  }
+  return new RegExp(source, secretKeyPattern.flags);
+})();
+
+const redactSecrets = (
+  message: string,
+  keyPattern: RegExp = secretKeyPattern,
+): string =>
+  message
+    .replace(urlUserInfoPattern, "$1[REDACTED]@")
+    .replace(bearerTokenPattern, "$1 [REDACTED]")
+    .replace(secretQueryParamPattern, "$1[REDACTED]")
+    .replace(keyPattern, "$1[REDACTED]");
+
+const sanitizeGenericErrorMessage = (message: string): string =>
+  truncateErrorMessage(redactSecrets(message));
+
+// Config diagnostics list every violation on its own line, so they get a much
+// larger bound than other errors; it only guards against pathological input.
+const maxConfigErrorLines = 100;
+const maxConfigErrorLength = 5000;
+// Every C0/C1 control character except "\n" (ESC, CSI, BEL, "\r", "\t", ...).
+const configErrorControlChars = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g;
+
+// Keeps the line breaks of a config diagnostic list while stripping everything
+// that could inject terminal escapes. The whole message is redacted before it
+// is split into lines, so values that start on or span lines are still caught.
+export const formatConfigErrorMessage = (message: string): string => {
+  const lines = redactSecrets(
+    message.replace(/\r\n?/g, "\n").replace(configErrorControlChars, ""),
+    configSecretKeyPattern,
+  ).split("\n");
+
+  const kept: string[] = [];
+  let length = 0;
+  for (const line of lines) {
+    const next = length + line.length + (kept.length > 0 ? 1 : 0);
+    if (kept.length >= maxConfigErrorLines) break;
+    if (next > maxConfigErrorLength) {
+      if (kept.length === 0) {
+        kept.push(`${line.slice(0, maxConfigErrorLength - 3)}...`);
+      }
+      break;
+    }
+    kept.push(line);
+    length = next;
+  }
+
+  const omitted = lines.length - kept.length;
+  if (omitted > 0) {
+    kept.push(`... (${omitted} more ${omitted === 1 ? "line" : "lines"} omitted)`);
+  }
+  return kept.join("\n");
+};
 
 // Two-pass sanitization:
 // 1. sanitizeHttpErrorMessage strips the HTTP response body (everything between

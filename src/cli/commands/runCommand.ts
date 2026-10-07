@@ -4,6 +4,7 @@ import {
   ConfigError,
   NetworkError,
   exitCodeFromError,
+  formatConfigErrorMessage,
   formatErrorMessage,
 } from "../../utils/errors.js";
 import { sanitizeForTerminal } from "../commandTree.js";
@@ -19,8 +20,12 @@ const isKnownError = (error: unknown): boolean =>
   error instanceof AuthError ||
   error instanceof NetworkError;
 
+// Config diagnostics are a multi-line list of violations: keep the line breaks
+// (and the full list) instead of the single-line 500-character form.
 export const formatCliError = (error: unknown): string =>
-  sanitizeForTerminal(formatErrorMessage(error));
+  error instanceof ConfigError
+    ? formatConfigErrorMessage(error.message)
+    : sanitizeForTerminal(formatErrorMessage(error));
 
 export const logUnexpectedError = (
   error: unknown,
