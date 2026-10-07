@@ -45,13 +45,19 @@ const truncateErrorMessage = (message: string): string => {
 // stay on the same line: otherwise "token: abc\n✖ next" would eat "✖". Everything
 // else is unchanged, so a value that starts on the next line ("token=\nabc") or a
 // quoted value that spans lines is still redacted.
-const configSecretKeyPattern = new RegExp(
-  secretKeyPattern.source.replace(
+const configSecretKeyPattern = ((): RegExp => {
+  const source = secretKeyPattern.source.replace(
     String.raw`(?:\s+[^\s,;#&]+)?)`,
     String.raw`(?:[^\S\n]+[^\s,;#&]+)?)`,
-  ),
-  secretKeyPattern.flags,
-);
+  );
+  if (source === secretKeyPattern.source) {
+    // Fail at load rather than silently let config diagnostics lose lines.
+    throw new Error(
+      "secretKeyPattern changed: update the configSecretKeyPattern derivation",
+    );
+  }
+  return new RegExp(source, secretKeyPattern.flags);
+})();
 
 const redactSecrets = (
   message: string,
