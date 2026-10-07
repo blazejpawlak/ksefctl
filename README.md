@@ -456,8 +456,8 @@ Implementation follows `przyrostowe-pobieranie-faktur.md`:
 - Cursor is updated using `LastPermanentStorageDate` if truncated, otherwise `PermanentStorageHwmDate`
 - Windows narrower than `sync.minExportWindowSeconds` are skipped without contacting KSeF, and a window KSeF rejects as out of range leaves the cursor untouched (see [Rate limiting & retries](#rate-limiting--retries))
 
-First-time sync default: `initialSyncFrom` is set to ~3 months ago to satisfy the KSeF date range limit. Override in config if needed.
-The CLI chunks older ranges into 3-month windows automatically.
+First-time sync default: when `sync.initialSyncFrom` is not set and there is no saved cursor, the first sync starts ~3 months ago to satisfy the KSeF date range limit. The 3-month default is a one-time seed, not a rolling floor: once a cursor is saved it is kept, however old, so a held cursor (for example after a failed invoice write) or a long outage never skips invoices. A lagging cursor catches up in windows of at most 3 months.
+Setting `sync.initialSyncFrom` is a deliberate floor: a saved cursor older than it is moved forward to it. `ksefctl init` writes this value (~3 months before init) into new configs; remove it to keep cursors unclamped.
 Sync never requests dates earlier than KSeF production start (`2026-02-01`). Old cursors are fast-forwarded to this floor.
 
 ### Explicit time window (`--time-window`)
@@ -573,7 +573,7 @@ If `organizations[].outputPath` is set, or `--output-path` is passed on the CLI,
 `organizations[].outputPath` is the canonical location for that NIP: the regular sync records invoices there and tracks them in `db/state.sqlite`. `--output-path` is different — it is a one-off export to an ad-hoc location:
 
 - Invoice records in `db/state.sqlite` are neither created nor updated, so deleting the export directory later never makes the regular sync think an invoice is missing.
-- Continuation points do not move. The export window starts at the regular cursor (or `sync.initialSyncFrom` with `--redownload-all`, or `--time-window`), and the next regular sync still downloads the same invoices into the store.
+- Continuation points do not move. The export window starts at the regular cursor, however old when `sync.initialSyncFrom` is unset (or `sync.initialSyncFrom` with `--redownload-all`, or `--time-window`), and the next regular sync still downloads the same invoices into the store.
 - Deduplication is against the export directory: an invoice whose XML is already there with the same content is skipped. `--redownload`/`--redownload-all` always rewrite.
 - `ksefctl status` (last sync, last success, last downloaded count) and unpaid-invoice notification markers are left unchanged, and no notifications are sent.
 
