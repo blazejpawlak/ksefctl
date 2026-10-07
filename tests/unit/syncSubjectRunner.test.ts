@@ -899,3 +899,163 @@ describe("syncSubjectType - output-path exports (ksefctl-h40)", () => {
     expect(await t.readCursor()).toBe(hwm);
   });
 });
+
+describe("syncSubjectType - saved cursor without initialSyncFrom", () => {
+  const nip = "1234567890";
+  const now = new Date("2026-10-06T15:23:14.445Z");
+  // now minus 3 months: what the rolling default start resolves to.
+  const defaultStartIso = "2026-07-06T15:23:14.445Z";
+
+  const emptyPackage = (permanentStorageHwmDate?: string) => ({
+    status: { code: 200, description: "OK" },
+    package: {
+      invoiceCount: 0,
+      size: 0,
+      isTruncated: false,
+      permanentStorageHwmDate,
+      parts: [],
+    },
+  });
+
+  const setup = async (cursor: string | null) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-runner-"));
+    const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
+    if (cursor) {
+      await store.withDb((db) =>
+        setContinuationPoint(db, nip, "Subject1", cursor),
+      );
+    }
+    const exportInvoices = vi
+      .fn()
+      .mockResolvedValue({ referenceNumber: "EXPORT-1" });
+    const getExportStatus = vi.fn();
+    const downloadPackagePart = vi.fn();
+    const client = {
+      exportInvoices,
+      getExportStatus,
+      downloadPackagePart,
+    } as unknown as KsefClient;
+    // `initialSyncFrom` is deliberately left unset.
+    const storageRoot = path.join(tmpDir, "storage");
+    const config = createConfig(storageRoot, { minExportWindowSeconds: 300 });
+    const deps = createRunnerDeps(client, config, createLogger(), store);
+    const readCursor = () =>
+      store.withDb((db) => getContinuationPoint(db, nip, "Subject1"));
+    const requestedFrom = (call: number) =>
+      (
+        exportInvoices.mock.calls[call]?.[1] as {
+          filters: { dateRange: { from: string } };
+        }
+      ).filters.dateRange.from;
+    return {
+      deps,
+      storageRoot,
+      exportInvoices,
+      getExportStatus,
+      downloadPackagePart,
+      readCursor,
+      requestedFrom,
+    };
+  };
+
+  it("starts at a cursor older than 3 months and does not rewrite it to the rolling default", async () => {
+    const oldCursor = "2026-05-01T00:00:00.000Z";
+    const t = await setup(oldCursor);
+    // No usable HWM: the export holds the cursor, exposing where it started.
+    t.getExportStatus.mockResolvedValue(emptyPackage(undefined));
+
+    await syncSubjectType(t.deps, "ACCESS", nip, "Subject1");
+
+    expect(t.requestedFrom(0)).toBe(oldCursor);
+    expect(await t.readCursor()).toBe(oldCursor);
+  });
+
+  it("catches a lagging cursor up in windows of at most 3 months", async () => {
+    const oldCursor = "2026-05-01T00:00:00.000Z";
+    const t = await setup(oldCursor);
+    t.getExportStatus.mockImplementation(() => {
+      const range = (
+        t.exportInvoices.mock.calls.at(-1)?.[1] as {
+          filters: { dateRange: { to: string } };
+        }
+      ).filters.dateRange;
+      return Promise.resolve(emptyPackage(range.to));
+    });
+
+    await syncSubjectType(t.deps, "ACCESS", nip, "Subject1");
+
+    expect(t.requestedFrom(0)).toBe(oldCursor);
+    expect(t.requestedFrom(1)).toBe("2026-08-01T00:00:00.000Z");
+    expect(t.exportInvoices).toHaveBeenCalledTimes(2);
+    expect(await t.readCursor()).toBe(now.toISOString());
+  });
+
+  it("floors a cursor older than the KSeF start date at that date", async () => {
+    const t = await setup("2026-01-15T00:00:00.000Z");
+    t.getExportStatus.mockResolvedValue(emptyPackage(undefined));
+
+    await syncSubjectType(t.deps, "ACCESS", nip, "Subject1");
+
+    expect(t.requestedFrom(0)).toBe("2026-02-01T00:00:00.000Z");
+    expect(await t.readCursor()).toBe("2026-02-01T00:00:00.000Z");
+  });
+
+  it("retries a failed write near the initial boundary from the held cursor on a later cycle", async () => {
+    // The cursor equals the default start, as after a first sync 3 months ago.
+    const t = await setup(defaultStartIso);
+    const ksefNumber = "KSEF-FAILS-AT-BOUNDARY";
+    const xmlText = `<Faktura><P_2>${ksefNumber}</P_2></Faktura>`;
+    const { encrypted, partHash, encryptedPartHash } = buildEncryptedPackage(
+      ksefNumber,
+      xmlText,
+    );
+    t.getExportStatus.mockResolvedValueOnce({
+      status: { code: 200, description: "OK" },
+      package: {
+        invoiceCount: 1,
+        size: encrypted.length,
+        isTruncated: false,
+        permanentStorageHwmDate: "2026-07-06T15:25:00.000+00:00",
+        parts: [
+          {
+            ordinalNumber: 1,
+            partName: `${ksefNumber}.zip.aes`,
+            method: "GET",
+            url: `https://example.test/${ksefNumber}`,
+            partHash,
+            encryptedPartHash,
+          },
+        ],
+      },
+    });
+    t.downloadPackagePart.mockResolvedValueOnce(encrypted);
+    // A regular file where the storage root should be makes the write fail.
+    await fs.writeFile(t.storageRoot, "not a directory");
+
+    const first = await syncSubjectType(t.deps, "ACCESS", nip, "Subject1");
+
+    expect(first.failed).toBe(1);
+    expect(await t.readCursor()).toBe(defaultStartIso);
+
+    // Later, the rolling default start has moved past the held cursor.
+    vi.setSystemTime(new Date(now.getTime() + 10 * 60_000));
+    t.getExportStatus.mockResolvedValueOnce(emptyPackage(undefined));
+
+    await syncSubjectType(t.deps, "ACCESS", nip, "Subject1");
+
+    expect(t.requestedFrom(0)).toBe(defaultStartIso);
+    expect(t.requestedFrom(1)).toBe(defaultStartIso);
+    expect(await t.readCursor()).toBe(defaultStartIso);
+  });
+
+  it("starts a first sync, with no cursor, 3 months back", async () => {
+    const t = await setup(null);
+    t.getExportStatus.mockResolvedValue(emptyPackage(undefined));
+
+    await syncSubjectType(t.deps, "ACCESS", nip, "Subject1");
+
+    expect(t.requestedFrom(0)).toBe(defaultStartIso);
+  });
+});

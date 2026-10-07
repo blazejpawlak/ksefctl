@@ -101,9 +101,13 @@ export async function syncSubjectType(
     const cursor = forceRedownloadAll
       ? null
       : await store.withDb((db) => getContinuationPoint(db, nip, subjectType));
+    // An explicit `initialSyncFrom` is a deliberate floor. Without one, the
+    // rolling 3-month default only seeds a first sync: a saved cursor is kept
+    // (floored at the KSeF epoch), otherwise a held cursor or an outage would
+    // be overtaken by the rolling floor and its unsynced invoices skipped.
     const configuredStart = config.sync.initialSyncFrom
       ? resolveConfiguredStart(config.sync.initialSyncFrom, ksefStartDate)
-      : forceRedownloadAll
+      : forceRedownloadAll || cursor
         ? ksefStartDate
         : defaultFrom;
     windowStart = configuredStart;
