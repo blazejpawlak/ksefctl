@@ -481,7 +481,7 @@ PDF visualization is produced locally by the pinned upstream `CIRFMF/ksef-pdf-ge
 
 ```text
 2026.6.9 (06fa00c)
-pdf-builder: @akmf/ksef-fe-invoice-converter 1.1.39 (CIRFMF/ksef-pdf-generator@fb12569a; check upstream releases for newer versions)
+pdf-builder: @akmf/ksef-fe-invoice-converter 1.1.40 (CIRFMF/ksef-pdf-generator@f59fc4e2; check upstream releases for newer versions)
 ```
 
 If PDF rendering starts timing out or failing for newly issued invoices, check whether upstream has published a newer `CIRFMF/ksef-pdf-generator` release and update the pinned dependency after testing.

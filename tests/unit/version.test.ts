@@ -21,10 +21,22 @@ describe("version helpers", () => {
     const dependencySpec =
       parsed.dependencies?.["@akmf/ksef-fe-invoice-converter"] ?? "";
     const expectedCommit = dependencySpec.split("#").at(-1) ?? null;
+    const installed = JSON.parse(
+      await fs.readFile(
+        path.join(
+          process.cwd(),
+          "node_modules",
+          "@akmf",
+          "ksef-fe-invoice-converter",
+          "package.json",
+        ),
+        "utf-8",
+      ),
+    ) as { version: string };
 
     await expect(readPdfBuilderInfo()).resolves.toMatchObject({
       name: "@akmf/ksef-fe-invoice-converter",
-      version: "1.1.39",
+      version: installed.version,
       source: "CIRFMF/ksef-pdf-generator",
       commit: expectedCommit,
     });
