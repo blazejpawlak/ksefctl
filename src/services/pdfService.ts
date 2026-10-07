@@ -2,23 +2,10 @@ import type {
   AdditionalData,
   PdfBuffer,
   PdfDocument,
-} from "@akmf/ksef-fe-invoice-converter";
+  PdfGeneratorModule,
+} from "../types/ksef-pdf-generator.js";
 import { xml2js } from "xml-js";
-
-type PdfGeneratorModule = {
-  generateFA1: (
-    invoice: unknown,
-    additionalData: AdditionalData,
-  ) => PdfDocument;
-  generateFA2: (
-    invoice: unknown,
-    additionalData: AdditionalData,
-  ) => PdfDocument;
-  generateFA3: (
-    invoice: unknown,
-    additionalData: AdditionalData,
-  ) => PdfDocument;
-};
+import { pdfConverterBundleUrl } from "../utils/pdfConverter.js";
 
 type PdfGeneratorLoader = () => Promise<PdfGeneratorModule>;
 
@@ -158,8 +145,10 @@ const withTimeout = async <T>(
   }
 };
 
+// Loaded lazily from the vendored bundle so the large converter only costs
+// startup time when a PDF is actually generated.
 const defaultGeneratorLoader: PdfGeneratorLoader = async () =>
-  import("@akmf/ksef-fe-invoice-converter");
+  (await import(pdfConverterBundleUrl())) as PdfGeneratorModule;
 
 const ensureGeneratorExports = (
   generator: PdfGeneratorModule,

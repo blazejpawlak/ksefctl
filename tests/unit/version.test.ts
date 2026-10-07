@@ -12,31 +12,24 @@ describe("version helpers", () => {
     await expect(readPackageVersion()).resolves.toBe(parsed.version);
   });
 
-  it("reads pinned PDF builder build information", async () => {
-    const packageJsonPath = path.join(process.cwd(), "package.json");
-    const raw = await fs.readFile(packageJsonPath, "utf-8");
-    const parsed = JSON.parse(raw) as {
-      dependencies?: Record<string, string>;
-    };
+  it("reads the pinned PDF builder from the vendored metadata", async () => {
+    const root = process.cwd();
+    const parsed = JSON.parse(
+      await fs.readFile(path.join(root, "package.json"), "utf-8"),
+    ) as { devDependencies?: Record<string, string> };
     const dependencySpec =
-      parsed.dependencies?.["@akmf/ksef-fe-invoice-converter"] ?? "";
+      parsed.devDependencies?.["@akmf/ksef-fe-invoice-converter"] ?? "";
     const expectedCommit = dependencySpec.split("#").at(-1) ?? null;
-    const installed = JSON.parse(
+    const metadata = JSON.parse(
       await fs.readFile(
-        path.join(
-          process.cwd(),
-          "node_modules",
-          "@akmf",
-          "ksef-fe-invoice-converter",
-          "package.json",
-        ),
+        path.join(root, "vendor", "ksef-pdf-generator", "metadata.json"),
         "utf-8",
       ),
     ) as { version: string };
 
     await expect(readPdfBuilderInfo()).resolves.toMatchObject({
       name: "@akmf/ksef-fe-invoice-converter",
-      version: installed.version,
+      version: metadata.version,
       source: "CIRFMF/ksef-pdf-generator",
       commit: expectedCommit,
     });
