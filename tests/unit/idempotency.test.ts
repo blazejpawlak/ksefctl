@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import {
   getInvoice,
@@ -9,10 +8,11 @@ import {
   upsertInvoice,
 } from "../../src/db/repository.js";
 import { SqliteStore } from "../../src/db/sqlite.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("idempotency", () => {
   it("upserts invoice records", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-db-"));
+    const tmpDir = await makeTempDir("ksef-db-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
 
     await store.withDb((db) =>
@@ -48,7 +48,7 @@ describe("idempotency", () => {
   });
 
   it("stores invoice notifications idempotently", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-db-"));
+    const tmpDir = await makeTempDir("ksef-db-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const notifiedAt = "2026-03-29T18:00:00.000Z";
 
@@ -75,7 +75,7 @@ describe("idempotency", () => {
   });
 
   it("writes state DB with 0600 permissions", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-db-"));
+    const tmpDir = await makeTempDir("ksef-db-");
     const dbPath = path.join(tmpDir, "state.sqlite");
     const store = new SqliteStore(dbPath);
 

@@ -1,19 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import {
   getContinuationPoint,
   setContinuationPoint,
 } from "../../src/db/repository.js";
 import { SqliteStore } from "../../src/db/sqlite.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
-const tmpDirs: string[] = [];
 const isRoot = process.getuid?.() === 0;
 
 const createStore = async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sqlite-"));
-  tmpDirs.push(dir);
+  const dir = await makeTempDir("ksef-sqlite-");
   const dbDir = path.join(dir, "db");
   const dbPath = path.join(dbDir, "state.sqlite");
   return { dbDir, dbPath, store: new SqliteStore(dbPath) };
@@ -22,14 +20,8 @@ const createStore = async () => {
 const readCursor = (store: SqliteStore) =>
   store.readDb((db) => getContinuationPoint(db, "123", "Subject1"));
 
-afterEach(async () => {
+afterEach(() => {
   vi.restoreAllMocks();
-  await Promise.all(
-    tmpDirs.splice(0).map(async (dir) => {
-      await fs.chmod(path.join(dir, "db"), 0o700).catch(() => undefined);
-      await fs.rm(dir, { recursive: true, force: true });
-    }),
-  );
 });
 
 describe("SqliteStore.readDb", () => {

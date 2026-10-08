@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import fsSync from "node:fs";
-import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createLogger } from "../../src/utils/logger.js";
@@ -10,6 +9,7 @@ import {
   logServiceLifecycle,
   resolveServiceInitiator,
 } from "../../src/utils/serviceLifecycle.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 const originalEnv = {
   SUDO_USER: process.env.SUDO_USER,
@@ -175,7 +175,7 @@ describe("serviceLifecycle", () => {
   });
 
   it("writes the stop line to the log file before re-raising the signal", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-lifecycle-"));
+    const tmpDir = await makeTempDir("ksef-lifecycle-");
     const filePath = path.join(tmpDir, "ksefctl.log");
     const logger = await createLogger({
       level: "info",

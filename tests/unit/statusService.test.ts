@@ -1,6 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
-import fs from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, it } from "vitest";
 import path from "node:path";
 import { StatusService } from "../../src/core/statusService.js";
 import { SqliteStore } from "../../src/db/sqlite.js";
@@ -8,27 +6,14 @@ import {
   resolveRateLimitStatePath,
   writeRateLimitState,
 } from "../../src/utils/rateLimit.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
-const tempDirs: string[] = [];
-
-const createTempDir = async (): Promise<string> => {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-status-"));
-  tempDirs.push(tempDir);
-  return tempDir;
-};
+const createTempDir = (): Promise<string> => makeTempDir("ksef-status-");
 
 const createStore = async (): Promise<SqliteStore> => {
   const tempDir = await createTempDir();
   return new SqliteStore(path.join(tempDir, "state.sqlite"));
 };
-
-afterEach(async () => {
-  await Promise.all(
-    tempDirs
-      .splice(0)
-      .map((tempDir) => fs.rm(tempDir, { recursive: true, force: true })),
-  );
-});
 
 describe("StatusService", () => {
   it("persists and returns the latest lifecycle event", async () => {

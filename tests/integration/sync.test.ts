@@ -6,11 +6,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import YAML from "yaml";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { createContext } from "../../src/cli/context.js";
 import { SyncService } from "../../src/core/syncService.js";
 import { encryptAes256Cbc, sha256Base64 } from "../../src/utils/crypto.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 const keychainEntries = vi.hoisted(() => new Map<string, string>());
 
@@ -194,7 +194,7 @@ describe("integration sync", () => {
   afterAll(() => server.close());
 
   it("runs a happy path sync and writes files", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const tmpDir = await makeTempDir("ksef-sync-");
     const configPath = path.join(tmpDir, "config.yaml");
     const configYaml = YAML.stringify({
       environment: "test",
@@ -258,7 +258,7 @@ describe("integration sync", () => {
   });
 
   it("runs a flat sync and writes files into monthly folders", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const tmpDir = await makeTempDir("ksef-sync-");
     const configPath = path.join(tmpDir, "config.yaml");
     const configYaml = YAML.stringify({
       environment: "test",

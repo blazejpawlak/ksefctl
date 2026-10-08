@@ -399,7 +399,8 @@ Testing:
 - Unit tests should be self-contained and avoid shared state.
 - Unit tests run in random order (`sequence.shuffle` in `vitest.config.ts`). Clear or restore mocks, spies, env changes and module state that outlive a test; reproduce an order-dependent failure with `npx vitest run --sequence.seed=<seed>` using the seed Vitest prints.
 - Integration tests use MSW and `beforeAll`/`afterAll` for server lifecycle.
-- Prefer temporary directories via `fs.mkdtemp` + `os.tmpdir`.
+- Create temporary directories with `makeTempDir(prefix)` from `tests/helpers/tempDir.ts`, never raw `fs.mkdtemp`. It registers the directory for removal after the test (or after the file, when called from `beforeAll`); the setup file `tests/helpers/setupTempDirs.ts` runs that cleanup after the file's own hooks, so close handles (loggers, servers, SQLite) in your own `afterEach`/`afterAll`. Tests that chmod a directory read-only need no restore. Do not use `it.concurrent` with it.
+- Both vitest configs point `os.tmpdir()` at a per-run directory (`tests/helpers/tempDirGuard.ts`) and fail the run when anything is left in it, so a leak, including one from code under test, fails the suite instead of piling up in `$TMPDIR`.
 
 ## Commit and review expectations
 

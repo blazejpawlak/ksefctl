@@ -1,7 +1,6 @@
 import { Command } from "commander";
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { escapeFishDescription } from "../../src/cli/completion.js";
 import {
@@ -14,6 +13,7 @@ import {
   shouldRunFirstRun,
 } from "../../src/cli.js";
 import { defaultDataRoot } from "../../src/utils/paths.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 const setTty = (value: boolean) => {
   Object.defineProperty(process.stdin, "isTTY", {
@@ -144,7 +144,7 @@ describe("completion helpers", () => {
   });
 
   it("installs bash completion and updates rc file", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksefctl-comp-"));
+    const tmpDir = await makeTempDir("ksefctl-comp-");
     process.env.HOME = tmpDir;
     setTty(true);
 
@@ -169,7 +169,7 @@ describe("completion helpers", () => {
   });
 
   it("refuses to overwrite symlinked completion files", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksefctl-comp-"));
+    const tmpDir = await makeTempDir("ksefctl-comp-");
     process.env.HOME = tmpDir;
     setTty(true);
 
@@ -190,7 +190,7 @@ describe("completion helpers", () => {
   });
 
   it("respects first-run opt-out and config existence", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksefctl-first-"));
+    const tmpDir = await makeTempDir("ksefctl-first-");
     process.env.HOME = tmpDir;
     const rootDir = defaultDataRoot();
     setTty(true);
@@ -213,7 +213,7 @@ describe("completion helpers", () => {
   });
 
   it("skips first-run in non-tty", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksefctl-first-"));
+    const tmpDir = await makeTempDir("ksefctl-first-");
     process.env.HOME = tmpDir;
     setTty(false);
 
@@ -222,7 +222,7 @@ describe("completion helpers", () => {
   });
 
   it("runs first-run when data root is missing", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksefctl-first-"));
+    const tmpDir = await makeTempDir("ksefctl-first-");
     process.env.HOME = tmpDir;
     setTty(true);
 

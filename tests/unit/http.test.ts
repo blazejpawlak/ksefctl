@@ -1,7 +1,6 @@
 import type { Logger } from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import {
   formatErrorMessage,
@@ -10,6 +9,7 @@ import {
   ConfigError,
 } from "../../src/utils/errors.js";
 import { HttpClient, validateTlsOptions } from "../../src/utils/http.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 const createClient = (
   overrides: Partial<ConstructorParameters<typeof HttpClient>[0]> = {},
@@ -380,7 +380,7 @@ describe("validateTlsOptions", () => {
   });
 
   it("accepts a caPath that exists", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-ca-"));
+    const tmpDir = await makeTempDir("ksef-ca-");
     const caPath = path.join(tmpDir, "ca.pem");
     await fs.writeFile(caPath, "dummy", "utf-8");
 
