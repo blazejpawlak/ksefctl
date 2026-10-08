@@ -28,7 +28,9 @@ const robotoBundle = `export const font = "${Buffer.concat([
   ),
 ]).toString("base64")}";\n`;
 
-describe("check-vendored-converter (prepack guard)", () => {
+// These tests spawn node subprocesses (the prepare and prepack scripts, a stub
+// npm), which can exceed the default 5 s test timeout on a loaded machine.
+describe("check-vendored-converter (prepack guard)", { timeout: 30_000 }, () => {
   let pkg: string;
   let vendorDir: string;
 

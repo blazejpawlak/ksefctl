@@ -93,7 +93,9 @@ type Call = {
   env: Record<string, string>;
 };
 
-describe("prepare-ksef-pdf-generator", () => {
+// These tests spawn node subprocesses (the prepare and prepack scripts, a stub
+// npm), which can exceed the default 5 s test timeout on a loaded machine.
+describe("prepare-ksef-pdf-generator", { timeout: 30_000 }, () => {
   let root: string;
   let vendorDir: string;
   let converterDir: string;

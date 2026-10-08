@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- `npm test` and `npm run test:integration` no longer leave temp directories behind: test files created `ksef-*`/`ksefctl-*` directories in `$TMPDIR` with `fs.mkdtemp` and mostly never removed them (about 110 left per run, ~2 GB over time from the log rotation tests). Tests now create them with a shared `makeTempDir` helper that removes them after each test, or after the file for `beforeAll`, including read-only ones. Each run also uses a private temp directory and fails if anything is left in it, so a future leak is caught at once.
+- `npm test` and `npm run test:integration` no longer leave temp directories behind: test files created `ksef-*`/`ksefctl-*` directories in `$TMPDIR` with `fs.mkdtemp` and mostly never removed them (about 110 left per run, ~2 GB over time from the log rotation tests). Tests now create them with a shared `makeTempDir` helper that removes them after each test, or after the file for `beforeAll`, including read-only ones. Each run also uses a private temp directory and fails if anything is left in it, so a future leak is caught at once. The tests that spawn node subprocesses (`prepareConverter`, `vendoredConverterGuard`) now have a 30 s timeout, since they could exceed vitest's 5 s default on a loaded machine.
 
 ## [2026.10.8] - 2026-10-08
 
