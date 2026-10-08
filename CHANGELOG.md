@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2026.10.8] - 2026-10-08
+
 ### Fixed
 
 - `npm run solution` no longer ends with npm 11's `install-scripts ... not yet covered by allowScripts` warning for ksefctl's own `prepare` script: its final `npm link` now uses `--ignore-scripts`, since `npm ci` has already run `prepare` and the build is done. The README source install does the same.
@@ -82,6 +84,7 @@
 - Added integration-test and dependency-audit gates to CI and package publishing.
 - Added weekly grouped Dependabot updates for npm and GitHub Actions while keeping major upgrades manual.
 
+[2026.10.8]: https://github.com/blazejpawlak/ksefctl/compare/v2026.10.7...v2026.10.8
 [2026.10.7]: https://github.com/blazejpawlak/ksefctl/compare/v2026.9.21...v2026.10.7
 [2026.9.21]: https://github.com/blazejpawlak/ksefctl/compare/v2026.9.15...v2026.9.21
 [2026.9.15]: https://github.com/blazejpawlak/ksefctl/compare/v2026.7.9...v2026.9.15
