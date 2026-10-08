@@ -47,10 +47,10 @@ git clone https://github.com/blazejpawlak/ksefctl.git
 cd ksefctl
 npm ci
 npm run build
-npm link
+npm link --ignore-scripts
 ```
 
-`npm ci` runs the repo `prepare` hook, which builds the pinned `@akmf/ksef-fe-invoice-converter` devDependency and vendors its ESM bundle into `vendor/ksef-pdf-generator/` (git-ignored; it is what ksefctl loads and what the published package ships). The build output goes to `node_modules/@akmf/ksef-fe-invoice-converter/ksefctl-prepare.log` and is printed only if the build fails; `node scripts/prepare-ksef-pdf-generator.mjs --force` rebuilds a vendored copy that is already current. Installing from source needs the dev dependencies (no `--omit=dev`), and the repo `.npmrc` sets `allow-git=all` so npm 12 may fetch the converter's git pin (and older npm 11 releases do not reject it during `npm ci`). Use `ksefctl --version` to see the app version and the pinned upstream PDF builder version/commit; compare it with the upstream `CIRFMF/ksef-pdf-generator` releases when troubleshooting PDF rendering.
+`npm ci` runs the repo `prepare` hook, which builds the pinned `@akmf/ksef-fe-invoice-converter` devDependency and vendors its ESM bundle into `vendor/ksef-pdf-generator/` (git-ignored; it is what ksefctl loads and what the published package ships). The build output goes to `node_modules/@akmf/ksef-fe-invoice-converter/ksefctl-prepare.log` and is printed only if the build fails; `node scripts/prepare-ksef-pdf-generator.mjs --force` rebuilds a vendored copy that is already current. Installing from source needs the dev dependencies (no `--omit=dev`), and the repo `.npmrc` sets `allow-git=all` so npm 12 may fetch the converter's git pin (and older npm 11 releases do not reject it during `npm ci`). `npm link --ignore-scripts` only links the already-built checkout; without the flag npm 11 re-runs `prepare` in the global context and warns that it is not covered by `allowScripts`. Use `ksefctl --version` to see the app version and the pinned upstream PDF builder version/commit; compare it with the upstream `CIRFMF/ksef-pdf-generator` releases when troubleshooting PDF rendering.
 
 ## Quick start
 

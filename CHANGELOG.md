@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- `npm run solution` no longer ends with npm 11's `install-scripts ... not yet covered by allowScripts` warning for ksefctl's own `prepare` script: its final `npm link` now uses `--ignore-scripts`, since `npm ci` has already run `prepare` and the build is done. The README source install does the same.
 - `npm ci` in a development checkout no longer fails with `EALLOWGIT` on npm 11 releases that reject the converter's git lockfile entry as non-root under `allow-git=root` (seen with npm 11.12.1). The repo `.npmrc` now sets `allow-git=all`. The converter is the only git dependency, and the published package has none.
 
 ## [2026.10.7] - 2026-10-07
