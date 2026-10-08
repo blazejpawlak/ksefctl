@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2026.10.9] - 2026-10-08
+
 ### Fixed
 
 - `npm test` and `npm run test:integration` no longer leave temp directories behind: test files created `ksef-*`/`ksefctl-*` directories in `$TMPDIR` with `fs.mkdtemp` and mostly never removed them (about 110 left per run, ~2 GB over time from the log rotation tests). Tests now create them with a shared `makeTempDir` helper that removes them after each test, or after the file for `beforeAll`, including read-only ones. Each run also uses a private temp directory and fails if anything is left in it, so a future leak is caught at once. The tests that spawn node subprocesses (`prepareConverter`, `vendoredConverterGuard`) now have a 30 s timeout, since they could exceed vitest's 5 s default on a loaded machine.
@@ -88,6 +90,7 @@
 - Added integration-test and dependency-audit gates to CI and package publishing.
 - Added weekly grouped Dependabot updates for npm and GitHub Actions while keeping major upgrades manual.
 
+[2026.10.9]: https://github.com/blazejpawlak/ksefctl/compare/v2026.10.8...v2026.10.9
 [2026.10.8]: https://github.com/blazejpawlak/ksefctl/compare/v2026.10.7...v2026.10.8
 [2026.10.7]: https://github.com/blazejpawlak/ksefctl/compare/v2026.9.21...v2026.10.7
 [2026.9.21]: https://github.com/blazejpawlak/ksefctl/compare/v2026.9.15...v2026.9.21
