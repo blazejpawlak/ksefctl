@@ -3,7 +3,6 @@ import type { SyncResult } from "../../src/core/syncService.js";
 import type { Logger } from "pino";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { backfillUnpaidInvoiceNotifications } from "../../src/cli/commands/systemNotifications.js";
 import {
@@ -13,6 +12,7 @@ import {
 } from "../../src/db/repository.js";
 import { SqliteStore } from "../../src/db/sqlite.js";
 import { Notifier } from "../../src/notifications/notifier.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 var notifyMock: ReturnType<typeof vi.fn>;
 
@@ -183,7 +183,7 @@ describe("Notifier", () => {
   });
 
   it("sends email for pending unpaid invoices and marks them as notified", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-notifier-"));
+    const tmpDir = await makeTempDir("ksef-notifier-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const notifier = new Notifier(createConfig(), createLogger());
 
@@ -212,7 +212,7 @@ describe("Notifier", () => {
   });
 
   it("sends PDFs as regular attachments without unsupported CID links", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-notifier-"));
+    const tmpDir = await makeTempDir("ksef-notifier-");
     const pdfPath = path.join(tmpDir, "Faktura-1.pdf");
     await fs.writeFile(pdfPath, "pdf");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
@@ -246,7 +246,7 @@ describe("Notifier", () => {
   });
 
   it("skips invoices that were already notified", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-notifier-"));
+    const tmpDir = await makeTempDir("ksef-notifier-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     await store.withDb((db) => {
       markInvoiceNotification(db, {
@@ -264,7 +264,7 @@ describe("Notifier", () => {
   });
 
   it("skips items that are not eligible for payment notification", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-notifier-"));
+    const tmpDir = await makeTempDir("ksef-notifier-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const notifier = new Notifier(createConfig(), createLogger());
     const result: SyncResult = {
@@ -294,7 +294,7 @@ describe("Notifier", () => {
   });
 
   it("routes invoices to SMTP profiles by NIP", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-notifier-"));
+    const tmpDir = await makeTempDir("ksef-notifier-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const config: AppConfig = {
       ...createConfig(),
@@ -372,7 +372,7 @@ describe("Notifier", () => {
   });
 
   it("uses a summary-style subject for multiple invoices", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-notifier-"));
+    const tmpDir = await makeTempDir("ksef-notifier-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const notifier = new Notifier(createConfig(), createLogger());
     const result: SyncResult = {
@@ -401,7 +401,7 @@ describe("Notifier", () => {
   });
 
   it("skips catch-up notification by default", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-notifier-"));
+    const tmpDir = await makeTempDir("ksef-notifier-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const invoiceDir = path.join(tmpDir, "invoices", "KSEF-CATCHUP-1");
     await fs.mkdir(invoiceDir, { recursive: true });
@@ -442,7 +442,7 @@ describe("Notifier", () => {
   });
 
   it("sends catch-up notification when unpaid invoice catch-up is enabled", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-notifier-"));
+    const tmpDir = await makeTempDir("ksef-notifier-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const invoiceDir = path.join(tmpDir, "invoices", "KSEF-CATCHUP-1");
     await fs.mkdir(invoiceDir, { recursive: true });
@@ -501,7 +501,7 @@ describe("Notifier", () => {
   });
 
   it("excludes invoices older than the catch-up lookback", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-notifier-"));
+    const tmpDir = await makeTempDir("ksef-notifier-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const invoiceDir = path.join(tmpDir, "invoices", "KSEF-CATCHUP-OLD");
     await fs.mkdir(invoiceDir, { recursive: true });
@@ -561,7 +561,7 @@ describe("Notifier", () => {
   });
 
   it("backfills notification state without sending and supports dry-run", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-notifier-"));
+    const tmpDir = await makeTempDir("ksef-notifier-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     await store.withDb((db) => {
       upsertInvoice(db, {

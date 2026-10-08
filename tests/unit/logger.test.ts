@@ -3,13 +3,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import {
   applyLogRotation,
   closeLogger,
   createLogger,
 } from "../../src/utils/logger.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 const MEGABYTE = 1024 * 1024;
 
@@ -49,7 +49,7 @@ describe("log rotation", () => {
   });
 
   it("rotates the active log when it reaches the size threshold", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-logrot-"));
+    const tmpDir = await makeTempDir("ksef-logrot-");
     const filePath = path.join(tmpDir, "ksefctl.log");
     const original = "x".repeat(MEGABYTE);
     await fs.writeFile(filePath, original, { mode: 0o600 });
@@ -70,7 +70,7 @@ describe("log rotation", () => {
   });
 
   it("does not rotate a log below the size threshold", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-logrot-"));
+    const tmpDir = await makeTempDir("ksef-logrot-");
     const filePath = path.join(tmpDir, "ksefctl.log");
     await fs.writeFile(filePath, "small", { mode: 0o600 });
 
@@ -82,7 +82,7 @@ describe("log rotation", () => {
   });
 
   it("prunes rotated files beyond maxFiles, keeping the newest", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-logrot-"));
+    const tmpDir = await makeTempDir("ksef-logrot-");
     const filePath = path.join(tmpDir, "ksefctl.log");
     await fs.writeFile(filePath, "active", { mode: 0o600 });
 
@@ -109,7 +109,7 @@ describe("log rotation", () => {
   });
 
   it("prunes rotated files older than maxAgeDays", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-logrot-"));
+    const tmpDir = await makeTempDir("ksef-logrot-");
     const filePath = path.join(tmpDir, "ksefctl.log");
     await fs.writeFile(filePath, "active", { mode: 0o600 });
     const stalePath = `${filePath}.stale`;
@@ -126,7 +126,7 @@ describe("log rotation", () => {
   });
 
   it("does not prune service stdio logs that share the directory", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-logrot-"));
+    const tmpDir = await makeTempDir("ksef-logrot-");
     const filePath = path.join(tmpDir, "ksefctl.log");
     const stdoutPath = path.join(tmpDir, "ksefctl.stdout.log");
     await fs.writeFile(filePath, "active", { mode: 0o600 });
@@ -139,7 +139,7 @@ describe("log rotation", () => {
   });
 
   it("keeps writing to the current file when rotation fails", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-logrot-"));
+    const tmpDir = await makeTempDir("ksef-logrot-");
     const filePath = path.join(tmpDir, "ksefctl.log");
     const original = "x".repeat(MEGABYTE);
     await fs.writeFile(filePath, original, { mode: 0o600 });
@@ -157,7 +157,7 @@ describe("log rotation", () => {
   });
 
   it("createLogger rotates on open and never throws when rotation fails", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-logrot-"));
+    const tmpDir = await makeTempDir("ksef-logrot-");
     const filePath = path.join(tmpDir, "ksefctl.log");
     await fs.writeFile(filePath, "x".repeat(MEGABYTE), { mode: 0o600 });
 
@@ -200,7 +200,7 @@ describe("log rotation", () => {
   });
 
   it("skips rotation when it is disabled", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-logrot-"));
+    const tmpDir = await makeTempDir("ksef-logrot-");
     const filePath = path.join(tmpDir, "ksefctl.log");
     const original = "x".repeat(MEGABYTE);
     await fs.writeFile(filePath, original, { mode: 0o600 });
@@ -219,7 +219,7 @@ describe("log rotation", () => {
 
 describe("createLogger file output", () => {
   it("writes redacted JSON lines to a 0600 file and honours the level", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-logout-"));
+    const tmpDir = await makeTempDir("ksef-logout-");
     const filePath = path.join(tmpDir, "ksefctl.log");
     const logger = await createLogger({
       level: "info",
@@ -307,7 +307,7 @@ describe("closeLogger", () => {
   });
 
   it("puts the final line on disk where logger.flush() did not", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-logclose-"));
+    const tmpDir = await makeTempDir("ksef-logclose-");
     const filePath = path.join(tmpDir, "ksefctl.log");
     delayFileWrites(250);
     const logger = await createTestLogger(filePath);
@@ -332,7 +332,7 @@ describe("closeLogger", () => {
   });
 
   it("drains a line logged before the destination has opened", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-logclose-"));
+    const tmpDir = await makeTempDir("ksef-logclose-");
     const filePath = path.join(tmpDir, "ksefctl.log");
     const logger = await createTestLogger(filePath);
 
@@ -345,7 +345,7 @@ describe("closeLogger", () => {
   });
 
   it("keeps logging safe after close and leaves stdout open", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-logclose-"));
+    const tmpDir = await makeTempDir("ksef-logclose-");
     const filePath = path.join(tmpDir, "ksefctl.log");
     const stdoutWrite = vi
       .spyOn(process.stdout, "write")
@@ -368,7 +368,7 @@ describe("closeLogger", () => {
   });
 
   it("gives up after the timeout when a destination never drains", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-logclose-"));
+    const tmpDir = await makeTempDir("ksef-logclose-");
     const filePath = path.join(tmpDir, "ksefctl.log");
     const logger = await createTestLogger(filePath);
     // Let the destination open, then make every write hang.

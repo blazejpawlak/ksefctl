@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import YAML from "yaml";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { updateConfigFile } from "../../src/config/saveConfig.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 const writeYaml = async (
   filePath: string,
@@ -17,7 +17,7 @@ const writeYaml = async (
 
 describe("updateConfigFile", () => {
   it("writes updated config atomically with 0600 permissions", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-config-"));
+    const tmpDir = await makeTempDir("ksef-config-");
     const configPath = path.join(tmpDir, "config.yaml");
     await writeYaml(configPath, { environment: "test", version: 1 });
 
@@ -36,7 +36,7 @@ describe("updateConfigFile", () => {
   });
 
   it("serializes concurrent updates — no interleaving or lost writes", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-config-"));
+    const tmpDir = await makeTempDir("ksef-config-");
     const configPath = path.join(tmpDir, "config.yaml");
     await writeYaml(configPath, { counter: 0 });
 
@@ -57,7 +57,7 @@ describe("updateConfigFile", () => {
   });
 
   it("enforces 0600 even when overwriting a pre-existing 0644 config", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-config-"));
+    const tmpDir = await makeTempDir("ksef-config-");
     const configPath = path.join(tmpDir, "config.yaml");
     await fs.writeFile(configPath, YAML.stringify({ key: "value" }), {
       encoding: "utf-8",

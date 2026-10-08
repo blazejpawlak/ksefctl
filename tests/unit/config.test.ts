@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import YAML from "yaml";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { loadConfig, sanitizeConfig } from "../../src/config/loadConfig.js";
 import { AppConfigSchema } from "../../src/config/schema.js";
 import { ConfigError } from "../../src/utils/errors.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("config schema", () => {
   it("validates a minimal config", () => {
@@ -140,7 +140,7 @@ describe("config schema", () => {
   });
 
   it("maps integ to test via loader", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-config-"));
+    const tmpDir = await makeTempDir("ksef-config-");
     const configPath = path.join(tmpDir, "config.yaml");
     const yaml = YAML.stringify({
       environment: "integ",
@@ -167,7 +167,7 @@ describe("config schema", () => {
   });
 
   it("resolves relative per-nip output paths via loader", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-config-"));
+    const tmpDir = await makeTempDir("ksef-config-");
     const configPath = path.join(tmpDir, "config.yaml");
     const yaml = YAML.stringify({
       environment: "test",
@@ -204,7 +204,7 @@ describe("config schema", () => {
   });
 
   it("throws ConfigError when TLS pin is invalid", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-config-"));
+    const tmpDir = await makeTempDir("ksef-config-");
     const configPath = path.join(tmpDir, "config.yaml");
     const yaml = YAML.stringify({
       environment: "test",
@@ -351,7 +351,7 @@ describe("config schema", () => {
   });
 
   it("reports every schema violation with its path as a ConfigError", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-config-"));
+    const tmpDir = await makeTempDir("ksef-config-");
     const configPath = path.join(tmpDir, "config.yaml");
     const yaml = YAML.stringify({
       environment: "test",

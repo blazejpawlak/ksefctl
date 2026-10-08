@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import YAML from "yaml";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { createContext } from "../../src/cli/context.js";
 import { ConfigError } from "../../src/utils/errors.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("context", () => {
   it("rejects insecure apiBaseUrl without allowInsecureHttp", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-context-"));
+    const tmpDir = await makeTempDir("ksef-context-");
     const configPath = path.join(tmpDir, "config.yaml");
     const configYaml = YAML.stringify({
       environment: "test",

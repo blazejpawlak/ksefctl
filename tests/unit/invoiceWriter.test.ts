@@ -3,14 +3,13 @@ import type { PdfGenerationCircuitBreaker } from "../../src/core/invoiceWriter.j
 import type { PdfService } from "../../src/services/pdfService.js";
 import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
-import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import {
   getMetadataFileName,
   maybeWritePdf,
   resolveInvoiceStorageTarget,
 } from "../../src/core/invoiceWriter.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 const baseConfig = (root: string): AppConfig =>
   ({
@@ -46,7 +45,7 @@ describe("resolveInvoiceStorageTarget", () => {
   let tmpDir: string;
 
   it("resolves non-flat storage target for well-formed XML", async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-writer-"));
+    tmpDir = await makeTempDir("ksef-writer-");
     const xml = `<FA xmlns="http://crd.gov.pl/wzor/2023/06/29/9843/">
       <Podmiot1><DaneIdentyfikacyjne><NIP>1234567890</NIP></DaneIdentyfikacyjne></Podmiot1>
       <Fa><P_2>2024-01-15</P_2></Fa>
@@ -66,7 +65,7 @@ describe("resolveInvoiceStorageTarget", () => {
   });
 
   it("resolves flat storage target into monthly folder", async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-writer-"));
+    tmpDir = await makeTempDir("ksef-writer-");
     const xml = "<FA/>";
     const target = await resolveInvoiceStorageTarget(
       deps(tmpDir),
@@ -82,7 +81,7 @@ describe("resolveInvoiceStorageTarget", () => {
   });
 
   it("uses outputPathOverride instead of default storage root", async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-writer-"));
+    tmpDir = await makeTempDir("ksef-writer-");
     const override = path.join(tmpDir, "custom-output");
     const xml = "<FA/>";
     const target = await resolveInvoiceStorageTarget(
@@ -101,7 +100,7 @@ describe("resolveInvoiceStorageTarget", () => {
 
 describe("maybeWritePdf", () => {
   it("disables local PDF generation after repeated timeouts", async () => {
-    const invoiceDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-pdf-"));
+    const invoiceDir = await makeTempDir("ksef-pdf-");
     const generateInvoicePdf = vi.fn().mockResolvedValue({
       status: "failed",
       reason: "timeout",

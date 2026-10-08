@@ -1,9 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 const scriptsSource = path.join(import.meta.dirname, "..", "..", "scripts");
 const pinnedCommit = "f59fc4e2addcf42c74b1674e7c1d534085bc3a84";
@@ -96,7 +96,7 @@ describe("check-vendored-converter (prepack guard)", () => {
 
   beforeEach(async () => {
     pkg = await fs.realpath(
-      await fs.mkdtemp(path.join(os.tmpdir(), "ksefctl-guard-")),
+      await makeTempDir("ksefctl-guard-"),
     );
     vendorDir = path.join(pkg, "vendor", "ksef-pdf-generator");
     await fs.mkdir(vendorDir, { recursive: true });
@@ -129,10 +129,6 @@ describe("check-vendored-converter (prepack guard)", () => {
     await fs.writeFile(path.join(vendorDir, "THIRD_PARTY_NOTICES.txt"), notices);
     await writeMetadata();
     await writeLock("1.2.3", pinnedCommit);
-  });
-
-  afterEach(async () => {
-    await fs.rm(pkg, { recursive: true, force: true });
   });
 
   it("passes when the vendored converter matches the pin and the lockfile", () => {

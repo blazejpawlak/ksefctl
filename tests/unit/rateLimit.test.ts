@@ -1,6 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import {
   clampIntervalSeconds,
@@ -11,6 +10,7 @@ import {
   writeRateLimitState,
   type AdaptivePollingOptions,
 } from "../../src/utils/rateLimit.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 const options = (
   overrides: Partial<AdaptivePollingOptions> = {},
@@ -24,21 +24,7 @@ const options = (
   ...overrides,
 });
 
-const tempDirs: string[] = [];
-
-const createTempDir = async (): Promise<string> => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-ratelimit-"));
-  tempDirs.push(dir);
-  return dir;
-};
-
-afterEach(async () => {
-  await Promise.all(
-    tempDirs
-      .splice(0)
-      .map((dir) => fs.rm(dir, { recursive: true, force: true })),
-  );
-});
+const createTempDir = (): Promise<string> => makeTempDir("ksef-ratelimit-");
 
 describe("RateLimitTracker", () => {
   it("keeps the newest Retry-After deadline and counts 429s per cycle", () => {

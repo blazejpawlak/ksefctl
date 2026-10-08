@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import {
   buildLaunchdPlist,
@@ -8,6 +7,7 @@ import {
   resolveLaunchdTarget,
   ServiceInstaller,
 } from "../../src/services/serviceInstaller.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 type ExecCallback = (
   error: Error | null,
@@ -53,7 +53,7 @@ describe("ServiceInstaller", () => {
 
   maybeIt("writes launchd plist with sync --watch output paths", async () => {
     // Arrange
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-service-"));
+    const tmpDir = await makeTempDir("ksef-service-");
     const homeDir = path.join(tmpDir, "home");
     const storageRoot = path.join(tmpDir, "storage");
     process.env.HOME = homeDir;
@@ -173,7 +173,7 @@ describe("ServiceInstaller", () => {
   maybeIt(
     "rejects root installs when execution paths are not root-owned",
     async () => {
-      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-service-"));
+      const tmpDir = await makeTempDir("ksef-service-");
       const homeDir = path.join(tmpDir, "home");
       const storageRoot = path.join(tmpDir, "storage");
       const nodePath = path.join(tmpDir, "node");
@@ -205,7 +205,7 @@ describe("ServiceInstaller", () => {
   maybeIt(
     "rejects root installs when storageRoot is not root-owned",
     async () => {
-      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-service-"));
+      const tmpDir = await makeTempDir("ksef-service-");
       const homeDir = path.join(tmpDir, "home");
       const storageRoot = path.join(tmpDir, "storage");
       const nodePath = "/usr/local/bin/node";
@@ -234,7 +234,7 @@ describe("ServiceInstaller", () => {
   );
 
   maybeIt("refuses to overwrite a symlinked launchd plist", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-service-"));
+    const tmpDir = await makeTempDir("ksef-service-");
     const homeDir = path.join(tmpDir, "home");
     const storageRoot = path.join(tmpDir, "storage");
     const launchAgentsDir = path.join(homeDir, "Library", "LaunchAgents");

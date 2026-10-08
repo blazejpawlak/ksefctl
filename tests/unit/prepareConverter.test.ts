@@ -1,9 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 const scriptsSource = path.join(import.meta.dirname, "..", "..", "scripts");
 const scriptNames = [
@@ -134,7 +134,7 @@ describe("prepare-ksef-pdf-generator", () => {
   };
 
   beforeEach(async () => {
-    root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "ksefctl-prepare-")));
+    root = await fs.realpath(await makeTempDir("ksefctl-prepare-"));
     converterDir = path.join(root, "pkg", "node_modules", "@akmf", "ksef-fe-invoice-converter");
     vendorDir = path.join(root, "pkg", "vendor", "ksef-pdf-generator");
     recordPath = path.join(root, "calls.jsonl");
@@ -177,10 +177,6 @@ describe("prepare-ksef-pdf-generator", () => {
     await fs.writeFile(path.join(converterDir, "LICENSE"), "MIT License\n");
     await addDependency("dep-a", "1.0.0", "MIT", "License text of dep-a\n");
     await fs.writeFile(path.join(root, "bin", "npm"), stubNpm, { mode: 0o755 });
-  });
-
-  afterEach(async () => {
-    await fs.rm(root, { recursive: true, force: true });
   });
 
   const runScript = async (

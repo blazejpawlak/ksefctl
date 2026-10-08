@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import YAML from "yaml";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { initConfig } from "../../src/cli/init.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("initConfig", () => {
   it("writes a config template with 0600 permissions", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-init-"));
+    const tmpDir = await makeTempDir("ksef-init-");
     const configPath = path.join(tmpDir, "config.yaml");
 
     await initConfig(configPath);
@@ -22,7 +22,7 @@ describe("initConfig", () => {
   });
 
   it("does not overwrite existing config when force=false", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-init-"));
+    const tmpDir = await makeTempDir("ksef-init-");
     const configPath = path.join(tmpDir, "config.yaml");
     await fs.writeFile(configPath, "environment: test\n", {
       encoding: "utf-8",
@@ -36,7 +36,7 @@ describe("initConfig", () => {
   });
 
   it("overwrites existing config when force=true", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-init-"));
+    const tmpDir = await makeTempDir("ksef-init-");
     const configPath = path.join(tmpDir, "config.yaml");
     await fs.writeFile(configPath, "environment: test\n", {
       encoding: "utf-8",
@@ -52,7 +52,7 @@ describe("initConfig", () => {
   });
 
   it("returns the resolved config path", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-init-"));
+    const tmpDir = await makeTempDir("ksef-init-");
     const configPath = path.join(tmpDir, "config.yaml");
 
     const returned = await initConfig(configPath);
@@ -61,7 +61,7 @@ describe("initConfig", () => {
   });
 
   it("creates intermediate directories when they are absent", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-init-"));
+    const tmpDir = await makeTempDir("ksef-init-");
     const configPath = path.join(tmpDir, "nested", "dir", "config.yaml");
 
     await initConfig(configPath);

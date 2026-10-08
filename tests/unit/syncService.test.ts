@@ -5,7 +5,6 @@ import type { Logger } from "pino";
 import AdmZip from "adm-zip";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { SyncService } from "../../src/core/syncService.js";
 import {
@@ -16,6 +15,7 @@ import {
 } from "../../src/db/repository.js";
 import { SqliteStore } from "../../src/db/sqlite.js";
 import { encryptAes256Cbc, sha256Base64 } from "../../src/utils/crypto.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 const testKey = Buffer.alloc(32, 1);
 const testIv = Buffer.alloc(16, 2);
@@ -400,7 +400,7 @@ describe("SyncService", () => {
   });
 
   it("redownload-all applies to all configured NIPs when nip is not provided", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const tmpDir = await makeTempDir("ksef-sync-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const initialSyncFrom = "2026-02-01T00:00:00.000Z";
     const exportInvoices = vi
@@ -481,7 +481,7 @@ describe("SyncService", () => {
     const now = new Date("2026-05-10T12:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const tmpDir = await makeTempDir("ksef-sync-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const exportInvoices = vi
       .fn()
@@ -535,7 +535,7 @@ describe("SyncService", () => {
     const now = new Date("2026-02-15T08:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const tmpDir = await makeTempDir("ksef-sync-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const client = {
       downloadInvoiceXml: vi
@@ -575,7 +575,7 @@ describe("SyncService", () => {
     const now = new Date("2026-02-15T08:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const tmpDir = await makeTempDir("ksef-sync-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const client = {
       downloadInvoiceXml: vi.fn().mockResolvedValue(`
@@ -629,7 +629,7 @@ describe("SyncService", () => {
     const now = new Date("2026-02-15T08:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const tmpDir = await makeTempDir("ksef-sync-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const outputPath = path.join(tmpDir, "exports", "org-a");
     const client = {
@@ -674,7 +674,7 @@ describe("SyncService", () => {
     const now = new Date("2026-02-15T08:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const tmpDir = await makeTempDir("ksef-sync-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const configOutputPath = path.join(tmpDir, "exports", "config");
     const cliOutputPath = path.join(tmpDir, "exports", "cli");
@@ -731,7 +731,7 @@ describe("SyncService", () => {
     const now = new Date("2026-05-10T12:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const tmpDir = await makeTempDir("ksef-sync-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const zip = new AdmZip();
     zip.addFile(
@@ -851,7 +851,7 @@ describe("SyncService", () => {
     const now = new Date("2026-02-15T08:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const tmpDir = await makeTempDir("ksef-sync-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const downloadInvoiceXml = vi
       .fn()
@@ -889,7 +889,7 @@ describe("SyncService", () => {
     const now = new Date("2026-03-24T12:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const tmpDir = await makeTempDir("ksef-sync-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const xml = `
       <Faktura>
@@ -939,7 +939,7 @@ describe("SyncService", () => {
     const now = new Date("2026-05-10T12:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const tmpDir = await makeTempDir("ksef-sync-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const ksefNumber = "KSEF-PAYABLE-1";
     const xml = `
@@ -1034,7 +1034,7 @@ describe("SyncService", () => {
     const now = new Date("2026-05-10T12:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const tmpDir = await makeTempDir("ksef-sync-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const zip = new AdmZip();
     zip.addFile(
@@ -1156,7 +1156,7 @@ describe("SyncService", () => {
   });
 
   it("stores sanitized sync errors when a run fails", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const tmpDir = await makeTempDir("ksef-sync-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const client = {
       exportInvoices: vi
@@ -1208,7 +1208,7 @@ describe("SyncService", () => {
     const now = new Date("2026-05-10T12:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const tmpDir = await makeTempDir("ksef-sync-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const ksefNumber = "KSEF-REDO-1";
     const initialSyncFrom = new Date(now.getTime() - 86400000).toISOString();
@@ -1303,7 +1303,7 @@ describe("SyncService", () => {
     const now = new Date("2026-05-10T12:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const tmpDir = await makeTempDir("ksef-sync-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const ksefNumber = "KSEF-REDO-BASE";
 
@@ -1384,7 +1384,7 @@ describe("SyncService", () => {
     const now = new Date("2026-05-10T12:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const tmpDir = await makeTempDir("ksef-sync-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const ksefNumber = "KSEF-MISSING-1";
 
@@ -1478,7 +1478,7 @@ describe("SyncService --output-path isolation (ksefctl-h40)", () => {
   const setup = async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-06T12:00:00Z"));
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-sync-"));
+    const tmpDir = await makeTempDir("ksef-sync-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const storageRoot = path.join(tmpDir, "storage");
     const client = {

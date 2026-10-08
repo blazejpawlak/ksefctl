@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import {
   getFlatInvoiceDir,
   getInvoiceDir,
 } from "../../src/core/storage.js";
 import { atomicWriteFile } from "../../src/utils/paths.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("storage paths", () => {
   it("creates deterministic invoice directory", () => {
@@ -23,7 +23,7 @@ describe("storage paths", () => {
 
   it("atomically writes files with secure permissions", async () => {
     // Arrange
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-storage-"));
+    const tmpDir = await makeTempDir("ksef-storage-");
     const filePath = path.join(tmpDir, "payload.txt");
 
     // Act
@@ -38,7 +38,7 @@ describe("storage paths", () => {
 
   it("replaces existing files without leaving temp artifacts", async () => {
     // Arrange
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-storage-"));
+    const tmpDir = await makeTempDir("ksef-storage-");
     const filePath = path.join(tmpDir, "payload.txt");
     const tempPath = `${filePath}.tmp`;
     await fs.writeFile(filePath, "old", "utf-8");
@@ -53,7 +53,7 @@ describe("storage paths", () => {
   });
 
   it("enforces 0600 even when overwriting a pre-existing 0644 file", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-storage-"));
+    const tmpDir = await makeTempDir("ksef-storage-");
     const filePath = path.join(tmpDir, "payload.txt");
     await fs.writeFile(filePath, "old", { encoding: "utf-8", mode: 0o644 });
 
@@ -68,7 +68,7 @@ describe("storage paths", () => {
   it("succeeds even when a stale .tmp file exists in the directory", async () => {
     // Previously, a crashed run would leave ${filePath}.tmp and block all
     // future writes. Unique temp names (PID + UUID) eliminate that failure.
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-storage-"));
+    const tmpDir = await makeTempDir("ksef-storage-");
     const filePath = path.join(tmpDir, "payload.txt");
     const stalePath = `${filePath}.tmp`;
     await fs.writeFile(stalePath, "stale", "utf-8");

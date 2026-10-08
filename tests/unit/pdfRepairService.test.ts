@@ -3,9 +3,9 @@ import type { PdfService } from "../../src/services/pdfService.js";
 import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { repairMissingInvoicePdfs } from "../../src/core/pdfRepairService.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 const createLogger = (): Logger => ({ warn: vi.fn() }) as unknown as Logger;
 
@@ -20,7 +20,7 @@ const createInvoiceXml = (): string =>
 
 describe("repairMissingInvoicePdfs", () => {
   it("generates a PDF for local XML invoices missing a PDF", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-pdf-repair-"));
+    const root = await makeTempDir("ksef-pdf-repair-");
     const invoiceDir = path.join(
       root,
       "invoices",
@@ -69,7 +69,7 @@ describe("repairMissingInvoicePdfs", () => {
   });
 
   it("reports failures without writing a PDF", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-pdf-repair-"));
+    const root = await makeTempDir("ksef-pdf-repair-");
     const invoiceDir = path.join(root, "invoices", "1234567890", "KSEF-2");
     await fs.mkdir(invoiceDir, { recursive: true });
     await fs.writeFile(

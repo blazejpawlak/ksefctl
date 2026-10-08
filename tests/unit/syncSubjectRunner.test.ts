@@ -5,7 +5,6 @@ import type { Logger } from "pino";
 import AdmZip from "adm-zip";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { syncSubjectType } from "../../src/core/syncSubjectRunner.js";
 import {
@@ -16,6 +15,7 @@ import {
 } from "../../src/db/repository.js";
 import { SqliteStore } from "../../src/db/sqlite.js";
 import { encryptAes256Cbc, sha256Base64 } from "../../src/utils/crypto.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 const testKey = Buffer.alloc(32, 3);
 const testIv = Buffer.alloc(16, 4);
@@ -145,7 +145,7 @@ describe("syncSubjectType - narrow window skip (ksefctl-9of)", () => {
     const now = new Date("2026-05-10T12:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-runner-"));
+    const tmpDir = await makeTempDir("ksef-runner-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
 
     // Cursor is only 60s behind "now" - narrower than the 300s minimum.
@@ -184,7 +184,7 @@ describe("syncSubjectType - narrow window skip (ksefctl-9of)", () => {
     const now = new Date("2026-05-10T12:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-runner-"));
+    const tmpDir = await makeTempDir("ksef-runner-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
 
     // Window is exactly minExportWindowSeconds wide - "below" is a strict
@@ -218,7 +218,7 @@ describe("syncSubjectType - narrow window skip (ksefctl-9of)", () => {
     const now = new Date("2026-05-10T12:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-runner-"));
+    const tmpDir = await makeTempDir("ksef-runner-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const cursor = new Date(now.getTime() - 8_000).toISOString();
     await store.withDb((db) =>
@@ -246,7 +246,7 @@ describe("syncSubjectType - out-of-range rejection (ksefctl-1f1)", () => {
     const now = new Date("2026-05-10T12:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-runner-"));
+    const tmpDir = await makeTempDir("ksef-runner-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
 
     const exportInvoices = vi
@@ -292,7 +292,7 @@ describe("syncSubjectType - out-of-range rejection (ksefctl-1f1)", () => {
     const now = new Date("2026-05-10T12:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-runner-"));
+    const tmpDir = await makeTempDir("ksef-runner-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const priorCursor = "2026-04-01T00:00:00.000Z";
     await store.withDb((db) =>
@@ -326,7 +326,7 @@ describe("syncSubjectType - out-of-range rejection (ksefctl-1f1)", () => {
     const now = new Date("2026-05-10T12:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-runner-"));
+    const tmpDir = await makeTempDir("ksef-runner-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
 
     const exportInvoices = vi
@@ -353,7 +353,7 @@ describe("syncSubjectType - normal path unaffected", () => {
     const now = new Date("2026-05-10T12:00:00Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-runner-"));
+    const tmpDir = await makeTempDir("ksef-runner-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     const ksefNumber = "KSEF-NORMAL-1";
     const { encrypted, partHash, encryptedPartHash } = buildEncryptedPackage(
@@ -468,7 +468,7 @@ describe("syncSubjectType - HWM continuation point", () => {
   const setup = async (cursor: string | null = priorCursor) => {
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-runner-"));
+    const tmpDir = await makeTempDir("ksef-runner-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     if (cursor) {
       await store.withDb((db) =>
@@ -722,7 +722,7 @@ describe("syncSubjectType - output-path exports (ksefctl-h40)", () => {
   const setup = async (cursor: string = priorCursor) => {
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-runner-"));
+    const tmpDir = await makeTempDir("ksef-runner-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     await store.withDb((db) => setContinuationPoint(db, nip, "Subject1", cursor));
     const exportInvoices = vi
@@ -920,7 +920,7 @@ describe("syncSubjectType - saved cursor without initialSyncFrom", () => {
   const setup = async (cursor: string | null) => {
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-runner-"));
+    const tmpDir = await makeTempDir("ksef-runner-");
     const store = new SqliteStore(path.join(tmpDir, "state.sqlite"));
     if (cursor) {
       await store.withDb((db) =>
@@ -1064,13 +1064,11 @@ describe("syncSubjectType - export-only runs never write the canonical DB", () =
   const nip = "1234567890";
   const priorCursor = "2026-04-01T00:00:00.000Z";
   const canWriteDespiteMode = process.getuid?.() === 0;
-  const tmpDirs: string[] = [];
 
   const setup = async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-10T12:00:00Z"));
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ksef-runner-"));
-    tmpDirs.push(tmpDir);
+    const tmpDir = await makeTempDir("ksef-runner-");
     const dbPath = path.join(tmpDir, "db", "state.sqlite");
     const store = new SqliteStore(dbPath);
     const exportInvoices = vi
@@ -1101,16 +1099,8 @@ describe("syncSubjectType - export-only runs never write the canonical DB", () =
     return { tmpDir, dbPath, store, exportInvoices, runExport };
   };
 
-  afterEach(async () => {
+  afterEach(() => {
     vi.restoreAllMocks();
-    await Promise.all(
-      tmpDirs.splice(0).map(async (dir) => {
-        await fs.chmod(path.join(dir, "db", "state.sqlite"), 0o600).catch(
-          () => undefined,
-        );
-        await fs.rm(dir, { recursive: true, force: true });
-      }),
-    );
   });
 
   it("reads the cursor without rewriting an existing DB, for plain and redownload-all runs", async () => {
