@@ -48,7 +48,7 @@
     "commander": "^15.0.0",
     "keytar": "^7.9.0",
     "node-notifier": "^10.0.1",
-    "nodemailer": "^10.0.15",
+    "nodemailer": "^10.0.16",
     "ora": "^9.4.1",
     "pino": "^10.4.0",
     "pino-pretty": "^13.2.0",
