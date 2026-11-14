@@ -93,6 +93,20 @@ const isRetryableStatus = (status: number): boolean =>
 const retryReasonForStatus = (status: number): "rate_limit" | "server_error" =>
   status === 429 ? "rate_limit" : "server_error";
 
+// fetch reports every transport failure as "fetch failed" and keeps the real
+// reason (ECONNRESET, UND_ERR_SOCKET, ETIMEDOUT, ...) on error.cause.
+const describeErrorCause = (
+  error: unknown,
+): { errCode?: string; errCause?: string } => {
+  const cause = (error as { cause?: unknown }).cause;
+  if (!(cause instanceof Error)) return {};
+  const code = (cause as NodeJS.ErrnoException).code;
+  return {
+    ...(typeof code === "string" ? { errCode: code } : {}),
+    errCause: sanitizeErrorMessage(cause.message),
+  };
+};
+
 // SHA-256 produces 32 bytes → exactly 44 base64 characters with standard padding.
 const PIN_REGEX = /^[A-Za-z0-9+/]{43}=$/;
 
@@ -349,6 +363,7 @@ export class HttpClient {
             delay: formatDuration(delay),
             delayMs: delay,
             err: sanitizeErrorMessage(message),
+            ...describeErrorCause(error),
           },
           "Temporary network failure; retry scheduled",
         );

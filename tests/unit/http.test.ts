@@ -192,6 +192,44 @@ describe("HttpClient", () => {
       }),
       "Temporary network failure; retry scheduled",
     );
+    const [fields] = vi.mocked(logger.warn).mock.calls[0] as [
+      Record<string, unknown>,
+    ];
+    expect(fields).not.toHaveProperty("errCode");
+    expect(fields).not.toHaveProperty("errCause");
+  });
+
+  it("logs the underlying cause of a fetch failure", async () => {
+    const cause = Object.assign(new Error("other side closed"), {
+      code: "UND_ERR_SOCKET",
+    });
+    const fetchSpy = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("fetch failed", { cause }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    _savedFetch = globalThis.fetch;
+    (globalThis as Record<string, unknown>).fetch = fetchSpy;
+    const logger = createLogger();
+    const client = createClient({ logger });
+
+    await expect(
+      client.request({ method: "GET", path: "/invoices/exports/ref" }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        retryReason: "network_failure",
+        err: "fetch failed",
+        errCode: "UND_ERR_SOCKET",
+        errCause: "other side closed",
+      }),
+      "Temporary network failure; retry scheduled",
+    );
   });
 
   it("reports the Retry-After delay to onRateLimit and successes to onSuccess", async () => {
