@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `npm ci` and `npm run solution` failed in the `prepare` step with `tslib is bundled but has no non-empty license text`. pdfmake's prebuilt bundle contains tslib, whose license was read from the copy `@swc/helpers` installed, and `@swc/helpers` 0.5.24 (2026-11-04) no longer depends on tslib. tslib now has a reviewed license copy in `scripts/third-party/` (0BSD, identical to the tslib 2.8.1 and 2.9.1 `LICENSE.txt`). The vendored converter bundle is unchanged.
+
 ## [2026.10.9] - 2026-10-08
 
 ### Fixed

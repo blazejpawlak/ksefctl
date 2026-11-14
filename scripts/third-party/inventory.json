@@ -286,6 +286,12 @@
       "source": "https://github.com/nodejs/string_decoder",
       "file": "string_decoder.txt"
     },
+    "tslib": {
+      "version": "2.8.1",
+      "license": "0BSD",
+      "source": "https://github.com/microsoft/tslib",
+      "file": "tslib.txt"
+    },
     "util": {
       "version": "0.12.5",
       "license": "MIT",
