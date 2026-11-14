@@ -1,5 +1,5 @@
-import type { KsefClient } from "../api/ksefClient.js";
-import type { AuthService, AuthTokens } from "../auth/authService.js";
+import type { AccessTokenSource, KsefClient } from "../api/ksefClient.js";
+import type { AuthService } from "../auth/authService.js";
 import type { AppConfig } from "../config/schema.js";
 import type { SqliteStore } from "../db/sqlite.js";
 import type { Notifier } from "../notifications/notifier.js";
@@ -8,6 +8,7 @@ import type { PdfGenerationCircuitBreaker } from "./invoiceWriter.js";
 import type { SyncSubjectRunnerDeps } from "./syncSubjectRunner.js";
 import type { ExplicitSyncWindow } from "./window.js";
 import type { Logger } from "pino";
+import { createAccessTokenProvider } from "../auth/authService.js";
 import { getSyncState, setSyncState } from "../db/repository.js";
 import { PdfService } from "../services/pdfService.js";
 import { pLimit } from "../utils/concurrency.js";
@@ -120,7 +121,7 @@ export class SyncService {
   }
 
   private async downloadByKsefNumber(
-    accessToken: string,
+    accessToken: AccessTokenSource,
     nip: string,
     ksefNumber: string,
     flatSync = false,
@@ -213,7 +214,7 @@ export class SyncService {
 
     const syncSingleNip = async (
       nip: string,
-      tokens: AuthTokens,
+      accessToken: AccessTokenSource,
     ): Promise<SyncResult> => {
       const nipResult: SyncResult = {
         downloaded: 0,
@@ -222,7 +223,6 @@ export class SyncService {
         pdfFailed: 0,
         items: [],
       };
-      const accessToken = tokens.accessToken;
       const forced =
         forceRedownloadId && (!nipFilter || nipFilter === nip)
           ? await this.downloadByKsefNumber(
@@ -282,7 +282,10 @@ export class SyncService {
       this.logger.debug({ nip }, "Syncing NIP");
       this.reportProgress(`Progress: syncing NIP ${nip}`);
       const tokens = await this.auth.getAccessToken(nip);
-      const result = await syncSingleNip(nip, tokens);
+      const result = await syncSingleNip(
+        nip,
+        createAccessTokenProvider(this.auth, nip, tokens),
+      );
       if (!exportOnly) {
         await this.notifier?.notifyUnpaidInvoices(result, this.store);
       }

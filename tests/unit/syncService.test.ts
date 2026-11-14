@@ -1,4 +1,7 @@
-import type { KsefClient } from "../../src/api/ksefClient.js";
+import type {
+  AccessTokenProvider,
+  KsefClient,
+} from "../../src/api/ksefClient.js";
 import type { AuthService } from "../../src/auth/authService.js";
 import type { AppConfig } from "../../src/config/schema.js";
 import type { Logger } from "pino";
@@ -876,7 +879,14 @@ describe("SyncService", () => {
     const result = await service.runOnce("KSEF-INV-1", "1234567890");
 
     expect(downloadInvoiceXml).toHaveBeenCalledTimes(1);
-    expect(downloadInvoiceXml).toHaveBeenCalledWith("ACCESS", "KSEF-INV-1");
+    expect(downloadInvoiceXml).toHaveBeenCalledWith(
+      expect.objectContaining({ get: expect.any(Function) as unknown }),
+      "KSEF-INV-1",
+    );
+    const [provider] = downloadInvoiceXml.mock.calls[0] as [
+      AccessTokenProvider,
+    ];
+    await expect(provider.get()).resolves.toBe("ACCESS");
     expect(result.items).toEqual([
       expect.objectContaining({
         nip: "1234567890",

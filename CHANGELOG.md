@@ -9,6 +9,7 @@
 
 ### Fixed
 
+- A sync cycle no longer fails with `HTTP 401` when it outlives the KSeF access token. The token was fetched once per cycle and sent unchanged on every request and retry, so a cycle that waited out a long rate limit (KSeF asks for up to ~30 minutes) or polled a slow export past the token's expiry failed; about 1,100 cycles failed this way from April to November 2026. Each request now resolves the token on every attempt and refreshes it shortly before it expires, and a `401` refreshes the token and retries the request once. A second `401` still fails the cycle, so bad credentials never loop.
 - `npm ci` and `npm run solution` failed in the `prepare` step with `tslib is bundled but has no non-empty license text`. pdfmake's prebuilt bundle contains tslib, whose license was read from the copy `@swc/helpers` installed, and `@swc/helpers` 0.5.24 (2026-11-04) no longer depends on tslib. tslib now has a reviewed license copy in `scripts/third-party/` (0BSD, identical to the tslib 2.8.1 and 2.9.1 `LICENSE.txt`). The vendored converter bundle is unchanged.
 
 ### Security

@@ -1,4 +1,4 @@
-import type { KsefClient } from "../api/ksefClient.js";
+import type { AccessTokenSource, KsefClient } from "../api/ksefClient.js";
 import type { AppConfig, SubjectType } from "../config/schema.js";
 import type { SqliteStore } from "../db/sqlite.js";
 import type { PdfService } from "../services/pdfService.js";
@@ -62,7 +62,7 @@ export type SyncSubjectRunnerDeps = {
 
 export async function syncSubjectType(
   deps: SyncSubjectRunnerDeps,
-  accessToken: string,
+  accessToken: AccessTokenSource,
   nip: string,
   subjectType: SubjectType,
   forceRedownloadId?: string,

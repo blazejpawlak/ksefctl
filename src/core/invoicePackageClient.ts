@@ -1,4 +1,5 @@
 import type {
+  AccessTokenSource,
   InvoiceExportStatusResponse,
   KsefClient,
 } from "../api/ksefClient.js";
@@ -24,7 +25,7 @@ export type PackageClientDeps = {
 
 export async function waitForExport(
   deps: PackageClientDeps,
-  accessToken: string,
+  accessToken: AccessTokenSource,
   referenceNumber: string,
 ): Promise<InvoiceExportStatusResponse> {
   const { client, config, logger, reportProgress, sleepWithProgress } = deps;
