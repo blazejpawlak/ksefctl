@@ -19,6 +19,7 @@ import {
 import { formatDuration, sleep, sleepWithCountdown } from "../../utils/time.js";
 import { ensureInitialized } from "../bootstrap.js";
 import { createContext } from "../context.js";
+import { logSyncCycle } from "../cycleLog.js";
 import { getLifecycleEventEntries } from "../lifecycleStatus.js";
 import { formatInvoicesToPay, getInvoicesToPay } from "../paymentSummary.js";
 import { createProgressRenderer } from "../progress.js";
@@ -217,6 +218,21 @@ export function registerDaemon(program: Command): void {
               formatInvoicesToPay(result?.items ?? []),
             );
           }
+          logSyncCycle(ctx.logger, {
+            iteration,
+            status: errorMessage ? "failed" : "completed",
+            downloaded: result?.downloaded ?? 0,
+            skipped: result?.skipped ?? 0,
+            failed: result?.failed ?? (errorMessage ? 1 : 0),
+            pdfFailed: result?.pdfFailed ?? 0,
+            toPay: invoicesToPay.length,
+            durationMs,
+            lastSyncAt: status.lastSyncAt ?? null,
+            nextRunAt: stopController.stopRequested
+              ? null
+              : new Date(Date.now() + intervalMs).toISOString(),
+            ...(errorMessage ? { error: errorMessage } : {}),
+          });
 
           if (stopController.stopRequested) {
             await stopController.finalize();
