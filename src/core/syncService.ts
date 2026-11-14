@@ -1,12 +1,12 @@
-import type { SyncItem } from "./invoiceExtractor.js";
-import type { PdfGenerationCircuitBreaker } from "./invoiceWriter.js";
-import type { SyncSubjectRunnerDeps } from "./syncSubjectRunner.js";
-import type { ExplicitSyncWindow } from "./window.js";
 import type { KsefClient } from "../api/ksefClient.js";
 import type { AuthService, AuthTokens } from "../auth/authService.js";
 import type { AppConfig } from "../config/schema.js";
 import type { SqliteStore } from "../db/sqlite.js";
 import type { Notifier } from "../notifications/notifier.js";
+import type { SyncItem } from "./invoiceExtractor.js";
+import type { PdfGenerationCircuitBreaker } from "./invoiceWriter.js";
+import type { SyncSubjectRunnerDeps } from "./syncSubjectRunner.js";
+import type { ExplicitSyncWindow } from "./window.js";
 import type { Logger } from "pino";
 import { getSyncState, setSyncState } from "../db/repository.js";
 import { PdfService } from "../services/pdfService.js";

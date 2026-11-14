@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `npm ci` and `npm run solution` failed in the `prepare` step with `tslib is bundled but has no non-empty license text`. pdfmake's prebuilt bundle contains tslib, whose license was read from the copy `@swc/helpers` installed, and `@swc/helpers` 0.5.24 (2026-11-04) no longer depends on tslib. tslib now has a reviewed license copy in `scripts/third-party/` (0BSD, identical to the tslib 2.8.1 and 2.9.1 `LICENSE.txt`). The vendored converter bundle is unchanged.
+
+### Security
+
+- Update dependencies to clear `npm audit`, which CI runs and which had started failing with 17 advisories (3 high). Runtime: `undici` 8.12.4 (GHSA-xjj6-f33q-929c, denial of service through excessive content-encodings), `zod` 4.6.7 (GHSA-mrhx-c7xc-m3w5) and `nodemailer` 10.5.0. Development: `vite` and other tooling, all within their existing ranges. `@typescript-eslint/typescript-estree` is now overridden to `minimatch` 11 (GHSA-g3hv-75wg-m249 is fixed only in 11.0.1+, and the latest typescript-eslint still asks for 10.x). The newer `eslint-plugin-import-x` orders type imports differently, so four source files had their imports reordered.
+
 ## [2026.10.9] - 2026-10-08
 
 ### Fixed
