@@ -131,7 +131,7 @@ const pruneRotatedFiles = async (
   }
 };
 
-const rotateIfOversized = async (
+const isOversized = async (
   filePath: string,
   rotation: LogRotationOptions,
 ): Promise<boolean> => {
@@ -148,24 +148,57 @@ const rotateIfOversized = async (
     return false;
   }
   const maxBytes = rotation.maxFileMegabytes * BYTES_PER_MEGABYTE;
-  if (stat.size < maxBytes) {
-    return false;
-  }
+  return stat.size >= maxBytes;
+};
 
-  const stamp = `${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}`;
-  const rotatedPath = `${filePath}.${stamp}`;
-  await fs.rename(filePath, rotatedPath);
+const rotatedPathFor = (filePath: string): string =>
+  `${filePath}.${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}`;
+
+const restrictRotatedFile = async (rotatedPath: string): Promise<void> => {
   try {
     await fs.chmod(rotatedPath, LOG_FILE_MODE);
   } catch (error) {
     writeRotationWarning(rotatedPath, error);
   }
+};
+
+// For a log this process writes and reopens itself.
+const renameIfOversized = async (
+  filePath: string,
+  rotation: LogRotationOptions,
+): Promise<boolean> => {
+  if (!(await isOversized(filePath, rotation))) {
+    return false;
+  }
+  const rotatedPath = rotatedPathFor(filePath);
+  await fs.rename(filePath, rotatedPath);
+  await restrictRotatedFile(rotatedPath);
   return true;
 };
 
-export const applyLogRotation = async (
+// For a file someone else opened for us, such as launchd's StandardOutPath:
+// renaming it would leave the writer on the renamed file, so copy it aside
+// and truncate it in place. The writer must have opened it with O_APPEND
+// (launchd does) so its next write lands at the new end of the file. Output
+// written between the copy and the truncate is lost.
+const copyTruncateIfOversized = async (
   filePath: string,
   rotation: LogRotationOptions,
+): Promise<boolean> => {
+  if (!(await isOversized(filePath, rotation))) {
+    return false;
+  }
+  const rotatedPath = rotatedPathFor(filePath);
+  await fs.copyFile(filePath, rotatedPath, fs.constants.COPYFILE_EXCL);
+  await restrictRotatedFile(rotatedPath);
+  await fs.truncate(filePath, 0);
+  return true;
+};
+
+const runRotation = async (
+  filePath: string,
+  rotation: LogRotationOptions,
+  rotate: (filePath: string, rotation: LogRotationOptions) => Promise<boolean>,
 ): Promise<boolean> => {
   if (!rotation.enabled) {
     return false;
@@ -173,7 +206,7 @@ export const applyLogRotation = async (
 
   let rotated = false;
   try {
-    rotated = await rotateIfOversized(filePath, rotation);
+    rotated = await rotate(filePath, rotation);
   } catch (error) {
     writeRotationWarning(filePath, error);
     return false;
@@ -187,6 +220,21 @@ export const applyLogRotation = async (
 
   return rotated;
 };
+
+/** Rotates the logger's own file by renaming it; the caller reopens it. */
+export const applyLogRotation = (
+  filePath: string,
+  rotation: LogRotationOptions,
+): Promise<boolean> => runRotation(filePath, rotation, renameIfOversized);
+
+/**
+ * Rotates a file another process holds open in append mode (launchd's
+ * service stdout and stderr) by copying it aside and truncating it.
+ */
+export const applyCopyTruncateRotation = (
+  filePath: string,
+  rotation: LogRotationOptions,
+): Promise<boolean> => runRotation(filePath, rotation, copyTruncateIfOversized);
 
 const scheduleRotationChecks = (
   filePath: string,

@@ -5,6 +5,7 @@ import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  applyCopyTruncateRotation,
   applyLogRotation,
   closeLogger,
   createLogger,
@@ -214,6 +215,76 @@ describe("log rotation", () => {
     expect(summarize(await fs.readFile(filePath, "utf-8"))).toEqual(
       summarize(original),
     );
+  });
+});
+
+describe("copy-truncate rotation", () => {
+  it("copies an oversized file aside and truncates it in place for an O_APPEND writer", async () => {
+    const tmpDir = await makeTempDir("ksef-logrot-");
+    const filePath = path.join(tmpDir, "ksefctl.stdout.log");
+    const original = "x".repeat(MEGABYTE);
+    await fs.writeFile(filePath, original, { mode: 0o600 });
+    // Stands in for launchd, which holds StandardOutPath open with O_APPEND.
+    const writer = fsSync.openSync(filePath, "a");
+    const inode = (await fs.stat(filePath)).ino;
+
+    try {
+      const rotated = await applyCopyTruncateRotation(filePath, rotation());
+      fsSync.writeSync(writer, "after-rotation\n");
+
+      expect(rotated).toBe(true);
+      const active = await fs.stat(filePath);
+      expect(active.ino).toBe(inode);
+      // The writer continues at the new end of file, with no hole before it.
+      expect(await fs.readFile(filePath, "utf-8")).toBe("after-rotation\n");
+      const rotatedFiles = await listRotated(filePath);
+      expect(rotatedFiles).toHaveLength(1);
+      const rotatedPath = rotatedFiles[0];
+      if (!rotatedPath) {
+        throw new Error("expected a rotated log file");
+      }
+      expect(summarize(await fs.readFile(rotatedPath, "utf-8"))).toEqual(
+        summarize(original),
+      );
+      expect((await fs.stat(rotatedPath)).mode & 0o777).toBe(0o600);
+    } finally {
+      fsSync.closeSync(writer);
+    }
+  });
+
+  it("leaves a file below the size threshold untouched", async () => {
+    const tmpDir = await makeTempDir("ksef-logrot-");
+    const filePath = path.join(tmpDir, "ksefctl.stdout.log");
+    await fs.writeFile(filePath, "small", { mode: 0o600 });
+
+    expect(await applyCopyTruncateRotation(filePath, rotation())).toBe(false);
+    expect(await fs.readFile(filePath, "utf-8")).toBe("small");
+    expect(await listRotated(filePath)).toEqual([]);
+  });
+
+  it("prunes copies beyond maxFiles and ignores a missing file", async () => {
+    const tmpDir = await makeTempDir("ksef-logrot-");
+    const filePath = path.join(tmpDir, "ksefctl.err.log");
+    await expect(
+      applyCopyTruncateRotation(filePath, rotation()),
+    ).resolves.toBe(false);
+
+    for (const [index, name] of ["a", "b", "c"].entries()) {
+      const copy = `${filePath}.${name}`;
+      await fs.writeFile(copy, name);
+      const time = new Date(Date.now() - (3 - index) * 60_000);
+      await fs.utimes(copy, time, time);
+    }
+    await fs.writeFile(filePath, "x".repeat(MEGABYTE));
+
+    await applyCopyTruncateRotation(filePath, rotation({ maxFiles: 2 }));
+
+    const remaining = (await listRotated(filePath)).map((file) =>
+      path.basename(file),
+    );
+    expect(remaining).toHaveLength(2);
+    expect(remaining).toContain("ksefctl.err.log.c");
+    expect(remaining).not.toContain("ksefctl.err.log.a");
   });
 });
 

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- The macOS service now caps its launchd stdout and stderr files (`<storage.root>/logs/ksefctl.stdout.log` and `ksefctl.err.log`), which launchd never rotates and which grew without limit. With the same `logging.rotation` limits as the main log (16 MB, 5 files, 30 days by default), the service copies an oversized file to `<file>.<timestamp>` and truncates it in place, at startup and after each sync cycle. It cannot rename the file the way `newsyslog` would, because the running service would keep writing to the renamed file; truncating is safe because launchd opens both files in append mode. Linux services are unaffected (systemd sends service output to journald).
+
 ## [2026.11.14] - 2026-11-14
 
 ### Added
