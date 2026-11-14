@@ -154,11 +154,16 @@ const isOversized = async (
 const rotatedPathFor = (filePath: string): string =>
   `${filePath}.${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}`;
 
-const restrictRotatedFile = async (rotatedPath: string): Promise<void> => {
+/**
+ * Makes a log file owner-only (0600). A missing file is skipped; other
+ * failures are reported on stderr, never thrown.
+ */
+export const restrictLogFileMode = async (filePath: string): Promise<void> => {
   try {
-    await fs.chmod(rotatedPath, LOG_FILE_MODE);
+    await fs.chmod(filePath, LOG_FILE_MODE);
   } catch (error) {
-    writeRotationWarning(rotatedPath, error);
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    writeRotationWarning(filePath, error);
   }
 };
 
@@ -172,7 +177,7 @@ const renameIfOversized = async (
   }
   const rotatedPath = rotatedPathFor(filePath);
   await fs.rename(filePath, rotatedPath);
-  await restrictRotatedFile(rotatedPath);
+  await restrictLogFileMode(rotatedPath);
   return true;
 };
 
@@ -190,7 +195,7 @@ const copyTruncateIfOversized = async (
   }
   const rotatedPath = rotatedPathFor(filePath);
   await fs.copyFile(filePath, rotatedPath, fs.constants.COPYFILE_EXCL);
-  await restrictRotatedFile(rotatedPath);
+  await restrictLogFileMode(rotatedPath);
   await fs.truncate(filePath, 0);
   return true;
 };
