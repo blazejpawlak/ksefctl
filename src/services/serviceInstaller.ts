@@ -45,7 +45,8 @@ export type LaunchdTarget = {
 
 const serviceName = APP_NAME;
 
-const resolveServiceOutputPath = (
+/** Path of the launchd service's stdout ("stdout") or stderr ("err") file. */
+export const resolveServiceOutputPath = (
   storageRoot: string,
   streamName: "stdout" | "err",
 ): string => path.join(storageRoot, "logs", `${serviceName}.${streamName}.log`);
@@ -150,11 +151,8 @@ export const buildLaunchdPlist = (
   const configPathValue = escapeXml(options.configPath);
   const storageRootValue = escapeXml(options.storageRoot);
   // launchd has no size or age cap for StandardOutPath / StandardErrorPath.
-  // Those files grow unbounded for as long as the job stays loaded; ksefctl
-  // log rotation (src/utils/logger.ts) only covers logging.file. Cap these
-  // service stdio files with newsyslog(8) (or an equivalent rotator) at:
-  //   <storageRoot>/logs/ksefctl.stdout.log
-  //   <storageRoot>/logs/ksefctl.err.log
+  // The service rotates both itself (src/cli/serviceOutputRotation.ts) by
+  // copy and truncate, which is safe because launchd opens them O_APPEND.
   const stdoutPath = escapeXml(
     resolveServiceOutputPath(options.storageRoot, "stdout"),
   );

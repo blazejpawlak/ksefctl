@@ -23,6 +23,7 @@ import { logSyncCycle } from "../cycleLog.js";
 import { getLifecycleEventEntries } from "../lifecycleStatus.js";
 import { formatInvoicesToPay, getInvoicesToPay } from "../paymentSummary.js";
 import { createProgressRenderer } from "../progress.js";
+import { rotateServiceOutput } from "../serviceOutputRotation.js";
 import { printHeader, printKeyValues, printList } from "../ui.js";
 import {
   formatCliError,
@@ -105,6 +106,7 @@ export function registerDaemon(program: Command): void {
           context: { serviceMode: "daemon" },
         });
         await statusService.recordLifecycle(startupEvent);
+        await rotateServiceOutput(ctx.config);
         printHeader("Sync");
         printKeyValues([
           ["mode", "watch"],
@@ -234,6 +236,7 @@ export function registerDaemon(program: Command): void {
             ...(errorMessage ? { error: errorMessage } : {}),
           });
 
+          await rotateServiceOutput(ctx.config);
           if (stopController.stopRequested) {
             await stopController.finalize();
             break;

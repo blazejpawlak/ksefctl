@@ -31,6 +31,7 @@ import { isValidNip } from "../keychain.js";
 import { getLifecycleEventEntries } from "../lifecycleStatus.js";
 import { formatInvoicesToPay, getInvoicesToPay } from "../paymentSummary.js";
 import { createProgressRenderer } from "../progress.js";
+import { rotateServiceOutput } from "../serviceOutputRotation.js";
 import { printHeader, printKeyValues, printList } from "../ui.js";
 import { readVersionOutput } from "../version.js";
 import {
@@ -249,6 +250,7 @@ export function registerSync(program: Command): void {
             context: { serviceMode: "watch" },
           });
           await statusService.recordLifecycle(startupEvent);
+          await rotateServiceOutput(ctx.config);
           const statePath = resolveRateLimitStatePath(ctx.config.storage.root);
           let intervalSeconds = ctx.config.pollingIntervalSeconds;
           if (adaptive.enabled) {
@@ -407,6 +409,7 @@ export function registerSync(program: Command): void {
                 }),
               );
             }
+            await rotateServiceOutput(ctx.config);
             if (stopController.stopRequested) {
               await stopController.finalize();
               break;
