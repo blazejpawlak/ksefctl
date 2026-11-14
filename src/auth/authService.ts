@@ -1,5 +1,8 @@
-import type { AuthenticationTokensResponse } from "../api/ksefClient.js";
-import type { KsefClient } from "../api/ksefClient.js";
+import type {
+  AccessTokenProvider,
+  AuthenticationTokensResponse,
+  KsefClient,
+} from "../api/ksefClient.js";
 import type { AppConfig } from "../config/schema.js";
 import type { KeychainStore } from "./keychainStore.js";
 import type { Logger } from "pino";
@@ -43,6 +46,44 @@ const selectCertificateByUsage = (
 const sanitizeForTerminal = (value: string): string =>
   value.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
 
+/**
+ * Keeps one NIP's tokens in memory for a sync cycle and refreshes the access
+ * token shortly before it expires, so a cycle can outlive it. Concurrent
+ * callers share one load; a forced refresh never reuses an unforced load,
+ * which could return the token KSeF just rejected.
+ */
+export const createAccessTokenProvider = (
+  auth: Pick<AuthService, "getAccessToken">,
+  nip: string,
+  initial?: AuthTokens,
+): AccessTokenProvider => {
+  let tokens = initial ?? null;
+  let pending: { forced: boolean; promise: Promise<AuthTokens> } | null = null;
+  const load = (forceRefresh: boolean): Promise<AuthTokens> => {
+    if (pending && (pending.forced || !forceRefresh)) return pending.promise;
+    const promise = auth
+      .getAccessToken(nip, { forceRefresh })
+      .then((loaded) => {
+        tokens = loaded;
+        return loaded;
+      })
+      .finally(() => {
+        if (pending?.promise === promise) pending = null;
+      });
+    pending = { forced: forceRefresh, promise };
+    return promise;
+  };
+  return {
+    get: async () => {
+      if (tokens && !isExpired(tokens.accessTokenValidUntil)) {
+        return tokens.accessToken;
+      }
+      return (await load(false)).accessToken;
+    },
+    refresh: async () => (await load(true)).accessToken,
+  };
+};
+
 export class AuthService {
   private client: KsefClient;
   private config: AppConfig;
@@ -72,7 +113,15 @@ export class AuthService {
     this.progress(message);
   }
 
-  async getAccessToken(nip: string): Promise<AuthTokens> {
+  /**
+   * Returns a usable access token for the NIP: the cached one while it is
+   * valid, else one from the refresh token, else from a new authentication.
+   * forceRefresh skips the cached access token, for when KSeF rejected it.
+   */
+  async getAccessToken(
+    nip: string,
+    options: { forceRefresh?: boolean } = {},
+  ): Promise<AuthTokens> {
     this.logger.debug({ nip }, "Resolving access token");
     const entry = await this.keychain.getEntry(this.config.environment, nip);
     if (!entry?.ksefToken) {
@@ -80,6 +129,7 @@ export class AuthService {
     }
 
     if (
+      !options.forceRefresh &&
       entry.accessToken &&
       entry.accessTokenValidUntil &&
       !isExpired(entry.accessTokenValidUntil)

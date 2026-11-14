@@ -1,4 +1,21 @@
-import type { HttpClient } from "../utils/http.js";
+import type { HttpClient, RequestOptions } from "../utils/http.js";
+import { AuthError } from "../utils/errors.js";
+
+/**
+ * Supplies the KSeF access token for one NIP. get() returns a current token
+ * (refreshing one that is about to expire); refresh() obtains a new one after
+ * KSeF rejected the current token.
+ */
+export type AccessTokenProvider = {
+  get: () => Promise<string>;
+  refresh: () => Promise<string>;
+};
+
+/** A fixed access token, or a provider that keeps it current. */
+export type AccessTokenSource = string | AccessTokenProvider;
+
+const isUnauthorized = (error: unknown): boolean =>
+  error instanceof AuthError && /^HTTP 401\b/.test(error.message);
 
 export type AuthenticationChallengeResponse = {
   challenge: string;
@@ -68,6 +85,40 @@ export class KsefClient {
     this.http = http;
   }
 
+  // Sends a request authorized with the access token. With a provider, the
+  // token is resolved on every attempt, so a request that outlives it (a long
+  // 429 wait, a slow export) sends a current one. A 401 refreshes the token
+  // and retries once; a second 401 is a real credentials problem and is
+  // thrown.
+  private async requestWithToken<T>(
+    accessToken: AccessTokenSource,
+    options: Omit<RequestOptions, "headers"> & {
+      headers?: Record<string, string>;
+    },
+  ): Promise<T> {
+    if (typeof accessToken === "string") {
+      return this.http.request<T>({
+        ...options,
+        headers: { ...options.headers, Authorization: `Bearer ${accessToken}` },
+      });
+    }
+    const send = () =>
+      this.http.request<T>({
+        ...options,
+        headers: async () => ({
+          ...options.headers,
+          Authorization: `Bearer ${await accessToken.get()}`,
+        }),
+      });
+    try {
+      return await send();
+    } catch (error) {
+      if (!isUnauthorized(error)) throw error;
+      await accessToken.refresh();
+      return await send();
+    }
+  }
+
   getAuthChallenge(): Promise<AuthenticationChallengeResponse> {
     return this.http.request({ method: "POST", path: "/auth/challenge" });
   }
@@ -122,18 +173,17 @@ export class KsefClient {
   }
 
   exportInvoices(
-    accessToken: string,
+    accessToken: AccessTokenSource,
     body: Record<string, unknown>,
     includeMetadataHeader: boolean,
   ): Promise<ExportInvoicesResponse> {
     const headers: Record<string, string> = {
-      Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     };
     if (includeMetadataHeader) {
       headers["X-KSeF-Feature"] = "include-metadata";
     }
-    return this.http.request({
+    return this.requestWithToken(accessToken, {
       method: "POST",
       path: "/invoices/exports",
       headers,
@@ -142,21 +192,22 @@ export class KsefClient {
   }
 
   getExportStatus(
-    accessToken: string,
+    accessToken: AccessTokenSource,
     referenceNumber: string,
   ): Promise<InvoiceExportStatusResponse> {
-    return this.http.request({
+    return this.requestWithToken(accessToken, {
       method: "GET",
       path: `/invoices/exports/${referenceNumber}`,
-      headers: { Authorization: `Bearer ${accessToken}` },
     });
   }
 
-  downloadInvoiceXml(accessToken: string, ksefNumber: string): Promise<string> {
-    return this.http.request({
+  downloadInvoiceXml(
+    accessToken: AccessTokenSource,
+    ksefNumber: string,
+  ): Promise<string> {
+    return this.requestWithToken(accessToken, {
       method: "GET",
       path: `/invoices/ksef/${ksefNumber}`,
-      headers: { Authorization: `Bearer ${accessToken}` },
       parseAs: "text",
     });
   }

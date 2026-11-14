@@ -50,7 +50,11 @@ export type HttpClientOptions = {
 export type RequestOptions = {
   method: string;
   path: string;
-  headers?: Record<string, string>;
+  /**
+   * Request headers. A function is called before every attempt, so a request
+   * that waits out a 429 or a network failure sends current credentials.
+   */
+  headers?: Record<string, string> | (() => Promise<Record<string, string>>);
   body?: string | Buffer;
   parseAs?: "json" | "text" | "buffer";
 };
@@ -229,13 +233,18 @@ export class HttpClient {
       : new URL(relativePath, baseUrl).toString();
     const safePath = toSafePath(options.path);
     const method = options.method.toUpperCase();
-    const headers = options.headers ?? {};
 
     for (
       let attempt = 1;
       attempt <= this.options.retry.maxAttempts;
       attempt += 1
     ) {
+      // Resolved outside the try: a failure to obtain credentials is not a
+      // transient failure of this request and must not be retried here.
+      const headers =
+        typeof options.headers === "function"
+          ? await options.headers()
+          : (options.headers ?? {});
       const controller = new AbortController();
       const timeout = setTimeout(
         () => controller.abort(),
