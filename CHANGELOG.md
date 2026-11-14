@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- Each `sync --watch` and `daemon` cycle now writes one entry to the log file: `Sync cycle completed` (info) or `Sync cycle failed` (warn), with the iteration, the downloaded, skipped, failed, PDF-failed and to-pay counts, the duration, `lastSyncAt` and `nextRunAt`. Before this, a successful cycle left nothing in `ksefctl.log` (its summary went only to stdout), so the log could not show that the service was alive and syncing.
+- `Temporary network failure; retry scheduled` warnings now include `errCode` and `errCause`, the reason Node's `fetch` keeps on `error.cause` (for example `UND_ERR_SOCKET` / `other side closed`). Every transport failure was previously logged only as `fetch failed`.
+
 ### Fixed
 
 - `npm ci` and `npm run solution` failed in the `prepare` step with `tslib is bundled but has no non-empty license text`. pdfmake's prebuilt bundle contains tslib, whose license was read from the copy `@swc/helpers` installed, and `@swc/helpers` 0.5.24 (2026-11-04) no longer depends on tslib. tslib now has a reviewed license copy in `scripts/third-party/` (0BSD, identical to the tslib 2.8.1 and 2.9.1 `LICENSE.txt`). The vendored converter bundle is unchanged.
