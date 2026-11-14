@@ -2,10 +2,16 @@
 
 ## [Unreleased]
 
+## [2026.11.14] - 2026-11-14
+
 ### Added
 
 - Each `sync --watch` and `daemon` cycle now writes one entry to the log file: `Sync cycle completed` (info) or `Sync cycle failed` (warn), with the iteration, the downloaded, skipped, failed, PDF-failed and to-pay counts, the duration, `lastSyncAt` and `nextRunAt`. Before this, a successful cycle left nothing in `ksefctl.log` (its summary went only to stdout), so the log could not show that the service was alive and syncing.
 - `Temporary network failure; retry scheduled` warnings now include `errCode` and `errCause`, the reason Node's `fetch` keeps on `error.cause` (for example `UND_ERR_SOCKET` / `other side closed`). Every transport failure was previously logged only as `fetch failed`.
+
+### Changed
+
+- Update `sql.js` to 1.16.0 (SQLite 3.54.1) and `commander` to 15.1.0. The local database format and the CLI are unchanged.
 
 ### Fixed
 
@@ -104,6 +110,7 @@
 - Added integration-test and dependency-audit gates to CI and package publishing.
 - Added weekly grouped Dependabot updates for npm and GitHub Actions while keeping major upgrades manual.
 
+[2026.11.14]: https://github.com/blazejpawlak/ksefctl/compare/v2026.10.9...v2026.11.14
 [2026.10.9]: https://github.com/blazejpawlak/ksefctl/compare/v2026.10.8...v2026.10.9
 [2026.10.8]: https://github.com/blazejpawlak/ksefctl/compare/v2026.10.7...v2026.10.8
 [2026.10.7]: https://github.com/blazejpawlak/ksefctl/compare/v2026.9.21...v2026.10.7
