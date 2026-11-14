@@ -65,6 +65,9 @@
     },
     "@akmf/ksef-fe-invoice-converter": {
       "i18next-http-backend": "^4.0.2"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^11.0.8"
     }
   },
   "devDependencies": {

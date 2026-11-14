@@ -1,7 +1,7 @@
-import type { KeychainStore } from "./keychainStore.js";
 import type { AuthenticationTokensResponse } from "../api/ksefClient.js";
 import type { KsefClient } from "../api/ksefClient.js";
 import type { AppConfig } from "../config/schema.js";
+import type { KeychainStore } from "./keychainStore.js";
 import type { Logger } from "pino";
 import {
   createPublicKeyFromCertificate,

@@ -1,8 +1,8 @@
-import type { InvoiceFileMetadata } from "./invoiceExtractor.js";
-import type { SyncItem } from "./invoiceExtractor.js";
 import type { AppConfig } from "../config/schema.js";
 import type { SqliteStore } from "../db/sqlite.js";
 import type { PdfService } from "../services/pdfService.js";
+import type { SyncItem } from "./invoiceExtractor.js";
+import type { InvoiceFileMetadata } from "./invoiceExtractor.js";
 import type { Logger } from "pino";
 import fs from "node:fs/promises";
 import path from "node:path";
